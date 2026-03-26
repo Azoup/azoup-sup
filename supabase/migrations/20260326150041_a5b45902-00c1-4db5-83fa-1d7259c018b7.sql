@@ -1,0 +1,1 @@
+ALTER TABLE public.doubt_records ADD COLUMN IF NOT EXISTS doubts integer NOT NULL DEFAULT 0;
