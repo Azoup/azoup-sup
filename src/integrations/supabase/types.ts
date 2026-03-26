@@ -75,6 +75,7 @@ export type Database = {
           contacts: number
           created_at: string
           description: string | null
+          doubts: number
           id: string
           quantity: number
           record_date: string
@@ -86,6 +87,7 @@ export type Database = {
           contacts?: number
           created_at?: string
           description?: string | null
+          doubts?: number
           id?: string
           quantity: number
           record_date?: string
@@ -97,6 +99,7 @@ export type Database = {
           contacts?: number
           created_at?: string
           description?: string | null
+          doubts?: number
           id?: string
           quantity?: number
           record_date?: string

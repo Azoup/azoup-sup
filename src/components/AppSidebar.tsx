@@ -1,6 +1,5 @@
-import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, FileSpreadsheet } from 'lucide-react';
+import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, FileSpreadsheet, BarChart3 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
-import { useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import {
   Sidebar,
@@ -15,7 +14,9 @@ import {
 } from '@/components/ui/sidebar';
 
 const items = [
-  { title: 'Dashboard', url: '/', icon: LayoutDashboard },
+  { title: 'Início', url: '/', icon: LayoutDashboard },
+  { title: 'Dashboard Dúvidas', url: '/dashboard', icon: BarChart3 },
+  { title: 'Dashboard B.U', url: '/dashboard-bu', icon: Building2 },
   { title: 'Lançamentos', url: '/entries', icon: PenLine },
   { title: 'Lançamentos B.U', url: '/entries-bu', icon: FileSpreadsheet },
   { title: 'Analistas', url: '/analysts', icon: Users },
@@ -25,7 +26,6 @@ const items = [
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
-  const location = useLocation();
   const { signOut, user } = useAuth();
 
   return (
