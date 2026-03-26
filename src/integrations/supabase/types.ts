@@ -14,7 +14,65 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      analysts: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          photo_url: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          photo_url?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          photo_url?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      doubt_records: {
+        Row: {
+          analyst_id: string
+          created_at: string
+          id: string
+          quantity: number
+          record_date: string
+        }
+        Insert: {
+          analyst_id: string
+          created_at?: string
+          id?: string
+          quantity: number
+          record_date?: string
+        }
+        Update: {
+          analyst_id?: string
+          created_at?: string
+          id?: string
+          quantity?: number
+          record_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "doubt_records_analyst_id_fkey"
+            columns: ["analyst_id"]
+            isOneToOne: false
+            referencedRelation: "analysts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
