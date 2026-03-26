@@ -218,7 +218,7 @@ const DashboardBU = () => {
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip />
                   <Legend />
-                  <Bar dataKey="atendimentos" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} name="Atendimentos" />
+                  <Bar dataKey="atendimentos" fill="hsl(var(--chart-4))" radius={[6, 6, 0, 0]} name="Atendimentos" />
                   <Bar dataKey="contatos" fill="hsl(var(--chart-2))" radius={[6, 6, 0, 0]} name="Contatos" />
                 </BarChart>
               </ResponsiveContainer>
@@ -237,7 +237,7 @@ const DashboardBU = () => {
                     <YAxis tick={{ fontSize: 12 }} />
                     <Tooltip />
                     <Legend />
-                    <Bar dataKey="atendimentos" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} name="Atendimentos" />
+                    <Bar dataKey="atendimentos" fill="hsl(var(--chart-4))" radius={[6, 6, 0, 0]} name="Atendimentos" />
                     <Bar dataKey="contatos" fill="hsl(var(--chart-2))" radius={[6, 6, 0, 0]} name="Contatos" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -254,7 +254,7 @@ const DashboardBU = () => {
                     <YAxis tick={{ fontSize: 12 }} />
                     <Tooltip />
                     <Legend />
-                    <Line type="monotone" dataKey="atendimentos" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3 }} name="Atendimentos" />
+                    <Line type="monotone" dataKey="atendimentos" stroke="hsl(var(--chart-4))" strokeWidth={2} dot={{ r: 3 }} name="Atendimentos" />
                     <Line type="monotone" dataKey="contatos" stroke="hsl(var(--chart-2))" strokeWidth={2} dot={{ r: 3 }} name="Contatos" />
                   </LineChart>
                 </ResponsiveContainer>
