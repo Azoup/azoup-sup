@@ -1,4 +1,4 @@
-import { LayoutDashboard, PenLine, Users, LogOut, Headset } from 'lucide-react';
+import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, FileSpreadsheet } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
@@ -17,7 +17,9 @@ import {
 const items = [
   { title: 'Dashboard', url: '/', icon: LayoutDashboard },
   { title: 'Lançamentos', url: '/entries', icon: PenLine },
+  { title: 'Lançamentos B.U', url: '/entries-bu', icon: FileSpreadsheet },
   { title: 'Analistas', url: '/analysts', icon: Users },
+  { title: 'Unidades', url: '/business-units', icon: Building2 },
 ];
 
 export function AppSidebar() {
