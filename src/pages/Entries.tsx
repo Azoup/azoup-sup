@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -7,19 +7,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Loader2, Trash2, PenLine, Upload, FileSpreadsheet, Pencil } from 'lucide-react';
+import { Loader2, Trash2, PenLine, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
-import * as XLSX from 'xlsx';
-
-interface ImportRow {
-  analyst_name: string;
-  record_date: string;
-  doubts: number;
-  analyst_id?: string;
-}
 
 const Entries = () => {
   const queryClient = useQueryClient();
@@ -29,8 +20,6 @@ const Entries = () => {
   const [description, setDescription] = useState('');
   const [editingRecord, setEditingRecord] = useState<any>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const [importRows, setImportRows] = useState<ImportRow[]>([]);
-  const [showImportConfirm, setShowImportConfirm] = useState(false);
 
   const { data: analysts = [] } = useQuery({
     queryKey: ['analysts-active'],
@@ -57,10 +46,14 @@ const Entries = () => {
 
   const createMutation = useMutation({
     mutationFn: async () => {
+      if (!analystId) throw new Error('Selecione um analista.');
+      const doubtsNum = parseInt(doubts);
+      if (isNaN(doubtsNum) || doubtsNum < 0) throw new Error('Informe um valor válido para dúvidas.');
+
       const { error } = await supabase.from('doubt_records').insert({
         record_date: date,
         analyst_id: analystId,
-        doubts: parseInt(doubts) || 0,
+        doubts: doubtsNum,
         quantity: 0,
         contacts: 0,
         description: description || null,
@@ -74,7 +67,7 @@ const Entries = () => {
       toast.success('Lançamento registrado!');
       setDoubts(''); setDescription('');
     },
-    onError: () => toast.error('Erro ao registrar lançamento.'),
+    onError: (err: any) => toast.error('Erro: ' + (err?.message || 'Erro ao registrar.')),
   });
 
   const deleteMutation = useMutation({
@@ -106,84 +99,7 @@ const Entries = () => {
       setEditOpen(false);
       setEditingRecord(null);
     },
-    onError: () => toast.error('Erro ao atualizar.'),
-  });
-
-  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const wb = XLSX.read(evt.target?.result, { type: 'binary' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json<any>(ws);
-
-        const rows: ImportRow[] = json.map((row: any) => {
-          const analystName = row['Analista'] || row['analista'] || row['Nome'] || row['nome'] || '';
-          const dateVal = row['Data'] || row['data'] || '';
-          let parsedDate = '';
-          if (typeof dateVal === 'number') {
-            const d = XLSX.SSF.parse_date_code(dateVal);
-            parsedDate = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
-          } else if (typeof dateVal === 'string') {
-            parsedDate = dateVal.includes('/') ? dateVal.split('/').reverse().join('-') : dateVal;
-          }
-          const dbt = parseInt(row['Dúvidas'] || row['duvidas'] || row['Quantidade'] || row['quantidade'] || '0');
-          const match = analysts.find((a) => a.name.toLowerCase().trim() === analystName.toLowerCase().trim());
-          return { analyst_name: analystName, record_date: parsedDate, doubts: dbt, analyst_id: match?.id };
-        }).filter((r: ImportRow) => r.analyst_name && r.record_date && r.analyst_id);
-
-        if (rows.length === 0) {
-          toast.error('Nenhum registro válido encontrado na planilha.');
-          return;
-        }
-
-        setImportRows(rows);
-        setShowImportConfirm(true);
-      } catch {
-        toast.error('Erro ao ler arquivo Excel.');
-      }
-    };
-    reader.readAsBinaryString(file);
-    e.target.value = '';
-  }, [analysts]);
-
-  const importMutation = useMutation({
-    mutationFn: async () => {
-      // Consolidate by analyst + date to avoid duplicates
-      const consolidated = new Map<string, ImportRow>();
-      importRows.forEach((r) => {
-        const key = `${r.analyst_id}_${r.record_date}`;
-        const existing = consolidated.get(key);
-        if (existing) {
-          existing.doubts += r.doubts;
-        } else {
-          consolidated.set(key, { ...r });
-        }
-      });
-
-      const inserts = Array.from(consolidated.values()).map((r) => ({
-        record_date: r.record_date,
-        analyst_id: r.analyst_id!,
-        doubts: r.doubts,
-        quantity: 0,
-        contacts: 0,
-        source: 'imported' as const,
-      }));
-
-      const { error } = await supabase.from('doubt_records').insert(inserts);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['doubt-records'] });
-      queryClient.invalidateQueries({ queryKey: ['doubt-records-all'] });
-      toast.success(`${importRows.length} registros importados!`);
-      setShowImportConfirm(false);
-      setImportRows([]);
-    },
-    onError: () => toast.error('Erro na importação.'),
+    onError: (err: any) => toast.error('Erro: ' + (err?.message || 'Erro ao atualizar.')),
   });
 
   return (
@@ -199,7 +115,7 @@ const Entries = () => {
           <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate(); }} className="space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
-              <Select value={analystId} onValueChange={setAnalystId} required>
+              <Select value={analystId} onValueChange={setAnalystId}>
                 <SelectTrigger><SelectValue placeholder="Selecione analista" /></SelectTrigger>
                 <SelectContent>
                   {analysts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
@@ -218,45 +134,13 @@ const Entries = () => {
         </CardContent>
       </Card>
 
-      {/* Excel Import */}
-      <Card className="border shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2"><FileSpreadsheet className="h-5 w-5 text-primary" /> Importar Excel</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">Colunas esperadas: <strong>Analista</strong>, <strong>Data</strong>, <strong>Dúvidas/Quantidade</strong></p>
-          <label className="cursor-pointer">
-            <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" />
-            <span className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-input bg-background hover:bg-muted transition-colors text-sm font-medium">
-              <Upload className="h-4 w-4" /> Selecionar arquivo
-            </span>
-          </label>
-        </CardContent>
-      </Card>
-
-      {/* Import Confirm Dialog */}
-      <AlertDialog open={showImportConfirm} onOpenChange={setShowImportConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar importação</AlertDialogTitle>
-            <AlertDialogDescription>
-              Foram identificados <strong>{importRows.length}</strong> registros válidos na planilha. Deseja importar os dados?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => { setImportRows([]); }}>Não</AlertDialogCancel>
-            <AlertDialogAction onClick={() => importMutation.mutate()} disabled={importMutation.isPending}>
-              {importMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Sim, importar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       {/* Edit Dialog */}
       <Dialog open={editOpen} onOpenChange={(v) => { if (!v) setEditingRecord(null); setEditOpen(v); }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Editar Lançamento</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Editar Lançamento</DialogTitle>
+            <DialogDescription>Altere os dados do lançamento abaixo.</DialogDescription>
+          </DialogHeader>
           {editingRecord && (
             <form onSubmit={(e) => { e.preventDefault(); updateMutation.mutate(editingRecord); }} className="space-y-3">
               <Input type="date" value={editingRecord.record_date} onChange={(e) => setEditingRecord({ ...editingRecord, record_date: e.target.value })} />

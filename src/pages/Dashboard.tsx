@@ -33,7 +33,7 @@ const Dashboard = () => {
   const { data: records = [], isLoading } = useQuery({
     queryKey: ['doubt-records-all'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('doubt_records').select('*, analysts(name, status, photo_url)').order('record_date');
+      const { data, error } = await supabase.from('doubt_records').select('*, analysts(name, status, photo_url)').is('business_unit_id', null).order('record_date');
       if (error) throw error;
       return data;
     },
