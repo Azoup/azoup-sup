@@ -6,17 +6,15 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Loader2, PenLine, Trash2, Pencil, Building2 } from 'lucide-react';
-import { format, startOfWeek, endOfWeek, addWeeks, parseISO, getWeek, setDay } from 'date-fns';
+import { Loader2, PenLine, Trash2, Pencil, Building2, Calendar } from 'lucide-react';
+import { format, startOfWeek, addWeeks, parseISO, getWeek, setDay, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-// Week helper: Mon 08:00 – Sat 13:00
 function getWeeksForSelection() {
   const weeks = [];
   const today = new Date();
-  // Show last 8 weeks + current + next
   for (let i = -8; i <= 1; i++) {
     const refDate = addWeeks(today, i);
     const monday = startOfWeek(refDate, { weekStartsOn: 1 });
@@ -35,6 +33,7 @@ const EntriesBU = () => {
   const currentMonday = format(startOfWeek(today, { weekStartsOn: 1 }), 'yyyy-MM-dd');
 
   const [selectedWeek, setSelectedWeek] = useState(currentMonday);
+  const [monthFilter, setMonthFilter] = useState('');
   const [buId, setBuId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [contacts, setContacts] = useState('');
@@ -43,10 +42,25 @@ const EntriesBU = () => {
 
   const weeks = useMemo(() => getWeeksForSelection(), []);
 
-  const weekMonday = parseISO(selectedWeek);
-  const weekSaturday = setDay(weekMonday, 6, { weekStartsOn: 1 });
-  const weekStartStr = selectedWeek;
-  const weekEndStr = format(weekSaturday, 'yyyy-MM-dd');
+  const months = useMemo(() => {
+    const result = [];
+    for (let i = 0; i < 12; i++) {
+      const d = subMonths(today, i);
+      result.push({ value: format(d, 'yyyy-MM'), label: format(d, 'MMMM yyyy', { locale: ptBR }) });
+    }
+    return result;
+  }, []);
+
+  // Determine query date range based on month filter or selected week
+  const queryRange = useMemo(() => {
+    if (monthFilter) {
+      const d = parseISO(monthFilter + '-01');
+      return { start: format(startOfMonth(d), 'yyyy-MM-dd'), end: format(endOfMonth(d), 'yyyy-MM-dd') };
+    }
+    const weekMonday = parseISO(selectedWeek);
+    const weekSaturday = setDay(weekMonday, 6, { weekStartsOn: 1 });
+    return { start: selectedWeek, end: format(weekSaturday, 'yyyy-MM-dd') };
+  }, [selectedWeek, monthFilter]);
 
   const { data: businessUnits = [] } = useQuery({
     queryKey: ['business-units-active'],
@@ -58,21 +72,20 @@ const EntriesBU = () => {
   });
 
   const { data: records = [], isLoading } = useQuery({
-    queryKey: ['bu-records', selectedWeek],
+    queryKey: ['bu-records', queryRange.start, queryRange.end],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('doubt_records')
         .select('*, business_units(name)')
         .not('business_unit_id', 'is', null)
-        .gte('record_date', weekStartStr)
-        .lte('record_date', weekEndStr)
+        .gte('record_date', queryRange.start)
+        .lte('record_date', queryRange.end)
         .order('record_date', { ascending: false });
       if (error) throw error;
       return data;
     },
   });
 
-  // Consolidate by BU
   const consolidated = useMemo(() => {
     return records.reduce((acc: Record<string, { buName: string; atendimentos: number; contatos: number }>, r: any) => {
       const buName = (r.business_units as any)?.name || 'Sem unidade';
@@ -84,12 +97,11 @@ const EntriesBU = () => {
     }, {});
   }, [records]);
 
-  // Use the Monday date as record_date for weekly entries
   const createMutation = useMutation({
     mutationFn: async () => {
-      // Need a dummy analyst_id since column is NOT NULL
+      if (!buId) throw new Error('Selecione uma unidade de negócio.');
       const { data: analyst } = await supabase.from('analysts').select('id').limit(1).single();
-      if (!analyst) throw new Error('Nenhum analista cadastrado');
+      if (!analyst) throw new Error('Nenhum analista cadastrado no sistema.');
 
       const { error } = await supabase.from('doubt_records').insert({
         record_date: selectedWeek,
@@ -97,7 +109,7 @@ const EntriesBU = () => {
         quantity: parseInt(quantity) || 0,
         contacts: parseInt(contacts) || 0,
         doubts: 0,
-        business_unit_id: buId || null,
+        business_unit_id: buId,
         source: 'manual',
       });
       if (error) throw error;
@@ -108,7 +120,7 @@ const EntriesBU = () => {
       toast.success('Lançamento registrado!');
       setQuantity(''); setContacts('');
     },
-    onError: () => toast.error('Erro ao registrar.'),
+    onError: (err: any) => toast.error('Erro: ' + (err?.message || 'Erro ao registrar.')),
   });
 
   const deleteMutation = useMutation({
@@ -139,28 +151,47 @@ const EntriesBU = () => {
       setEditOpen(false);
       setEditingRecord(null);
     },
-    onError: () => toast.error('Erro ao atualizar.'),
+    onError: (err: any) => toast.error('Erro: ' + (err?.message || 'Erro ao atualizar.')),
   });
 
   return (
     <div className="space-y-6 animate-fade-in">
       <h1 className="text-2xl font-heading font-bold">Lançamentos B.U</h1>
 
-      {/* Week selector */}
+      {/* Filters */}
       <Card className="border shadow-sm">
         <CardContent className="py-4">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-muted-foreground">Semana:</span>
-            <Select value={selectedWeek} onValueChange={setSelectedWeek}>
-              <SelectTrigger className="w-80">
-                <SelectValue placeholder="Selecione a semana" />
-              </SelectTrigger>
-              <SelectContent>
-                {weeks.map((w) => (
-                  <SelectItem key={w.value} value={w.value}>{w.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-muted-foreground">Semana:</span>
+              <Select value={selectedWeek} onValueChange={(v) => { setSelectedWeek(v); setMonthFilter(''); }}>
+                <SelectTrigger className="w-80">
+                  <SelectValue placeholder="Selecione a semana" />
+                </SelectTrigger>
+                <SelectContent>
+                  {weeks.map((w) => (
+                    <SelectItem key={w.value} value={w.value}>{w.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-3">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium text-muted-foreground">Mês:</span>
+              <Select value={monthFilter} onValueChange={(v) => setMonthFilter(v)}>
+                <SelectTrigger className="w-56">
+                  <SelectValue placeholder="Todos (semana)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {months.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {monthFilter && (
+                <Button variant="ghost" size="sm" onClick={() => setMonthFilter('')}>Limpar</Button>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -212,7 +243,10 @@ const EntriesBU = () => {
       {/* Edit Dialog */}
       <Dialog open={editOpen} onOpenChange={(v) => { if (!v) setEditingRecord(null); setEditOpen(v); }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Editar Lançamento</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Editar Lançamento</DialogTitle>
+            <DialogDescription>Altere os dados do lançamento B.U abaixo.</DialogDescription>
+          </DialogHeader>
           {editingRecord && (
             <form onSubmit={(e) => { e.preventDefault(); updateMutation.mutate(editingRecord); }} className="space-y-3">
               <Select value={editingRecord.business_unit_id || ''} onValueChange={(v) => setEditingRecord({ ...editingRecord, business_unit_id: v })}>
@@ -231,21 +265,19 @@ const EntriesBU = () => {
 
       {/* Records List */}
       <Card className="border shadow-sm">
-        <CardHeader><CardTitle className="text-lg">Registros da Semana</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-lg">Registros {monthFilter ? 'do Mês' : 'da Semana'}</CardTitle></CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
           ) : records.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">Nenhum registro nesta semana.</p>
+            <p className="text-center text-muted-foreground py-8">Nenhum registro neste período.</p>
           ) : (
             <div className="space-y-2">
               {records.map((r: any) => (
                 <div key={r.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-muted/50 transition-colors">
                   <div className="flex items-center gap-4 flex-1 min-w-0">
                     <Badge variant="outline" className="text-xs shrink-0">{(r.business_units as any)?.name || '—'}</Badge>
-                    <Badge variant={r.source === 'imported' ? 'secondary' : 'outline'} className="text-xs shrink-0">
-                      {r.source === 'imported' ? 'Importado' : 'Manual'}
-                    </Badge>
+                    <span className="text-xs text-muted-foreground">{format(parseISO(r.record_date), 'dd/MM/yyyy')}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">At: {r.quantity}</span>
