@@ -41,27 +41,66 @@ export type Database = {
         }
         Relationships: []
       }
+      business_units: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       doubt_records: {
         Row: {
           analyst_id: string
+          business_unit_id: string | null
+          contacts: number
           created_at: string
+          description: string | null
           id: string
           quantity: number
           record_date: string
+          source: string
         }
         Insert: {
           analyst_id: string
+          business_unit_id?: string | null
+          contacts?: number
           created_at?: string
+          description?: string | null
           id?: string
           quantity: number
           record_date?: string
+          source?: string
         }
         Update: {
           analyst_id?: string
+          business_unit_id?: string | null
+          contacts?: number
           created_at?: string
+          description?: string | null
           id?: string
           quantity?: number
           record_date?: string
+          source?: string
         }
         Relationships: [
           {
@@ -69,6 +108,13 @@ export type Database = {
             columns: ["analyst_id"]
             isOneToOne: false
             referencedRelation: "analysts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "doubt_records_business_unit_id_fkey"
+            columns: ["business_unit_id"]
+            isOneToOne: false
+            referencedRelation: "business_units"
             referencedColumns: ["id"]
           },
         ]
