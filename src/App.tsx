@@ -10,6 +10,8 @@ import Analysts from "./pages/Analysts";
 import Entries from "./pages/Entries";
 import EntriesBU from "./pages/EntriesBU";
 import BusinessUnits from "./pages/BusinessUnits";
+import Dashboard from "./pages/Dashboard";
+import DashboardBU from "./pages/DashboardBU";
 import NotFound from "./pages/NotFound";
 import { Loader2 } from "lucide-react";
 
@@ -38,6 +40,8 @@ const App = () => (
           <Routes>
             <Route path="/auth" element={<AuthRoute />} />
             <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/dashboard-bu" element={<ProtectedRoute><DashboardBU /></ProtectedRoute>} />
             <Route path="/analysts" element={<ProtectedRoute><Analysts /></ProtectedRoute>} />
             <Route path="/entries" element={<ProtectedRoute><Entries /></ProtectedRoute>} />
             <Route path="/entries-bu" element={<ProtectedRoute><EntriesBU /></ProtectedRoute>} />

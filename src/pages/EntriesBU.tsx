@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -8,42 +8,24 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Loader2, Upload, PenLine, Trash2, FileSpreadsheet, Eye, Check, X, Pencil } from 'lucide-react';
-import { format } from 'date-fns';
-import * as XLSX from 'xlsx';
-
-interface PreviewRow {
-  analyst_name: string;
-  record_date: string;
-  quantity: number;
-  contacts: number;
-  analyst_id?: string;
-}
+import { Loader2, PenLine, Trash2, Pencil, Building2 } from 'lucide-react';
+import { format, startOfWeek, endOfWeek, parseISO } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 const EntriesBU = () => {
   const queryClient = useQueryClient();
-  const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [analystId, setAnalystId] = useState('');
+  const today = new Date();
+  const [weekStart, setWeekStart] = useState(format(startOfWeek(today), 'yyyy-MM-dd'));
+  const [date, setDate] = useState(format(today, 'yyyy-MM-dd'));
+  const [buId, setBuId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [contacts, setContacts] = useState('');
-  const [buId, setBuId] = useState('');
   const [description, setDescription] = useState('');
-  const [previewData, setPreviewData] = useState<PreviewRow[]>([]);
-  const [showPreview, setShowPreview] = useState(false);
-  const [importBuId, setImportBuId] = useState('');
   const [editingRecord, setEditingRecord] = useState<any>(null);
   const [editOpen, setEditOpen] = useState(false);
 
-  const { data: analysts = [] } = useQuery({
-    queryKey: ['analysts-active'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('analysts').select('*').eq('status', 'active').order('name');
-      if (error) throw error;
-      return data;
-    },
-  });
+  const weekEnd = format(endOfWeek(parseISO(weekStart)), 'yyyy-MM-dd');
 
   const { data: businessUnits = [] } = useQuery({
     queryKey: ['business-units-active'],
@@ -55,24 +37,35 @@ const EntriesBU = () => {
   });
 
   const { data: records = [], isLoading } = useQuery({
-    queryKey: ['bu-records'],
+    queryKey: ['bu-records', weekStart],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('doubt_records')
-        .select('*, analysts(name), business_units(name)')
+        .select('*, business_units(name)')
         .not('business_unit_id', 'is', null)
-        .order('record_date', { ascending: false })
-        .limit(100);
+        .gte('record_date', weekStart)
+        .lte('record_date', weekEnd)
+        .order('record_date', { ascending: false });
       if (error) throw error;
       return data;
     },
   });
 
+  // Consolidate by BU
+  const consolidated = records.reduce((acc: Record<string, { buName: string; atendimentos: number; contatos: number }>, r: any) => {
+    const buName = (r.business_units as any)?.name || 'Sem unidade';
+    const key = r.business_unit_id || 'none';
+    if (!acc[key]) acc[key] = { buName, atendimentos: 0, contatos: 0 };
+    acc[key].atendimentos += r.quantity;
+    acc[key].contatos += r.contacts || 0;
+    return acc;
+  }, {});
+
   const createMutation = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.from('doubt_records').insert({
         record_date: date,
-        analyst_id: analystId,
+        analyst_id: (await supabase.from('analysts').select('id').eq('status', 'active').limit(1).single()).data?.id || '',
         quantity: parseInt(quantity) || 0,
         contacts: parseInt(contacts) || 0,
         business_unit_id: buId || null,
@@ -83,7 +76,6 @@ const EntriesBU = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bu-records'] });
-      queryClient.invalidateQueries({ queryKey: ['doubt-records'] });
       toast.success('Lançamento registrado!');
       setQuantity(''); setContacts(''); setDescription('');
     },
@@ -97,7 +89,6 @@ const EntriesBU = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bu-records'] });
-      queryClient.invalidateQueries({ queryKey: ['doubt-records'] });
       toast.success('Removido!');
     },
   });
@@ -106,7 +97,6 @@ const EntriesBU = () => {
     mutationFn: async (record: any) => {
       const { error } = await supabase.from('doubt_records').update({
         record_date: record.record_date,
-        analyst_id: record.analyst_id,
         quantity: record.quantity,
         contacts: record.contacts,
         business_unit_id: record.business_unit_id || null,
@@ -116,7 +106,6 @@ const EntriesBU = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bu-records'] });
-      queryClient.invalidateQueries({ queryKey: ['doubt-records'] });
       toast.success('Atualizado!');
       setEditOpen(false);
       setEditingRecord(null);
@@ -124,77 +113,48 @@ const EntriesBU = () => {
     onError: () => toast.error('Erro ao atualizar.'),
   });
 
-  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const wb = XLSX.read(evt.target?.result, { type: 'binary' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json<any>(ws);
-
-        const rows: PreviewRow[] = json.map((row: any) => {
-          const analystName = row['Analista'] || row['analista'] || row['Nome'] || row['nome'] || '';
-          const dateVal = row['Data'] || row['data'] || '';
-          let parsedDate = '';
-          if (typeof dateVal === 'number') {
-            const d = XLSX.SSF.parse_date_code(dateVal);
-            parsedDate = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
-          } else if (typeof dateVal === 'string') {
-            parsedDate = dateVal.includes('/') ? dateVal.split('/').reverse().join('-') : dateVal;
-          }
-          const qty = parseInt(row['Quantidade'] || row['quantidade'] || row['Dúvidas'] || row['duvidas'] || row['Atendimentos'] || row['atendimentos'] || '0');
-          const cts = parseInt(row['Contatos'] || row['contatos'] || '0');
-
-          const match = analysts.find((a) => a.name.toLowerCase().trim() === analystName.toLowerCase().trim());
-
-          return { analyst_name: analystName, record_date: parsedDate, quantity: qty, contacts: cts, analyst_id: match?.id };
-        }).filter((r: PreviewRow) => r.analyst_name && r.record_date);
-
-        setPreviewData(rows);
-        setShowPreview(true);
-      } catch {
-        toast.error('Erro ao ler arquivo Excel.');
-      }
-    };
-    reader.readAsBinaryString(file);
-    e.target.value = '';
-  }, [analysts]);
-
-  const importMutation = useMutation({
-    mutationFn: async () => {
-      const validRows = previewData.filter((r) => r.analyst_id);
-      if (validRows.length === 0) throw new Error('Nenhum analista válido');
-
-      const inserts = validRows.map((r) => ({
-        record_date: r.record_date,
-        analyst_id: r.analyst_id!,
-        quantity: r.quantity,
-        contacts: r.contacts,
-        business_unit_id: importBuId || null,
-        source: 'imported' as const,
-      }));
-
-      const { error } = await supabase.from('doubt_records').insert(inserts);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['bu-records'] });
-      queryClient.invalidateQueries({ queryKey: ['doubt-records'] });
-      toast.success(`${previewData.filter((r) => r.analyst_id).length} registros importados!`);
-      setShowPreview(false);
-      setPreviewData([]);
-    },
-    onError: () => toast.error('Erro na importação.'),
-  });
-
   return (
     <div className="space-y-6 animate-fade-in">
       <h1 className="text-2xl font-heading font-bold">Lançamentos B.U</h1>
 
-      {/* Manual Entry */}
+      {/* Week filter */}
+      <Card className="border shadow-sm">
+        <CardContent className="py-4">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-muted-foreground">Semana de:</span>
+            <Input
+              type="date"
+              value={weekStart}
+              onChange={(e) => setWeekStart(format(startOfWeek(parseISO(e.target.value)), 'yyyy-MM-dd'))}
+              className="w-44"
+            />
+            <span className="text-sm text-muted-foreground">
+              {format(parseISO(weekStart), 'dd/MM', { locale: ptBR })} — {format(parseISO(weekEnd), 'dd/MM', { locale: ptBR })}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Consolidated View */}
+      {Object.keys(consolidated).length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {Object.values(consolidated).map((c) => (
+            <Card key={c.buName} className="border shadow-sm">
+              <CardContent className="py-4 flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <Building2 className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium">{c.buName}</p>
+                  <p className="text-sm text-muted-foreground">At: {c.atendimentos} · Ct: {c.contatos}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Manual Entry — no analyst field */}
       <Card className="border shadow-sm">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2"><PenLine className="h-5 w-5 text-primary" /> Novo Lançamento</CardTitle>
@@ -203,99 +163,25 @@ const EntriesBU = () => {
           <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate(); }} className="space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
-              <Select value={analystId} onValueChange={setAnalystId}>
-                <SelectTrigger><SelectValue placeholder="Analista" /></SelectTrigger>
-                <SelectContent>
-                  {analysts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
               <Select value={buId} onValueChange={setBuId}>
                 <SelectTrigger><SelectValue placeholder="Unidade de Negócio" /></SelectTrigger>
                 <SelectContent>
                   {businessUnits.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+              <Textarea placeholder="Descrição (opcional)" value={description} onChange={(e) => setDescription(e.target.value)} className="min-h-[40px]" />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <Input type="number" placeholder="Atendimentos" min="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
               <Input type="number" placeholder="Contatos" min="0" value={contacts} onChange={(e) => setContacts(e.target.value)} />
-              <Textarea placeholder="Descrição (opcional)" value={description} onChange={(e) => setDescription(e.target.value)} className="min-h-[40px]" />
+              <Button type="submit" disabled={createMutation.isPending || !buId}>
+                {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Registrar
+              </Button>
             </div>
-            <Button type="submit" disabled={createMutation.isPending || !analystId || !buId}>
-              {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Registrar
-            </Button>
           </form>
         </CardContent>
       </Card>
-
-      {/* Excel Import */}
-      <Card className="border shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2"><FileSpreadsheet className="h-5 w-5 text-primary" /> Importar Excel</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">Colunas esperadas: <strong>Analista</strong>, <strong>Data</strong>, <strong>Quantidade/Atendimentos</strong>, <strong>Contatos</strong> (opcional)</p>
-          <div className="flex items-center gap-3">
-            <label className="cursor-pointer">
-              <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" />
-              <span className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-input bg-background hover:bg-muted transition-colors text-sm font-medium">
-                <Upload className="h-4 w-4" /> Selecionar arquivo
-              </span>
-            </label>
-            <Select value={importBuId} onValueChange={setImportBuId}>
-              <SelectTrigger className="w-48"><SelectValue placeholder="Unidade (import)" /></SelectTrigger>
-              <SelectContent>
-                {businessUnits.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Preview Dialog */}
-      <Dialog open={showPreview} onOpenChange={setShowPreview}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Eye className="h-5 w-5" /> Pré-visualização ({previewData.length} registros)</DialogTitle>
-          </DialogHeader>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Analista</TableHead>
-                <TableHead>Data</TableHead>
-                <TableHead>Atendimentos</TableHead>
-                <TableHead>Contatos</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {previewData.map((r, i) => (
-                <TableRow key={i}>
-                  <TableCell>{r.analyst_name}</TableCell>
-                  <TableCell>{r.record_date}</TableCell>
-                  <TableCell>{r.quantity}</TableCell>
-                  <TableCell>{r.contacts}</TableCell>
-                  <TableCell>
-                    {r.analyst_id ? (
-                      <Badge variant="default" className="gap-1"><Check className="h-3 w-3" /> OK</Badge>
-                    ) : (
-                      <Badge variant="destructive" className="gap-1"><X className="h-3 w-3" /> Analista não encontrado</Badge>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={() => setShowPreview(false)}>Cancelar</Button>
-            <Button onClick={() => importMutation.mutate()} disabled={importMutation.isPending || previewData.filter(r => r.analyst_id).length === 0}>
-              {importMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Importar {previewData.filter(r => r.analyst_id).length} registros
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Edit Dialog */}
       <Dialog open={editOpen} onOpenChange={(v) => { if (!v) setEditingRecord(null); setEditOpen(v); }}>
@@ -304,10 +190,6 @@ const EntriesBU = () => {
           {editingRecord && (
             <form onSubmit={(e) => { e.preventDefault(); updateMutation.mutate(editingRecord); }} className="space-y-3">
               <Input type="date" value={editingRecord.record_date} onChange={(e) => setEditingRecord({ ...editingRecord, record_date: e.target.value })} />
-              <Select value={editingRecord.analyst_id} onValueChange={(v) => setEditingRecord({ ...editingRecord, analyst_id: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{analysts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
-              </Select>
               <Select value={editingRecord.business_unit_id || ''} onValueChange={(v) => setEditingRecord({ ...editingRecord, business_unit_id: v })}>
                 <SelectTrigger><SelectValue placeholder="Unidade" /></SelectTrigger>
                 <SelectContent>{businessUnits.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
@@ -325,12 +207,12 @@ const EntriesBU = () => {
 
       {/* Records List */}
       <Card className="border shadow-sm">
-        <CardHeader><CardTitle className="text-lg">Registros</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-lg">Registros da Semana</CardTitle></CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
           ) : records.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">Nenhum registro.</p>
+            <p className="text-center text-muted-foreground py-8">Nenhum registro nesta semana.</p>
           ) : (
             <div className="space-y-2">
               {records.map((r: any) => (
@@ -339,8 +221,7 @@ const EntriesBU = () => {
                     <span className="text-sm text-muted-foreground w-24 shrink-0">
                       {format(new Date(r.record_date + 'T00:00:00'), 'dd/MM/yyyy')}
                     </span>
-                    <span className="font-medium truncate">{r.analysts?.name}</span>
-                    <Badge variant="outline" className="text-xs shrink-0">{r.business_units?.name || '—'}</Badge>
+                    <Badge variant="outline" className="text-xs shrink-0">{(r.business_units as any)?.name || '—'}</Badge>
                     <Badge variant={r.source === 'imported' ? 'secondary' : 'outline'} className="text-xs shrink-0">
                       {r.source === 'imported' ? 'Importado' : 'Manual'}
                     </Badge>
