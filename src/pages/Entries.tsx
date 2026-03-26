@@ -3,17 +3,18 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { Loader2, Trash2, PenLine, Upload, FileSpreadsheet, Eye, Check, X, Pencil } from 'lucide-react';
+import { Loader2, Trash2, PenLine, Upload, FileSpreadsheet, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import * as XLSX from 'xlsx';
 
-interface PreviewRow {
+interface ImportRow {
   analyst_name: string;
   record_date: string;
   doubts: number;
@@ -24,13 +25,12 @@ const Entries = () => {
   const queryClient = useQueryClient();
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [analystId, setAnalystId] = useState('');
-  const [quantity, setQuantity] = useState('');
-  const [contacts, setContacts] = useState('');
   const [doubts, setDoubts] = useState('');
-  const [previewData, setPreviewData] = useState<PreviewRow[]>([]);
-  const [showPreview, setShowPreview] = useState(false);
+  const [description, setDescription] = useState('');
   const [editingRecord, setEditingRecord] = useState<any>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [importRows, setImportRows] = useState<ImportRow[]>([]);
+  const [showImportConfirm, setShowImportConfirm] = useState(false);
 
   const { data: analysts = [] } = useQuery({
     queryKey: ['analysts-active'],
@@ -47,6 +47,7 @@ const Entries = () => {
       const { data, error } = await supabase
         .from('doubt_records')
         .select('*, analysts(name)')
+        .is('business_unit_id', null)
         .order('record_date', { ascending: false })
         .limit(50);
       if (error) throw error;
@@ -59,9 +60,10 @@ const Entries = () => {
       const { error } = await supabase.from('doubt_records').insert({
         record_date: date,
         analyst_id: analystId,
-        quantity: parseInt(quantity) || 0,
-        contacts: parseInt(contacts) || 0,
         doubts: parseInt(doubts) || 0,
+        quantity: 0,
+        contacts: 0,
+        description: description || null,
         source: 'manual',
       });
       if (error) throw error;
@@ -70,7 +72,7 @@ const Entries = () => {
       queryClient.invalidateQueries({ queryKey: ['doubt-records'] });
       queryClient.invalidateQueries({ queryKey: ['doubt-records-all'] });
       toast.success('Lançamento registrado!');
-      setQuantity(''); setContacts(''); setDoubts('');
+      setDoubts(''); setDescription('');
     },
     onError: () => toast.error('Erro ao registrar lançamento.'),
   });
@@ -92,9 +94,8 @@ const Entries = () => {
       const { error } = await supabase.from('doubt_records').update({
         record_date: record.record_date,
         analyst_id: record.analyst_id,
-        quantity: record.quantity,
-        contacts: record.contacts,
         doubts: record.doubts,
+        description: record.description || null,
       }).eq('id', record.id);
       if (error) throw error;
     },
@@ -119,7 +120,7 @@ const Entries = () => {
         const ws = wb.Sheets[wb.SheetNames[0]];
         const json = XLSX.utils.sheet_to_json<any>(ws);
 
-        const rows: PreviewRow[] = json.map((row: any) => {
+        const rows: ImportRow[] = json.map((row: any) => {
           const analystName = row['Analista'] || row['analista'] || row['Nome'] || row['nome'] || '';
           const dateVal = row['Data'] || row['data'] || '';
           let parsedDate = '';
@@ -131,12 +132,16 @@ const Entries = () => {
           }
           const dbt = parseInt(row['Dúvidas'] || row['duvidas'] || row['Quantidade'] || row['quantidade'] || '0');
           const match = analysts.find((a) => a.name.toLowerCase().trim() === analystName.toLowerCase().trim());
-
           return { analyst_name: analystName, record_date: parsedDate, doubts: dbt, analyst_id: match?.id };
-        }).filter((r: PreviewRow) => r.analyst_name && r.record_date);
+        }).filter((r: ImportRow) => r.analyst_name && r.record_date && r.analyst_id);
 
-        setPreviewData(rows);
-        setShowPreview(true);
+        if (rows.length === 0) {
+          toast.error('Nenhum registro válido encontrado na planilha.');
+          return;
+        }
+
+        setImportRows(rows);
+        setShowImportConfirm(true);
       } catch {
         toast.error('Erro ao ler arquivo Excel.');
       }
@@ -147,10 +152,19 @@ const Entries = () => {
 
   const importMutation = useMutation({
     mutationFn: async () => {
-      const validRows = previewData.filter((r) => r.analyst_id);
-      if (validRows.length === 0) throw new Error('Nenhum analista válido');
+      // Consolidate by analyst + date to avoid duplicates
+      const consolidated = new Map<string, ImportRow>();
+      importRows.forEach((r) => {
+        const key = `${r.analyst_id}_${r.record_date}`;
+        const existing = consolidated.get(key);
+        if (existing) {
+          existing.doubts += r.doubts;
+        } else {
+          consolidated.set(key, { ...r });
+        }
+      });
 
-      const inserts = validRows.map((r) => ({
+      const inserts = Array.from(consolidated.values()).map((r) => ({
         record_date: r.record_date,
         analyst_id: r.analyst_id!,
         doubts: r.doubts,
@@ -165,16 +179,16 @@ const Entries = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['doubt-records'] });
       queryClient.invalidateQueries({ queryKey: ['doubt-records-all'] });
-      toast.success(`${previewData.filter((r) => r.analyst_id).length} registros importados!`);
-      setShowPreview(false);
-      setPreviewData([]);
+      toast.success(`${importRows.length} registros importados!`);
+      setShowImportConfirm(false);
+      setImportRows([]);
     },
     onError: () => toast.error('Erro na importação.'),
   });
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <h1 className="text-2xl font-heading font-bold">Lançamentos</h1>
+      <h1 className="text-2xl font-heading font-bold">Lançamentos Dúvidas</h1>
 
       {/* Manual Entry */}
       <Card className="border shadow-sm">
@@ -182,24 +196,24 @@ const Entries = () => {
           <CardTitle className="text-lg flex items-center gap-2"><PenLine className="h-5 w-5 text-primary" /> Novo Lançamento</CardTitle>
         </CardHeader>
         <CardContent>
-          <form
-            onSubmit={(e) => { e.preventDefault(); createMutation.mutate(); }}
-            className="grid grid-cols-1 sm:grid-cols-6 gap-3"
-          >
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
-            <Select value={analystId} onValueChange={setAnalystId} required>
-              <SelectTrigger><SelectValue placeholder="Selecione analista" /></SelectTrigger>
-              <SelectContent>
-                {analysts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Input type="number" placeholder="Atendimentos" min="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-            <Input type="number" placeholder="Contatos" min="0" value={contacts} onChange={(e) => setContacts(e.target.value)} />
-            <Input type="number" placeholder="Dúvidas" min="0" value={doubts} onChange={(e) => setDoubts(e.target.value)} />
-            <Button type="submit" disabled={createMutation.isPending || !analystId}>
-              {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Registrar
-            </Button>
+          <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate(); }} className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+              <Select value={analystId} onValueChange={setAnalystId} required>
+                <SelectTrigger><SelectValue placeholder="Selecione analista" /></SelectTrigger>
+                <SelectContent>
+                  {analysts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Input type="number" placeholder="Dúvidas" min="0" value={doubts} onChange={(e) => setDoubts(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Textarea placeholder="Observações (opcional)" value={description} onChange={(e) => setDescription(e.target.value)} className="min-h-[40px] sm:col-span-2" />
+              <Button type="submit" disabled={createMutation.isPending || !analystId} className="self-end">
+                {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Registrar
+              </Button>
+            </div>
           </form>
         </CardContent>
       </Card>
@@ -220,47 +234,24 @@ const Entries = () => {
         </CardContent>
       </Card>
 
-      {/* Preview Dialog */}
-      <Dialog open={showPreview} onOpenChange={setShowPreview}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Eye className="h-5 w-5" /> Pré-visualização ({previewData.length} registros)</DialogTitle>
-          </DialogHeader>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Analista</TableHead>
-                <TableHead>Data</TableHead>
-                <TableHead>Dúvidas</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {previewData.map((r, i) => (
-                <TableRow key={i}>
-                  <TableCell>{r.analyst_name}</TableCell>
-                  <TableCell>{r.record_date}</TableCell>
-                  <TableCell>{r.doubts}</TableCell>
-                  <TableCell>
-                    {r.analyst_id ? (
-                      <Badge variant="default" className="gap-1"><Check className="h-3 w-3" /> OK</Badge>
-                    ) : (
-                      <Badge variant="destructive" className="gap-1"><X className="h-3 w-3" /> Não encontrado</Badge>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={() => setShowPreview(false)}>Cancelar</Button>
-            <Button onClick={() => importMutation.mutate()} disabled={importMutation.isPending || previewData.filter(r => r.analyst_id).length === 0}>
+      {/* Import Confirm Dialog */}
+      <AlertDialog open={showImportConfirm} onOpenChange={setShowImportConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar importação</AlertDialogTitle>
+            <AlertDialogDescription>
+              Foram identificados <strong>{importRows.length}</strong> registros válidos na planilha. Deseja importar os dados?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setImportRows([]); }}>Não</AlertDialogCancel>
+            <AlertDialogAction onClick={() => importMutation.mutate()} disabled={importMutation.isPending}>
               {importMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Importar {previewData.filter(r => r.analyst_id).length} registros
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+              Sim, importar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Edit Dialog */}
       <Dialog open={editOpen} onOpenChange={(v) => { if (!v) setEditingRecord(null); setEditOpen(v); }}>
@@ -273,9 +264,8 @@ const Entries = () => {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>{analysts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
               </Select>
-              <Input type="number" placeholder="Atendimentos" value={editingRecord.quantity} onChange={(e) => setEditingRecord({ ...editingRecord, quantity: parseInt(e.target.value) || 0 })} />
-              <Input type="number" placeholder="Contatos" value={editingRecord.contacts} onChange={(e) => setEditingRecord({ ...editingRecord, contacts: parseInt(e.target.value) || 0 })} />
               <Input type="number" placeholder="Dúvidas" value={editingRecord.doubts || 0} onChange={(e) => setEditingRecord({ ...editingRecord, doubts: parseInt(e.target.value) || 0 })} />
+              <Textarea placeholder="Observações" value={editingRecord.description || ''} onChange={(e) => setEditingRecord({ ...editingRecord, description: e.target.value })} />
               <Button type="submit" className="w-full" disabled={updateMutation.isPending}>
                 {updateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Salvar
               </Button>
@@ -306,8 +296,6 @@ const Entries = () => {
                     </Badge>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-xs text-muted-foreground">At: {r.quantity}</span>
-                    <span className="text-xs text-muted-foreground">Ct: {r.contacts}</span>
                     <span className="inline-flex items-center justify-center min-w-[2rem] px-2 py-0.5 rounded-full bg-primary/10 text-primary text-sm font-bold">
                       Dv: {r.doubts || 0}
                     </span>

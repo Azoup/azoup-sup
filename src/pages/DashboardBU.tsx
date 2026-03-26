@@ -254,7 +254,7 @@ const DashboardBU = () => {
                     <YAxis tick={{ fontSize: 12 }} />
                     <Tooltip />
                     <Legend />
-                    <Line type="monotone" dataKey="atendimentos" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3 }} name="Atendimentos" />
+                    <Line type="monotone" dataKey="atendimentos" stroke="hsl(var(--chart-4))" strokeWidth={2} dot={{ r: 3 }} name="Atendimentos" />
                     <Line type="monotone" dataKey="contatos" stroke="hsl(var(--chart-2))" strokeWidth={2} dot={{ r: 3 }} name="Contatos" />
                   </LineChart>
                 </ResponsiveContainer>

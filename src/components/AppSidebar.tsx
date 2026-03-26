@@ -17,7 +17,7 @@ const items = [
   { title: 'Início', url: '/', icon: LayoutDashboard },
   { title: 'Dashboard Dúvidas', url: '/dashboard', icon: BarChart3 },
   { title: 'Dashboard B.U', url: '/dashboard-bu', icon: Building2 },
-  { title: 'Lançamentos', url: '/entries', icon: PenLine },
+  { title: 'Lançamentos Dúvidas', url: '/entries', icon: PenLine },
   { title: 'Lançamentos B.U', url: '/entries-bu', icon: FileSpreadsheet },
   { title: 'Analistas', url: '/analysts', icon: Users },
   { title: 'Unidades', url: '/business-units', icon: Building2 },

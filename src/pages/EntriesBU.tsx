@@ -1,31 +1,52 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { Loader2, PenLine, Trash2, Pencil, Building2 } from 'lucide-react';
-import { format, startOfWeek, endOfWeek, parseISO } from 'date-fns';
+import { format, startOfWeek, endOfWeek, addWeeks, parseISO, getWeek, setDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+
+// Week helper: Mon 08:00 – Sat 13:00
+function getWeeksForSelection() {
+  const weeks = [];
+  const today = new Date();
+  // Show last 8 weeks + current + next
+  for (let i = -8; i <= 1; i++) {
+    const refDate = addWeeks(today, i);
+    const monday = startOfWeek(refDate, { weekStartsOn: 1 });
+    const saturday = setDay(monday, 6, { weekStartsOn: 1 });
+    const weekNum = getWeek(monday, { weekStartsOn: 1 });
+    const label = `Semana ${weekNum} — ${format(monday, 'dd/MM', { locale: ptBR })} a ${format(saturday, 'dd/MM', { locale: ptBR })}`;
+    const value = format(monday, 'yyyy-MM-dd');
+    weeks.push({ label, value, monday, saturday });
+  }
+  return weeks;
+}
 
 const EntriesBU = () => {
   const queryClient = useQueryClient();
   const today = new Date();
-  const [weekStart, setWeekStart] = useState(format(startOfWeek(today), 'yyyy-MM-dd'));
-  const [date, setDate] = useState(format(today, 'yyyy-MM-dd'));
+  const currentMonday = format(startOfWeek(today, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+
+  const [selectedWeek, setSelectedWeek] = useState(currentMonday);
   const [buId, setBuId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [contacts, setContacts] = useState('');
-  const [description, setDescription] = useState('');
   const [editingRecord, setEditingRecord] = useState<any>(null);
   const [editOpen, setEditOpen] = useState(false);
 
-  const weekEnd = format(endOfWeek(parseISO(weekStart)), 'yyyy-MM-dd');
+  const weeks = useMemo(() => getWeeksForSelection(), []);
+
+  const weekMonday = parseISO(selectedWeek);
+  const weekSaturday = setDay(weekMonday, 6, { weekStartsOn: 1 });
+  const weekStartStr = selectedWeek;
+  const weekEndStr = format(weekSaturday, 'yyyy-MM-dd');
 
   const { data: businessUnits = [] } = useQuery({
     queryKey: ['business-units-active'],
@@ -37,14 +58,14 @@ const EntriesBU = () => {
   });
 
   const { data: records = [], isLoading } = useQuery({
-    queryKey: ['bu-records', weekStart],
+    queryKey: ['bu-records', selectedWeek],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('doubt_records')
         .select('*, business_units(name)')
         .not('business_unit_id', 'is', null)
-        .gte('record_date', weekStart)
-        .lte('record_date', weekEnd)
+        .gte('record_date', weekStartStr)
+        .lte('record_date', weekEndStr)
         .order('record_date', { ascending: false });
       if (error) throw error;
       return data;
@@ -52,32 +73,40 @@ const EntriesBU = () => {
   });
 
   // Consolidate by BU
-  const consolidated = records.reduce((acc: Record<string, { buName: string; atendimentos: number; contatos: number }>, r: any) => {
-    const buName = (r.business_units as any)?.name || 'Sem unidade';
-    const key = r.business_unit_id || 'none';
-    if (!acc[key]) acc[key] = { buName, atendimentos: 0, contatos: 0 };
-    acc[key].atendimentos += r.quantity;
-    acc[key].contatos += r.contacts || 0;
-    return acc;
-  }, {});
+  const consolidated = useMemo(() => {
+    return records.reduce((acc: Record<string, { buName: string; atendimentos: number; contatos: number }>, r: any) => {
+      const buName = (r.business_units as any)?.name || 'Sem unidade';
+      const key = r.business_unit_id || 'none';
+      if (!acc[key]) acc[key] = { buName, atendimentos: 0, contatos: 0 };
+      acc[key].atendimentos += r.quantity;
+      acc[key].contatos += r.contacts || 0;
+      return acc;
+    }, {});
+  }, [records]);
 
+  // Use the Monday date as record_date for weekly entries
   const createMutation = useMutation({
     mutationFn: async () => {
+      // Need a dummy analyst_id since column is NOT NULL
+      const { data: analyst } = await supabase.from('analysts').select('id').limit(1).single();
+      if (!analyst) throw new Error('Nenhum analista cadastrado');
+
       const { error } = await supabase.from('doubt_records').insert({
-        record_date: date,
-        analyst_id: (await supabase.from('analysts').select('id').eq('status', 'active').limit(1).single()).data?.id || '',
+        record_date: selectedWeek,
+        analyst_id: analyst.id,
         quantity: parseInt(quantity) || 0,
         contacts: parseInt(contacts) || 0,
+        doubts: 0,
         business_unit_id: buId || null,
-        description: description || null,
         source: 'manual',
       });
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bu-records'] });
+      queryClient.invalidateQueries({ queryKey: ['bu-records-dashboard'] });
       toast.success('Lançamento registrado!');
-      setQuantity(''); setContacts(''); setDescription('');
+      setQuantity(''); setContacts('');
     },
     onError: () => toast.error('Erro ao registrar.'),
   });
@@ -89,6 +118,7 @@ const EntriesBU = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bu-records'] });
+      queryClient.invalidateQueries({ queryKey: ['bu-records-dashboard'] });
       toast.success('Removido!');
     },
   });
@@ -96,16 +126,15 @@ const EntriesBU = () => {
   const updateMutation = useMutation({
     mutationFn: async (record: any) => {
       const { error } = await supabase.from('doubt_records').update({
-        record_date: record.record_date,
         quantity: record.quantity,
         contacts: record.contacts,
         business_unit_id: record.business_unit_id || null,
-        description: record.description || null,
       }).eq('id', record.id);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bu-records'] });
+      queryClient.invalidateQueries({ queryKey: ['bu-records-dashboard'] });
       toast.success('Atualizado!');
       setEditOpen(false);
       setEditingRecord(null);
@@ -117,20 +146,21 @@ const EntriesBU = () => {
     <div className="space-y-6 animate-fade-in">
       <h1 className="text-2xl font-heading font-bold">Lançamentos B.U</h1>
 
-      {/* Week filter */}
+      {/* Week selector */}
       <Card className="border shadow-sm">
         <CardContent className="py-4">
           <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-muted-foreground">Semana de:</span>
-            <Input
-              type="date"
-              value={weekStart}
-              onChange={(e) => setWeekStart(format(startOfWeek(parseISO(e.target.value)), 'yyyy-MM-dd'))}
-              className="w-44"
-            />
-            <span className="text-sm text-muted-foreground">
-              {format(parseISO(weekStart), 'dd/MM', { locale: ptBR })} — {format(parseISO(weekEnd), 'dd/MM', { locale: ptBR })}
-            </span>
+            <span className="text-sm font-medium text-muted-foreground">Semana:</span>
+            <Select value={selectedWeek} onValueChange={setSelectedWeek}>
+              <SelectTrigger className="w-80">
+                <SelectValue placeholder="Selecione a semana" />
+              </SelectTrigger>
+              <SelectContent>
+                {weeks.map((w) => (
+                  <SelectItem key={w.value} value={w.value}>{w.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
@@ -154,7 +184,7 @@ const EntriesBU = () => {
         </div>
       )}
 
-      {/* Manual Entry — no analyst field */}
+      {/* New Entry */}
       <Card className="border shadow-sm">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2"><PenLine className="h-5 w-5 text-primary" /> Novo Lançamento</CardTitle>
@@ -162,23 +192,19 @@ const EntriesBU = () => {
         <CardContent>
           <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate(); }} className="space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
               <Select value={buId} onValueChange={setBuId}>
                 <SelectTrigger><SelectValue placeholder="Unidade de Negócio" /></SelectTrigger>
                 <SelectContent>
                   {businessUnits.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <Textarea placeholder="Descrição (opcional)" value={description} onChange={(e) => setDescription(e.target.value)} className="min-h-[40px]" />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <Input type="number" placeholder="Atendimentos" min="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
               <Input type="number" placeholder="Contatos" min="0" value={contacts} onChange={(e) => setContacts(e.target.value)} />
-              <Button type="submit" disabled={createMutation.isPending || !buId}>
-                {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Registrar
-              </Button>
             </div>
+            <Button type="submit" disabled={createMutation.isPending || !buId}>
+              {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Registrar
+            </Button>
           </form>
         </CardContent>
       </Card>
@@ -189,14 +215,12 @@ const EntriesBU = () => {
           <DialogHeader><DialogTitle>Editar Lançamento</DialogTitle></DialogHeader>
           {editingRecord && (
             <form onSubmit={(e) => { e.preventDefault(); updateMutation.mutate(editingRecord); }} className="space-y-3">
-              <Input type="date" value={editingRecord.record_date} onChange={(e) => setEditingRecord({ ...editingRecord, record_date: e.target.value })} />
               <Select value={editingRecord.business_unit_id || ''} onValueChange={(v) => setEditingRecord({ ...editingRecord, business_unit_id: v })}>
                 <SelectTrigger><SelectValue placeholder="Unidade" /></SelectTrigger>
                 <SelectContent>{businessUnits.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
               </Select>
               <Input type="number" placeholder="Atendimentos" value={editingRecord.quantity} onChange={(e) => setEditingRecord({ ...editingRecord, quantity: parseInt(e.target.value) || 0 })} />
               <Input type="number" placeholder="Contatos" value={editingRecord.contacts} onChange={(e) => setEditingRecord({ ...editingRecord, contacts: parseInt(e.target.value) || 0 })} />
-              <Textarea placeholder="Descrição" value={editingRecord.description || ''} onChange={(e) => setEditingRecord({ ...editingRecord, description: e.target.value })} />
               <Button type="submit" className="w-full" disabled={updateMutation.isPending}>
                 {updateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Salvar
               </Button>
@@ -218,9 +242,6 @@ const EntriesBU = () => {
               {records.map((r: any) => (
                 <div key={r.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-muted/50 transition-colors">
                   <div className="flex items-center gap-4 flex-1 min-w-0">
-                    <span className="text-sm text-muted-foreground w-24 shrink-0">
-                      {format(new Date(r.record_date + 'T00:00:00'), 'dd/MM/yyyy')}
-                    </span>
                     <Badge variant="outline" className="text-xs shrink-0">{(r.business_units as any)?.name || '—'}</Badge>
                     <Badge variant={r.source === 'imported' ? 'secondary' : 'outline'} className="text-xs shrink-0">
                       {r.source === 'imported' ? 'Importado' : 'Manual'}
