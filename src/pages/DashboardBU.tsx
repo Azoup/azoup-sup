@@ -283,6 +283,7 @@ const DashboardBU = () => {
           </div>
         </>
       )}
+      </div>
     </div>
   );
 };
