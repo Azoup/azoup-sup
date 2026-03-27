@@ -149,6 +149,7 @@ const Dashboard = () => {
         </div>
       </div>
 
+      <div id="dashboard-duvidas-content">
       {/* Filters */}
       <Card className="border shadow-sm">
         <CardContent className="py-4">
