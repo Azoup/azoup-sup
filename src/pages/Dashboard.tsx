@@ -127,9 +127,26 @@ const Dashboard = () => {
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <h1 className="text-2xl font-heading font-bold">Dashboard — Dúvidas</h1>
-        <Button variant="outline" size="sm" onClick={exportCSV}>
-          <Download className="mr-2 h-4 w-4" /> Exportar CSV
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={exportCSV}>
+            <Download className="mr-2 h-4 w-4" /> Exportar CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={async () => {
+            const el = document.getElementById('dashboard-duvidas-content');
+            if (!el) return;
+            const html2canvas = (await import('html2canvas')).default;
+            const { jsPDF } = await import('jspdf');
+            const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfW = pdf.internal.pageSize.getWidth();
+            const pdfH = (canvas.height * pdfW) / canvas.width;
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
+            pdf.save(`dashboard_duvidas_${dateFrom}_${dateTo}.pdf`);
+          }}>
+            <FileText className="mr-2 h-4 w-4" /> Gerar PDF
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
