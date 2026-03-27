@@ -155,6 +155,7 @@ const DashboardBU = () => {
         </div>
       </div>
 
+      <div id="dashboard-bu-content">
       {/* Filters */}
       <Card className="border shadow-sm">
         <CardContent className="py-4">
