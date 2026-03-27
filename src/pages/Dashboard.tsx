@@ -62,7 +62,7 @@ const Dashboard = () => {
     const map = new Map<string, number>();
     filteredRecords.forEach((r: any) => {
       let key = r.record_date;
-      if (viewMode === 'weekly') key = format(startOfWeek(parseISO(r.record_date)), 'yyyy-MM-dd');
+      if (viewMode === 'weekly') key = format(startOfWeek(parseISO(r.record_date), { weekStartsOn: 1 }), 'yyyy-MM-dd');
       else if (viewMode === 'monthly') key = r.record_date.slice(0, 7);
       map.set(key, (map.get(key) || 0) + (r.doubts || 0));
     });
