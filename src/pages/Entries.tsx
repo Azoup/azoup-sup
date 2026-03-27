@@ -9,8 +9,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Loader2, Trash2, PenLine, Pencil } from 'lucide-react';
+import { Loader2, Trash2, PenLine, Pencil, Filter } from 'lucide-react';
 import { format } from 'date-fns';
+import { useMemo } from 'react';
 
 const Entries = () => {
   const queryClient = useQueryClient();
