@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { HelpCircle, TrendingUp, Users, Download, Loader2, Filter, Trophy } from 'lucide-react';
+import { HelpCircle, TrendingUp, Users, Download, Loader2, Filter, Trophy, FileText } from 'lucide-react';
+import { useRef } from 'react';
 import { format, startOfMonth, endOfMonth, subMonths, parseISO, startOfWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
