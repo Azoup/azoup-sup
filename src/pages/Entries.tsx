@@ -47,14 +47,15 @@ const Entries = () => {
   const createMutation = useMutation({
     mutationFn: async () => {
       if (!analystId) throw new Error('Selecione um analista.');
-      const doubtsNum = parseInt(doubts);
-      if (isNaN(doubtsNum) || doubtsNum < 0) throw new Error('Informe um valor válido para dúvidas.');
+      if (!date) throw new Error('Selecione a data do lançamento.');
+      const doubtsNum = parseInt(doubts, 10);
+      if (Number.isNaN(doubtsNum) || doubtsNum <= 0) throw new Error('Informe um valor maior que zero para dúvidas.');
 
       const { error } = await supabase.from('doubt_records').insert({
         record_date: date,
         analyst_id: analystId,
         doubts: doubtsNum,
-        quantity: 0,
+        quantity: doubtsNum,
         contacts: 0,
         description: description || null,
         source: 'manual',
@@ -84,10 +85,15 @@ const Entries = () => {
 
   const updateMutation = useMutation({
     mutationFn: async (record: any) => {
+      if (!record?.analyst_id) throw new Error('Selecione um analista.');
+      const doubtsNum = parseInt(String(record?.doubts ?? ''), 10);
+      if (Number.isNaN(doubtsNum) || doubtsNum <= 0) throw new Error('Informe um valor maior que zero para dúvidas.');
+
       const { error } = await supabase.from('doubt_records').update({
         record_date: record.record_date,
         analyst_id: record.analyst_id,
-        doubts: record.doubts,
+        doubts: doubtsNum,
+        quantity: doubtsNum,
         description: record.description || null,
       }).eq('id', record.id);
       if (error) throw error;
