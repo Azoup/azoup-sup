@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { HelpCircle, TrendingUp, Users, Download, Loader2, Filter, Trophy } from 'lucide-react';
+import { HelpCircle, TrendingUp, Users, Download, Loader2, Filter, Trophy, FileText } from 'lucide-react';
+import { useRef } from 'react';
 import { format, startOfMonth, endOfMonth, subMonths, parseISO, startOfWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -126,11 +127,29 @@ const Dashboard = () => {
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <h1 className="text-2xl font-heading font-bold">Dashboard — Dúvidas</h1>
-        <Button variant="outline" size="sm" onClick={exportCSV}>
-          <Download className="mr-2 h-4 w-4" /> Exportar CSV
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={exportCSV}>
+            <Download className="mr-2 h-4 w-4" /> Exportar CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={async () => {
+            const el = document.getElementById('dashboard-duvidas-content');
+            if (!el) return;
+            const html2canvas = (await import('html2canvas')).default;
+            const { jsPDF } = await import('jspdf');
+            const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfW = pdf.internal.pageSize.getWidth();
+            const pdfH = (canvas.height * pdfW) / canvas.width;
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
+            pdf.save(`dashboard_duvidas_${dateFrom}_${dateTo}.pdf`);
+          }}>
+            <FileText className="mr-2 h-4 w-4" /> Gerar PDF
+          </Button>
+        </div>
       </div>
 
+      <div id="dashboard-duvidas-content">
       {/* Filters */}
       <Card className="border shadow-sm">
         <CardContent className="py-4">
@@ -282,6 +301,7 @@ const Dashboard = () => {
           </Card>
         </>
       )}
+      </div>
     </div>
   );
 };
