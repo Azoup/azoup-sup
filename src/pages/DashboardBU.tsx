@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LineChart, Line } from 'recharts';
-import { Building2, Download, Loader2, Filter, Phone, HelpCircle } from 'lucide-react';
+import { Building2, Download, Loader2, Filter, Phone, HelpCircle, FileText } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, subMonths, parseISO, startOfWeek, setDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
