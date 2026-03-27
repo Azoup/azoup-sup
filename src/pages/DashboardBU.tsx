@@ -7,13 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LineChart, Line } from 'recharts';
 import { Building2, Download, Loader2, Filter, Phone, HelpCircle } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, subMonths, parseISO, startOfWeek, endOfWeek } from 'date-fns';
+import { format, startOfMonth, endOfMonth, subMonths, parseISO, startOfWeek, setDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 const DashboardBU = () => {
   const today = new Date();
-  const [dateFrom, setDateFrom] = useState(format(startOfWeek(today), 'yyyy-MM-dd'));
-  const [dateTo, setDateTo] = useState(format(endOfWeek(today), 'yyyy-MM-dd'));
+  const [dateFrom, setDateFrom] = useState(format(startOfWeek(today, { weekStartsOn: 1 }), 'yyyy-MM-dd'));
+  const [dateTo, setDateTo] = useState(format(setDay(startOfWeek(today, { weekStartsOn: 1 }), 6, { weekStartsOn: 1 }), 'yyyy-MM-dd'));
   const [monthFilter, setMonthFilter] = useState('');
   const [weekFilter, setWeekFilter] = useState('current');
 
@@ -31,8 +31,10 @@ const DashboardBU = () => {
     setWeekFilter(val);
     setMonthFilter('');
     if (val === 'current') {
-      setDateFrom(format(startOfWeek(today), 'yyyy-MM-dd'));
-      setDateTo(format(endOfWeek(today), 'yyyy-MM-dd'));
+      const monday = startOfWeek(today, { weekStartsOn: 1 });
+      const saturday = setDay(monday, 6, { weekStartsOn: 1 });
+      setDateFrom(format(monday, 'yyyy-MM-dd'));
+      setDateTo(format(saturday, 'yyyy-MM-dd'));
     }
   };
 
@@ -80,7 +82,7 @@ const DashboardBU = () => {
   const weeklyData = useMemo(() => {
     const map = new Map<string, { atendimentos: number; contatos: number }>();
     filteredRecords.forEach((r: any) => {
-      const key = format(startOfWeek(parseISO(r.record_date)), 'dd/MM');
+      const key = format(startOfWeek(parseISO(r.record_date), { weekStartsOn: 1 }), 'dd/MM');
       const existing = map.get(key) || { atendimentos: 0, contatos: 0 };
       existing.atendimentos += r.quantity;
       existing.contatos += r.contacts || 0;
@@ -91,7 +93,7 @@ const DashboardBU = () => {
 
   const monthlyData = useMemo(() => {
     const map = new Map<string, { atendimentos: number; contatos: number }>();
-    records.forEach((r: any) => {
+    filteredRecords.forEach((r: any) => {
       const key = r.record_date.slice(0, 7);
       const existing = map.get(key) || { atendimentos: 0, contatos: 0 };
       existing.atendimentos += r.quantity;
@@ -102,7 +104,7 @@ const DashboardBU = () => {
       .sort(([a], [b]) => a.localeCompare(b))
       .slice(-6)
       .map(([month, vals]) => ({ month, ...vals }));
-  }, [records]);
+  }, [filteredRecords]);
 
   const exportCSV = () => {
     const rows = [['Data', 'Unidade', 'Atendimentos', 'Contatos', 'Origem']];
