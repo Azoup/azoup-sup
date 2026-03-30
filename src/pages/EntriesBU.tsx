@@ -151,6 +151,7 @@ const EntriesBU = () => {
       queryClient.invalidateQueries({ queryKey: ['bu-records'] });
       queryClient.invalidateQueries({ queryKey: ['bu-records-dashboard'] });
       toast.success('Atualizado!');
+      logActivity('Edição de lançamento (B.U)');
       setEditOpen(false);
       setEditingRecord(null);
     },
