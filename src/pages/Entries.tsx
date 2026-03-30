@@ -108,6 +108,7 @@ const Entries = () => {
       queryClient.invalidateQueries({ queryKey: ['doubt-records'] });
       queryClient.invalidateQueries({ queryKey: ['doubt-records-all'] });
       toast.success('Atualizado!');
+      logActivity('Edição de lançamento (Dúvidas)');
       setEditOpen(false);
       setEditingRecord(null);
     },
