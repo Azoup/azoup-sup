@@ -81,10 +81,11 @@ const Entries = () => {
       const { error } = await supabase.from('doubt_records').delete().eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ['doubt-records'] });
       queryClient.invalidateQueries({ queryKey: ['doubt-records-all'] });
       toast.success('Lançamento removido!');
+      logActivity('Exclusão de lançamento (Dúvidas)', `ID: ${id}`);
     },
   });
 
