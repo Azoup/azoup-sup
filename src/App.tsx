@@ -12,6 +12,8 @@ import EntriesBU from "./pages/EntriesBU";
 import BusinessUnits from "./pages/BusinessUnits";
 import Dashboard from "./pages/Dashboard";
 import DashboardBU from "./pages/DashboardBU";
+import ChangePassword from "./pages/ChangePassword";
+import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
 import { Loader2 } from "lucide-react";
 
