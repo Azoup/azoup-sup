@@ -119,6 +119,7 @@ const EntriesBU = () => {
       queryClient.invalidateQueries({ queryKey: ['bu-records'] });
       queryClient.invalidateQueries({ queryKey: ['bu-records-dashboard'] });
       toast.success('Lançamento registrado!');
+      logActivity('Criação de lançamento (B.U)', `B.U: ${buId}, Qtd: ${quantity}, Contatos: ${contacts}`);
       setQuantity(''); setContacts('');
     },
     onError: (err: any) => toast.error('Erro: ' + (err?.message || 'Erro ao registrar.')),
