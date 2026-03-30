@@ -134,6 +134,7 @@ const EntriesBU = () => {
       queryClient.invalidateQueries({ queryKey: ['bu-records'] });
       queryClient.invalidateQueries({ queryKey: ['bu-records-dashboard'] });
       toast.success('Removido!');
+      logActivity('Exclusão de lançamento (B.U)');
     },
   });
 
