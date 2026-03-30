@@ -70,6 +70,7 @@ const Entries = () => {
       queryClient.invalidateQueries({ queryKey: ['doubt-records'] });
       queryClient.invalidateQueries({ queryKey: ['doubt-records-all'] });
       toast.success('Lançamento registrado!');
+      logActivity('Criação de lançamento (Dúvidas)', `Analista: ${analystId}, Data: ${date}, Dúvidas: ${doubts}`);
       setDoubts(''); setDescription('');
     },
     onError: (err: any) => toast.error('Erro: ' + (err?.message || 'Erro ao registrar.')),
