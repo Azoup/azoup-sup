@@ -136,12 +136,23 @@ const Dashboard = () => {
             if (!el) return;
             const html2canvas = (await import('html2canvas')).default;
             const { jsPDF } = await import('jspdf');
-            const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+            const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff', scrollY: -window.scrollY, windowWidth: el.scrollWidth });
             const imgData = canvas.toDataURL('image/png');
             const pdf = new jsPDF('p', 'mm', 'a4');
-            const pdfW = pdf.internal.pageSize.getWidth();
+            const pdfW = pdf.internal.pageSize.getWidth() - 10;
             const pdfH = (canvas.height * pdfW) / canvas.width;
-            pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
+            const pageH = pdf.internal.pageSize.getHeight() - 10;
+            let position = 5;
+            if (pdfH <= pageH) {
+              pdf.addImage(imgData, 'PNG', 5, 5, pdfW, pdfH);
+            } else {
+              let remainingH = pdfH;
+              while (remainingH > 0) {
+                pdf.addImage(imgData, 'PNG', 5, position, pdfW, pdfH);
+                remainingH -= pageH;
+                if (remainingH > 0) { pdf.addPage(); position = -(pdfH - remainingH) + 5; }
+              }
+            }
             pdf.save(`dashboard_duvidas_${dateFrom}_${dateTo}.pdf`);
           }}>
             <FileText className="mr-2 h-4 w-4" /> Gerar PDF
