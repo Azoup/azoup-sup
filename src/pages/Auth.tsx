@@ -48,6 +48,8 @@ const Auth = () => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
         toast.error('Email ou senha incorretos.');
+      } else {
+        logActivity('Login no sistema');
       }
     }
     setLoading(false);
