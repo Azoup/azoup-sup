@@ -65,33 +65,39 @@ const Auth = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-            <Input
-              type="password"
-              placeholder="Senha"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={6}
-            />
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isSignUp ? 'Criar Conta' : 'Entrar'}
-            </Button>
-          </form>
-          <button
-            onClick={() => setIsSignUp(!isSignUp)}
-            className="w-full text-center mt-4 text-sm text-muted-foreground hover:text-primary transition-colors"
-          >
-            {isSignUp ? 'Já tem conta? Faça login' : 'Não tem conta? Cadastre-se'}
-          </button>
+          {forgotMode ? (
+            <>
+              <form onSubmit={handleForgotPassword} className="space-y-4">
+                <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Enviar Link de Redefinição
+                </Button>
+              </form>
+              <button onClick={() => setForgotMode(false)} className="w-full text-center mt-4 text-sm text-muted-foreground hover:text-primary transition-colors">
+                Voltar ao login
+              </button>
+            </>
+          ) : (
+            <>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                <Input type="password" placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {isSignUp ? 'Criar Conta' : 'Entrar'}
+                </Button>
+              </form>
+              {!isSignUp && (
+                <button onClick={() => setForgotMode(true)} className="w-full text-center mt-3 text-sm text-muted-foreground hover:text-primary transition-colors">
+                  Esqueci minha senha
+                </button>
+              )}
+              <button onClick={() => setIsSignUp(!isSignUp)} className="w-full text-center mt-2 text-sm text-muted-foreground hover:text-primary transition-colors">
+                {isSignUp ? 'Já tem conta? Faça login' : 'Não tem conta? Cadastre-se'}
+              </button>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
