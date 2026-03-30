@@ -1,6 +1,7 @@
-import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, FileSpreadsheet, BarChart3, KeyRound } from 'lucide-react';
+import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, FileSpreadsheet, BarChart3, UserCircle } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/hooks/useAuth';
+import { useRole } from '@/hooks/useRole';
 import {
   Sidebar,
   SidebarContent,
@@ -13,21 +14,24 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 
-const items = [
-  { title: 'Início', url: '/', icon: LayoutDashboard },
-  { title: 'Dashboard Dúvidas', url: '/dashboard', icon: BarChart3 },
-  { title: 'Dashboard B.U', url: '/dashboard-bu', icon: Building2 },
-  { title: 'Lançamentos Dúvidas', url: '/entries', icon: PenLine },
-  { title: 'Lançamentos B.U', url: '/entries-bu', icon: FileSpreadsheet },
-  { title: 'Analistas', url: '/analysts', icon: Users },
-  { title: 'Unidades', url: '/business-units', icon: Building2 },
-  { title: 'Alterar Senha', url: '/change-password', icon: KeyRound },
+const allItems = [
+  { title: 'Início', url: '/', icon: LayoutDashboard, adminOnly: false },
+  { title: 'Dashboard Dúvidas', url: '/dashboard', icon: BarChart3, adminOnly: false },
+  { title: 'Dashboard B.U', url: '/dashboard-bu', icon: Building2, adminOnly: false },
+  { title: 'Lançamentos Dúvidas', url: '/entries', icon: PenLine, adminOnly: true },
+  { title: 'Lançamentos B.U', url: '/entries-bu', icon: FileSpreadsheet, adminOnly: true },
+  { title: 'Analistas', url: '/analysts', icon: Users, adminOnly: true },
+  { title: 'Unidades', url: '/business-units', icon: Building2, adminOnly: true },
+  { title: 'Perfil', url: '/profile', icon: UserCircle, adminOnly: false },
 ];
 
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
   const { signOut, user } = useAuth();
+  const { isAdmin } = useRole();
+
+  const items = allItems.filter(item => !item.adminOnly || isAdmin);
 
   return (
     <Sidebar collapsible="icon">

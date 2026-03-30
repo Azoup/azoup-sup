@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { logActivity } from '@/hooks/useActivityLog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -69,6 +70,7 @@ const Entries = () => {
       queryClient.invalidateQueries({ queryKey: ['doubt-records'] });
       queryClient.invalidateQueries({ queryKey: ['doubt-records-all'] });
       toast.success('Lançamento registrado!');
+      logActivity('Criação de lançamento (Dúvidas)', `Analista: ${analystId}, Data: ${date}, Dúvidas: ${doubts}`);
       setDoubts(''); setDescription('');
     },
     onError: (err: any) => toast.error('Erro: ' + (err?.message || 'Erro ao registrar.')),
@@ -79,10 +81,11 @@ const Entries = () => {
       const { error } = await supabase.from('doubt_records').delete().eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ['doubt-records'] });
       queryClient.invalidateQueries({ queryKey: ['doubt-records-all'] });
       toast.success('Lançamento removido!');
+      logActivity('Exclusão de lançamento (Dúvidas)', `ID: ${id}`);
     },
   });
 
@@ -105,6 +108,7 @@ const Entries = () => {
       queryClient.invalidateQueries({ queryKey: ['doubt-records'] });
       queryClient.invalidateQueries({ queryKey: ['doubt-records-all'] });
       toast.success('Atualizado!');
+      logActivity('Edição de lançamento (Dúvidas)');
       setEditOpen(false);
       setEditingRecord(null);
     },

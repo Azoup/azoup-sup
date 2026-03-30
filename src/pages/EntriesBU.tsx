@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { logActivity } from '@/hooks/useActivityLog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -118,6 +119,7 @@ const EntriesBU = () => {
       queryClient.invalidateQueries({ queryKey: ['bu-records'] });
       queryClient.invalidateQueries({ queryKey: ['bu-records-dashboard'] });
       toast.success('Lançamento registrado!');
+      logActivity('Criação de lançamento (B.U)', `B.U: ${buId}, Qtd: ${quantity}, Contatos: ${contacts}`);
       setQuantity(''); setContacts('');
     },
     onError: (err: any) => toast.error('Erro: ' + (err?.message || 'Erro ao registrar.')),
@@ -132,6 +134,7 @@ const EntriesBU = () => {
       queryClient.invalidateQueries({ queryKey: ['bu-records'] });
       queryClient.invalidateQueries({ queryKey: ['bu-records-dashboard'] });
       toast.success('Removido!');
+      logActivity('Exclusão de lançamento (B.U)');
     },
   });
 
@@ -148,6 +151,7 @@ const EntriesBU = () => {
       queryClient.invalidateQueries({ queryKey: ['bu-records'] });
       queryClient.invalidateQueries({ queryKey: ['bu-records-dashboard'] });
       toast.success('Atualizado!');
+      logActivity('Edição de lançamento (B.U)');
       setEditOpen(false);
       setEditingRecord(null);
     },
