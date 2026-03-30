@@ -48,6 +48,8 @@ const App = () => (
             <Route path="/entries" element={<ProtectedRoute><Entries /></ProtectedRoute>} />
             <Route path="/entries-bu" element={<ProtectedRoute><EntriesBU /></ProtectedRoute>} />
             <Route path="/business-units" element={<ProtectedRoute><BusinessUnits /></ProtectedRoute>} />
+            <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

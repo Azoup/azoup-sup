@@ -61,7 +61,7 @@ const Auth = () => {
           </div>
           <CardTitle className="text-2xl font-heading">Suporte Analytics</CardTitle>
           <CardDescription>
-            {isSignUp ? 'Crie sua conta para começar' : 'Faça login para acessar o sistema'}
+            {forgotMode ? 'Informe seu email para redefinir a senha' : isSignUp ? 'Crie sua conta para começar' : 'Faça login para acessar o sistema'}
           </CardDescription>
         </CardHeader>
         <CardContent>

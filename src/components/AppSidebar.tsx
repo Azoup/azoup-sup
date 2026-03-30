@@ -21,6 +21,7 @@ const items = [
   { title: 'Lançamentos B.U', url: '/entries-bu', icon: FileSpreadsheet },
   { title: 'Analistas', url: '/analysts', icon: Users },
   { title: 'Unidades', url: '/business-units', icon: Building2 },
+  { title: 'Alterar Senha', url: '/change-password', icon: KeyRound },
 ];
 
 export function AppSidebar() {

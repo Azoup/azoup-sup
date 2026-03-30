@@ -20,8 +20,9 @@ const Entries = () => {
   const [description, setDescription] = useState('');
   const [editingRecord, setEditingRecord] = useState<any>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const [filterFrom, setFilterFrom] = useState('');
-  const [filterTo, setFilterTo] = useState('');
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const [filterFrom, setFilterFrom] = useState(todayStr);
+  const [filterTo, setFilterTo] = useState(todayStr);
 
   const { data: analysts = [] } = useQuery({
     queryKey: ['analysts-active'],
