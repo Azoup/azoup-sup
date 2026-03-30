@@ -1,4 +1,4 @@
-import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, FileSpreadsheet, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, FileSpreadsheet, BarChart3, KeyRound } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/hooks/useAuth';
 import {
