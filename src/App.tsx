@@ -55,6 +55,7 @@ const App = () => (
             <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/dashboard-bu" element={<ProtectedRoute><DashboardBU /></ProtectedRoute>} />
+            <Route path="/kanban-dashboard" element={<ProtectedRoute><KanbanDashboard /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/analysts" element={<AdminRoute><Analysts /></AdminRoute>} />
             <Route path="/entries" element={<AdminRoute><Entries /></AdminRoute>} />

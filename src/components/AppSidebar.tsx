@@ -15,7 +15,8 @@ import {
 } from '@/components/ui/sidebar';
 
 const allItems = [
-  { title: 'Início', url: '/', icon: LayoutDashboard, adminOnly: false },
+  { title: 'Kanban Pendências', url: '/', icon: LayoutDashboard, adminOnly: false },
+  { title: 'Dashboard Kanban', url: '/kanban-dashboard', icon: BarChart3, adminOnly: false },
   { title: 'Dashboard Dúvidas', url: '/dashboard', icon: BarChart3, adminOnly: false },
   { title: 'Dashboard B.U', url: '/dashboard-bu', icon: Building2, adminOnly: false },
   { title: 'Lançamentos Dúvidas', url: '/entries', icon: PenLine, adminOnly: true },
