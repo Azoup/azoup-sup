@@ -13,6 +13,7 @@ import EntriesBU from "./pages/EntriesBU";
 import BusinessUnits from "./pages/BusinessUnits";
 import Dashboard from "./pages/Dashboard";
 import DashboardBU from "./pages/DashboardBU";
+import KanbanDashboard from "./pages/KanbanDashboard";
 import Profile from "./pages/Profile";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
