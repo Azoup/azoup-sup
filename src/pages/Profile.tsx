@@ -8,23 +8,44 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
-import { Loader2, KeyRound, User, Shield, ScrollText } from 'lucide-react';
+import { Loader2, KeyRound, User, Shield, ScrollText, Filter } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+
+const PERMISSION_KEYS = [
+  { key: 'view_dashboard', label: 'Dashboard Dúvidas' },
+  { key: 'view_dashboard_bu', label: 'Dashboard B.U' },
+  { key: 'view_kanban', label: 'Kanban Pendências' },
+  { key: 'view_kanban_dashboard', label: 'Dashboard Kanban' },
+  { key: 'manage_entries', label: 'Lançamentos Dúvidas' },
+  { key: 'manage_entries_bu', label: 'Lançamentos B.U' },
+  { key: 'manage_analysts', label: 'Analistas' },
+  { key: 'manage_business_units', label: 'Unidades' },
+];
 
 const Profile = () => {
   const { user } = useAuth();
   const { isAdmin, role } = useRole();
   const queryClient = useQueryClient();
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
 
-  // Password change state
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [pwLoading, setPwLoading] = useState(false);
 
-  // Profile display name
+  // Log filters
+  const [logFrom, setLogFrom] = useState(todayStr);
+  const [logTo, setLogTo] = useState(todayStr);
+  const [showAllLogs, setShowAllLogs] = useState(false);
+
+  // Permissions editing
+  const [editingPermsUserId, setEditingPermsUserId] = useState<string | null>(null);
+  const [permsDraft, setPermsDraft] = useState<Record<string, boolean>>({});
+  const [permsSaving, setPermsSaving] = useState(false);
+
   const { data: profile } = useQuery({
     queryKey: ['profile', user?.id],
     queryFn: async () => {
@@ -34,41 +55,108 @@ const Profile = () => {
     enabled: !!user,
   });
 
-  // Admin: all users with roles
+  // Admin: all users with roles + profiles for email
   const { data: allUsers = [] } = useQuery({
-    queryKey: ['all-users-roles'],
+    queryKey: ['all-users-roles-profiles'],
     queryFn: async () => {
       const { data: roles } = await supabase.from('user_roles').select('*');
-      return roles || [];
+      const { data: profiles } = await supabase.from('profiles').select('*');
+      return (roles || []).map((r: any) => ({
+        ...r,
+        email: profiles?.find((p: any) => p.id === r.user_id)?.display_name || r.user_id,
+      }));
     },
     enabled: isAdmin,
   });
 
-  // Admin: activity logs
+  // Activity logs with date filter
   const { data: logs = [], isLoading: logsLoading } = useQuery({
-    queryKey: ['activity-logs'],
+    queryKey: ['activity-logs', logFrom, logTo],
     queryFn: async () => {
-      const { data } = await supabase
+      let query = supabase
         .from('activity_logs')
         .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100);
+        .order('created_at', { ascending: false });
+      if (logFrom) query = query.gte('created_at', `${logFrom}T00:00:00`);
+      if (logTo) query = query.lte('created_at', `${logTo}T23:59:59`);
+      const { data } = await query.limit(200);
       return data || [];
     },
     enabled: isAdmin,
   });
 
-  // Update role mutation
+  const displayedLogs = showAllLogs ? logs : logs.slice(0, 3);
+
+  // User permissions
+  const { data: userPermissions = [] } = useQuery({
+    queryKey: ['user-permissions', editingPermsUserId],
+    queryFn: async () => {
+      if (!editingPermsUserId) return [];
+      const { data } = await supabase.from('user_permissions').select('*').eq('user_id', editingPermsUserId);
+      return data || [];
+    },
+    enabled: !!editingPermsUserId && isAdmin,
+  });
+
+  const startEditingPerms = (userId: string) => {
+    setEditingPermsUserId(userId);
+    // Load existing perms into draft
+    const draft: Record<string, boolean> = {};
+    PERMISSION_KEYS.forEach(p => { draft[p.key] = true; }); // default all allowed
+    setPermsDraft(draft);
+  };
+
+  // When perms load, update draft
+  const updateDraftFromPerms = () => {
+    if (userPermissions.length > 0) {
+      const draft: Record<string, boolean> = {};
+      PERMISSION_KEYS.forEach(p => { draft[p.key] = true; });
+      userPermissions.forEach((p: any) => { draft[p.permission_key] = p.allowed; });
+      setPermsDraft(draft);
+    }
+  };
+
+  // Effect-like: update draft when perms change
+  if (editingPermsUserId && userPermissions.length > 0) {
+    const currentDraftStr = JSON.stringify(permsDraft);
+    const newDraft: Record<string, boolean> = {};
+    PERMISSION_KEYS.forEach(p => { newDraft[p.key] = true; });
+    userPermissions.forEach((p: any) => { newDraft[p.permission_key] = p.allowed; });
+    if (JSON.stringify(newDraft) !== currentDraftStr && !permsSaving) {
+      setPermsDraft(newDraft);
+    }
+  }
+
+  const savePermissions = async () => {
+    if (!editingPermsUserId) return;
+    setPermsSaving(true);
+    try {
+      // Delete existing then insert
+      await supabase.from('user_permissions').delete().eq('user_id', editingPermsUserId);
+      const rows = PERMISSION_KEYS.map(p => ({
+        user_id: editingPermsUserId,
+        permission_key: p.key,
+        allowed: permsDraft[p.key] ?? true,
+      }));
+      const { error } = await supabase.from('user_permissions').insert(rows);
+      if (error) throw error;
+      toast.success('Permissões salvas!');
+      queryClient.invalidateQueries({ queryKey: ['user-permissions'] });
+    } catch {
+      toast.error('Erro ao salvar permissões.');
+    }
+    setPermsSaving(false);
+  };
+
   const updateRole = useMutation({
     mutationFn: async ({ userId, newRole }: { userId: string; newRole: string }) => {
-      // Upsert role
       const { error: delError } = await supabase.from('user_roles').delete().eq('user_id', userId);
       if (delError) throw delError;
       const { error } = await supabase.from('user_roles').insert({ user_id: userId, role: newRole as any });
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['all-users-roles'] });
+      queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
       toast.success('Permissão atualizada!');
     },
     onError: () => toast.error('Erro ao atualizar permissão.'),
@@ -93,83 +181,118 @@ const Profile = () => {
     <div className="space-y-6 animate-fade-in">
       <h1 className="text-2xl font-heading font-bold">Perfil</h1>
 
-      {/* User Info */}
-      <Card className="border shadow-sm max-w-lg">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <User className="h-5 w-5 text-primary" /> Informações
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div>
-            <span className="text-sm text-muted-foreground">Nome</span>
-            <p className="font-medium">{profile?.display_name || user?.email?.split('@')[0] || '—'}</p>
-          </div>
-          <div>
-            <span className="text-sm text-muted-foreground">E-mail</span>
-            <p className="font-medium">{user?.email}</p>
-          </div>
-          <div>
-            <span className="text-sm text-muted-foreground">Tipo de Perfil</span>
-            <div className="mt-1">
-              <Badge variant={isAdmin ? 'default' : 'secondary'}>
-                {isAdmin ? 'Admin' : 'Padrão'}
-              </Badge>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* User Info */}
+        <Card className="border shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <User className="h-5 w-5 text-primary" /> Informações
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div>
+              <span className="text-sm text-muted-foreground">Nome</span>
+              <p className="font-medium">{profile?.display_name || user?.email?.split('@')[0] || '—'}</p>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+            <div>
+              <span className="text-sm text-muted-foreground">E-mail</span>
+              <p className="font-medium">{user?.email}</p>
+            </div>
+            <div>
+              <span className="text-sm text-muted-foreground">Tipo de Perfil</span>
+              <div className="mt-1">
+                <Badge variant={isAdmin ? 'default' : 'secondary'}>
+                  {isAdmin ? 'Admin' : 'Padrão'}
+                </Badge>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-      {/* Password Change */}
-      <Card className="border shadow-sm max-w-lg">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <KeyRound className="h-5 w-5 text-primary" /> Alterar Senha
-          </CardTitle>
-          <CardDescription>Preencha os campos para alterar sua senha.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handlePasswordChange} className="space-y-4">
-            <Input type="password" placeholder="Senha atual" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
-            <Input type="password" placeholder="Nova senha" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={6} />
-            <Input type="password" placeholder="Confirmar nova senha" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required minLength={6} />
-            <Button type="submit" disabled={pwLoading}>
-              {pwLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Salvar Nova Senha
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+        {/* Password Change */}
+        <Card className="border shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-primary" /> Alterar Senha
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handlePasswordChange} className="space-y-3">
+              <Input type="password" placeholder="Senha atual" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
+              <Input type="password" placeholder="Nova senha" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={6} />
+              <Input type="password" placeholder="Confirmar nova senha" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required minLength={6} />
+              <Button type="submit" disabled={pwLoading} size="sm">
+                {pwLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Salvar Nova Senha
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
 
-      {/* Admin: Manage Roles */}
+      {/* Admin: Manage Roles + Permissions */}
       {isAdmin && (
         <Card className="border shadow-sm">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Shield className="h-5 w-5 text-primary" /> Gerenciar Permissões
             </CardTitle>
-            <CardDescription>Altere o tipo de perfil dos usuários do sistema.</CardDescription>
+            <CardDescription>Altere o tipo de perfil e permissões granulares dos usuários.</CardDescription>
           </CardHeader>
           <CardContent>
             {allUsers.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhum usuário com papel definido.</p>
+              <p className="text-sm text-muted-foreground">Nenhum usuário encontrado.</p>
             ) : (
               <div className="space-y-3">
                 {allUsers.map((ur: any) => (
-                  <div key={ur.id} className="flex items-center justify-between gap-4 p-3 rounded-lg border">
-                    <span className="text-sm font-medium truncate">{ur.user_id}</span>
-                    <Select
-                      defaultValue={ur.role}
-                      onValueChange={(val) => updateRole.mutate({ userId: ur.user_id, newRole: val })}
-                    >
-                      <SelectTrigger className="w-32">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="admin">Admin</SelectItem>
-                        <SelectItem value="user">Padrão</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div key={ur.id} className="p-3 rounded-lg border space-y-2">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{ur.email}</p>
+                        <p className="text-xs text-muted-foreground truncate">{ur.user_id}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Select
+                          defaultValue={ur.role}
+                          onValueChange={(val) => updateRole.mutate({ userId: ur.user_id, newRole: val })}
+                        >
+                          <SelectTrigger className="w-28">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="admin">Admin</SelectItem>
+                            <SelectItem value="user">Padrão</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button variant="outline" size="sm" onClick={() => startEditingPerms(ur.user_id)}>
+                          Permissões
+                        </Button>
+                      </div>
+                    </div>
+
+                    {editingPermsUserId === ur.user_id && (
+                      <div className="mt-2 p-3 bg-muted/50 rounded-md space-y-2">
+                        <p className="text-sm font-medium">Permissões de acesso:</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {PERMISSION_KEYS.map(p => (
+                            <label key={p.key} className="flex items-center gap-2 text-sm cursor-pointer">
+                              <Checkbox
+                                checked={permsDraft[p.key] ?? true}
+                                onCheckedChange={(checked) => setPermsDraft(prev => ({ ...prev, [p.key]: !!checked }))}
+                              />
+                              {p.label}
+                            </label>
+                          ))}
+                        </div>
+                        <div className="flex gap-2 mt-2">
+                          <Button size="sm" onClick={savePermissions} disabled={permsSaving}>
+                            {permsSaving && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+                            Salvar
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setEditingPermsUserId(null)}>Cancelar</Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -187,26 +310,52 @@ const Profile = () => {
             </CardTitle>
             <CardDescription>Registro das ações realizadas no sistema.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-2 items-end">
+              <div>
+                <label className="text-xs text-muted-foreground">De</label>
+                <Input type="date" value={logFrom} onChange={e => setLogFrom(e.target.value)} className="w-36 h-8 text-xs" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Até</label>
+                <Input type="date" value={logTo} onChange={e => setLogTo(e.target.value)} className="w-36 h-8 text-xs" />
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => { setLogFrom(todayStr); setLogTo(todayStr); }}>
+                <Filter className="h-3 w-3 mr-1" /> Hoje
+              </Button>
+            </div>
+
             {logsLoading ? (
               <Loader2 className="h-5 w-5 animate-spin mx-auto" />
             ) : logs.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nenhuma atividade registrada.</p>
             ) : (
-              <div className="max-h-96 overflow-auto space-y-2">
-                {logs.map((log: any) => (
-                  <div key={log.id} className="flex items-start gap-3 p-3 rounded-lg border text-sm">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{log.user_email}</p>
-                      <p className="text-muted-foreground">{log.action}</p>
-                      {log.details && <p className="text-xs text-muted-foreground mt-1">{log.details}</p>}
+              <>
+                <div className="max-h-80 overflow-auto space-y-2">
+                  {displayedLogs.map((log: any) => (
+                    <div key={log.id} className="flex items-start gap-3 p-2 rounded-lg border text-sm">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{log.user_email}</p>
+                        <p className="text-muted-foreground">{log.action}</p>
+                        {log.details && <p className="text-xs text-muted-foreground mt-1">{log.details}</p>}
+                      </div>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {format(new Date(log.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                      </span>
                     </div>
-                    <span className="text-xs text-muted-foreground whitespace-nowrap">
-                      {format(new Date(log.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+                {logs.length > 3 && !showAllLogs && (
+                  <Button variant="link" size="sm" onClick={() => setShowAllLogs(true)}>
+                    Ver todos ({logs.length})
+                  </Button>
+                )}
+                {showAllLogs && (
+                  <Button variant="link" size="sm" onClick={() => setShowAllLogs(false)}>
+                    Mostrar apenas 3
+                  </Button>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
