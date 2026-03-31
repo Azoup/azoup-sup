@@ -1,5 +1,5 @@
-import Dashboard from './Dashboard';
+import Kanban from './Kanban';
 
-const Index = () => <Dashboard />;
+const Index = () => <Kanban />;
 
 export default Index;

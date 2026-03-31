@@ -149,6 +149,107 @@ export type Database = {
           },
         ]
       }
+      kanban_card_labels: {
+        Row: {
+          card_id: string
+          id: string
+          label_id: string
+        }
+        Insert: {
+          card_id: string
+          id?: string
+          label_id: string
+        }
+        Update: {
+          card_id?: string
+          id?: string
+          label_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kanban_card_labels_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "kanban_cards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kanban_card_labels_label_id_fkey"
+            columns: ["label_id"]
+            isOneToOne: false
+            referencedRelation: "kanban_labels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kanban_cards: {
+        Row: {
+          analyst_id: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          image_url: string | null
+          position: number
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          analyst_id?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          position?: number
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          analyst_id?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          position?: number
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kanban_cards_analyst_id_fkey"
+            columns: ["analyst_id"]
+            isOneToOne: false
+            referencedRelation: "analysts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kanban_labels: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -167,6 +268,27 @@ export type Database = {
           display_name?: string | null
           id?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      user_permissions: {
+        Row: {
+          allowed: boolean
+          id: string
+          permission_key: string
+          user_id: string
+        }
+        Insert: {
+          allowed?: boolean
+          id?: string
+          permission_key: string
+          user_id: string
+        }
+        Update: {
+          allowed?: boolean
+          id?: string
+          permission_key?: string
+          user_id?: string
         }
         Relationships: []
       }
