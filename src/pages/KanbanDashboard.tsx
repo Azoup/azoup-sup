@@ -158,15 +158,27 @@ const KanbanDashboard = () => {
           <Card className="lg:col-span-2">
             <CardHeader><CardTitle className="text-sm">Cards por Etiqueta</CardTitle></CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={250}>
+              <ResponsiveContainer width="100%" height={350}>
                 <PieChart>
-                  <Pie data={labelData} dataKey="count" nameKey="name" cx="50%" cy="50%" outerRadius={90} label={({ name, count }) => `${name}: ${count}`}>
+                  <Pie
+                    data={labelData}
+                    dataKey="count"
+                    nameKey="name"
+                    cx="50%"
+                    cy="45%"
+                    outerRadius={100}
+                    label={({ name, count }) => `${name}: ${count}`}
+                    labelLine={{ strokeWidth: 1 }}
+                  >
                     {labelData.map((entry, i) => (
                       <Cell key={entry.name} fill={entry.color || COLORS[i % COLORS.length]} />
                     ))}
                   </Pie>
                   <Tooltip />
-                  <Legend />
+                  <Legend
+                    verticalAlign="bottom"
+                    wrapperStyle={{ paddingTop: '16px', fontSize: '12px' }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </CardContent>
