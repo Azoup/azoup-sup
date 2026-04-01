@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -34,6 +35,7 @@ const Kanban = () => {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [viewOpen, setViewOpen] = useState(false);
   const [labelOpen, setLabelOpen] = useState(false);
   const [targetColumn, setTargetColumn] = useState('pending');
   const [title, setTitle] = useState('');
@@ -42,8 +44,14 @@ const Kanban = () => {
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [editingCard, setEditingCard] = useState<any>(null);
+  const [viewingCard, setViewingCard] = useState<any>(null);
   const [newLabelName, setNewLabelName] = useState('');
   const [newLabelColor, setNewLabelColor] = useState('#3b82f6');
+  const [editingLabel, setEditingLabel] = useState<any>(null);
+  const [editLabelName, setEditLabelName] = useState('');
+  const [editLabelColor, setEditLabelColor] = useState('#3b82f6');
+  const [deleteLabelId, setDeleteLabelId] = useState<string | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
 
   const { data: analysts = [] } = useQuery({
     queryKey: ['analysts-active'],
@@ -56,10 +64,7 @@ const Kanban = () => {
   const { data: cards = [], isLoading } = useQuery({
     queryKey: ['kanban-cards'],
     queryFn: async () => {
-      const { data } = await supabase
-        .from('kanban_cards')
-        .select('*')
-        .order('position');
+      const { data } = await supabase.from('kanban_cards').select('*').order('position');
       return data || [];
     },
   });
@@ -80,7 +85,6 @@ const Kanban = () => {
     },
   });
 
-  // Realtime subscription
   useEffect(() => {
     const channel = supabase
       .channel('kanban-realtime')
@@ -116,17 +120,14 @@ const Kanban = () => {
     mutationFn: async () => {
       let imageUrl: string | null = null;
       if (imageFile) imageUrl = await uploadImage(imageFile);
-
       const colCards = cardsByColumn[targetColumn] || [];
       const position = colCards.length;
-
       const { data, error } = await supabase.from('kanban_cards').insert({
         title, description: description || null, status: targetColumn,
         position, analyst_id: analystId || null, image_url: imageUrl,
         created_by: user!.id,
       }).select().single();
       if (error) throw error;
-
       if (selectedLabels.length > 0) {
         await supabase.from('kanban_card_labels').insert(
           selectedLabels.map(lid => ({ card_id: data.id, label_id: lid }))
@@ -147,14 +148,12 @@ const Kanban = () => {
     mutationFn: async () => {
       if (!editingCard) return;
       let imageUrl = editingCard.image_url;
+      if (removeImage) imageUrl = null;
       if (imageFile) imageUrl = await uploadImage(imageFile);
-
       const { error } = await supabase.from('kanban_cards')
         .update({ title, description: description || null, analyst_id: analystId || null, image_url: imageUrl })
         .eq('id', editingCard.id);
       if (error) throw error;
-
-      // Update labels
       await supabase.from('kanban_card_labels').delete().eq('card_id', editingCard.id);
       if (selectedLabels.length > 0) {
         await supabase.from('kanban_card_labels').insert(
@@ -196,14 +195,42 @@ const Kanban = () => {
     },
   });
 
+  const updateLabel = useMutation({
+    mutationFn: async () => {
+      if (!editingLabel) return;
+      const { error } = await supabase.from('kanban_labels')
+        .update({ name: editLabelName, color: editLabelColor })
+        .eq('id', editingLabel.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kanban-labels'] });
+      queryClient.invalidateQueries({ queryKey: ['kanban-card-labels'] });
+      setEditingLabel(null);
+      toast.success('Etiqueta atualizada!');
+    },
+  });
+
+  const deleteLabel = useMutation({
+    mutationFn: async (id: string) => {
+      await supabase.from('kanban_card_labels').delete().eq('label_id', id);
+      const { error } = await supabase.from('kanban_labels').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kanban-labels'] });
+      queryClient.invalidateQueries({ queryKey: ['kanban-card-labels'] });
+      setDeleteLabelId(null);
+      toast.success('Etiqueta excluída!');
+    },
+  });
+
   const onDragEnd = async (result: DropResult) => {
     if (!result.destination) return;
-    const { source, destination, draggableId } = result;
-
+    const { destination, draggableId } = result;
     const { error } = await supabase.from('kanban_cards')
       .update({ status: destination.droppableId, position: destination.index })
       .eq('id', draggableId);
-
     if (!error) {
       queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
     }
@@ -212,6 +239,7 @@ const Kanban = () => {
   const resetForm = () => {
     setTitle(''); setDescription(''); setAnalystId('');
     setSelectedLabels([]); setImageFile(null); setEditingCard(null);
+    setRemoveImage(false);
   };
 
   const openEdit = (card: any) => {
@@ -220,7 +248,14 @@ const Kanban = () => {
     setDescription(card.description || '');
     setAnalystId(card.analyst_id || '');
     setSelectedLabels((card.labels || []).map((l: any) => l.id));
+    setRemoveImage(false);
+    setImageFile(null);
     setEditOpen(true);
+  };
+
+  const openView = (card: any) => {
+    setViewingCard(card);
+    setViewOpen(true);
   };
 
   const openCreate = (colId: string) => {
@@ -229,56 +264,15 @@ const Kanban = () => {
     setCreateOpen(true);
   };
 
-  const toggleLabel = (labelId: string) => {
+  const toggleLabel = useCallback((labelId: string) => {
     setSelectedLabels(prev => prev.includes(labelId) ? prev.filter(id => id !== labelId) : [...prev, labelId]);
+  }, []);
+
+  const startEditLabel = (label: any) => {
+    setEditingLabel(label);
+    setEditLabelName(label.name);
+    setEditLabelColor(label.color);
   };
-
-  const CardForm = ({ onSubmit, loading }: { onSubmit: () => void; loading: boolean }) => (
-    <div className="space-y-3">
-      <Input placeholder="Título" value={title} onChange={e => setTitle(e.target.value)} required />
-      <Textarea placeholder="Descrição" value={description} onChange={e => setDescription(e.target.value)} rows={3} />
-      <Select value={analystId} onValueChange={setAnalystId}>
-        <SelectTrigger><SelectValue placeholder="Responsável" /></SelectTrigger>
-        <SelectContent>
-          {analysts.map((a: any) => (
-            <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      {labels.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">Etiquetas:</p>
-          <div className="flex flex-wrap gap-1">
-            {labels.map((l: any) => (
-              <Badge
-                key={l.id}
-                variant={selectedLabels.includes(l.id) ? 'default' : 'outline'}
-                className="cursor-pointer text-xs"
-                style={selectedLabels.includes(l.id) ? { backgroundColor: l.color } : {}}
-                onClick={() => toggleLabel(l.id)}
-              >
-                {l.name}
-              </Badge>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div>
-        <label className="text-xs text-muted-foreground flex items-center gap-1 cursor-pointer">
-          <ImagePlus className="h-3 w-3" /> Imagem
-          <input type="file" accept="image/*" className="hidden" onChange={e => setImageFile(e.target.files?.[0] || null)} />
-        </label>
-        {imageFile && <p className="text-xs text-muted-foreground mt-1">{imageFile.name}</p>}
-      </div>
-
-      <Button onClick={onSubmit} disabled={loading || !title.trim()} className="w-full">
-        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Salvar
-      </Button>
-    </div>
-  );
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -310,11 +304,12 @@ const Kanban = () => {
                               ref={provided.innerRef}
                               {...provided.draggableProps}
                               {...provided.dragHandleProps}
-                              className={`bg-card rounded-md border p-3 shadow-sm space-y-2 ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''}`}
+                              onClick={() => openView(card)}
+                              className={`bg-card rounded-md border p-3 shadow-sm space-y-2 cursor-pointer hover:shadow-md transition-shadow ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''}`}
                             >
                               <div className="flex items-start justify-between gap-2">
                                 <p className="font-medium text-sm flex-1">{card.title}</p>
-                                <div className="flex gap-1 shrink-0">
+                                <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                                   <button onClick={() => openEdit(card)} className="text-muted-foreground hover:text-primary">
                                     <Pencil className="h-3 w-3" />
                                   </button>
@@ -324,7 +319,6 @@ const Kanban = () => {
                                 </div>
                               </div>
                               {card.description && <p className="text-xs text-muted-foreground line-clamp-2">{card.description}</p>}
-                              {card.image_url && <img src={card.image_url} alt="" className="rounded-md w-full h-20 object-cover" />}
                               {card.labels?.length > 0 && (
                                 <div className="flex flex-wrap gap-1">
                                   {card.labels.map((l: any) => (
@@ -360,25 +354,98 @@ const Kanban = () => {
         </DragDropContext>
       )}
 
+      {/* View Card Dialog */}
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}>
+        <DialogContent className="max-w-lg sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{viewingCard?.title}</DialogTitle>
+            <DialogDescription>
+              {COLUMNS.find(c => c.id === viewingCard?.status)?.title}
+            </DialogDescription>
+          </DialogHeader>
+          {viewingCard && (
+            <div className="space-y-4">
+              {viewingCard.description && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-1">Observações</p>
+                  <p className="text-sm whitespace-pre-wrap">{viewingCard.description}</p>
+                </div>
+              )}
+              {viewingCard.image_url && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-1">Imagem</p>
+                  <img src={viewingCard.image_url} alt="" className="rounded-lg w-full max-h-80 object-contain border" />
+                </div>
+              )}
+              {viewingCard.labels?.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-1">Etiquetas</p>
+                  <div className="flex flex-wrap gap-1">
+                    {viewingCard.labels.map((l: any) => (
+                      <span key={l.id} className="text-xs px-2 py-1 rounded-full text-white" style={{ backgroundColor: l.color }}>
+                        {l.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {viewingCard.analyst && (
+                <div className="flex items-center gap-2">
+                  <Avatar className="h-7 w-7">
+                    <AvatarImage src={viewingCard.analyst.photo_url || ''} />
+                    <AvatarFallback className="text-xs">{viewingCard.analyst.name?.charAt(0)}</AvatarFallback>
+                  </Avatar>
+                  <span className="text-sm text-muted-foreground">{viewingCard.analyst.name}</span>
+                </div>
+              )}
+              <div className="flex gap-2 pt-2">
+                <Button size="sm" variant="outline" onClick={() => { setViewOpen(false); openEdit(viewingCard); }}>
+                  <Pencil className="h-3 w-3 mr-1" /> Editar
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Create Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md" onPointerDownOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Novo Card</DialogTitle>
             <DialogDescription>Preencha os dados do card.</DialogDescription>
           </DialogHeader>
-          <CardForm onSubmit={() => createCard.mutate()} loading={createCard.isPending} />
+          <CardFormContent
+            title={title} setTitle={setTitle}
+            description={description} setDescription={setDescription}
+            analystId={analystId} setAnalystId={setAnalystId}
+            analysts={analysts} labels={labels}
+            selectedLabels={selectedLabels} toggleLabel={toggleLabel}
+            imageFile={imageFile} setImageFile={setImageFile}
+            existingImageUrl={null} removeImage={false} setRemoveImage={() => {}}
+            onSubmit={() => createCard.mutate()} loading={createCard.isPending}
+          />
         </DialogContent>
       </Dialog>
 
       {/* Edit Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg sm:max-w-2xl" onPointerDownOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Editar Card</DialogTitle>
             <DialogDescription>Altere os dados do card.</DialogDescription>
           </DialogHeader>
-          <CardForm onSubmit={() => updateCard.mutate()} loading={updateCard.isPending} />
+          <CardFormContent
+            title={title} setTitle={setTitle}
+            description={description} setDescription={setDescription}
+            analystId={analystId} setAnalystId={setAnalystId}
+            analysts={analysts} labels={labels}
+            selectedLabels={selectedLabels} toggleLabel={toggleLabel}
+            imageFile={imageFile} setImageFile={setImageFile}
+            existingImageUrl={editingCard?.image_url || null}
+            removeImage={removeImage} setRemoveImage={setRemoveImage}
+            onSubmit={() => updateCard.mutate()} loading={updateCard.isPending}
+          />
         </DialogContent>
       </Dialog>
 
@@ -387,7 +454,7 @@ const Kanban = () => {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Gerenciar Etiquetas</DialogTitle>
-            <DialogDescription>Crie e organize etiquetas com cores.</DialogDescription>
+            <DialogDescription>Crie, edite e exclua etiquetas.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="flex gap-2">
@@ -397,19 +464,148 @@ const Kanban = () => {
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 max-h-60 overflow-y-auto">
               {labels.map((l: any) => (
-                <div key={l.id} className="flex items-center gap-2 py-1">
-                  <span className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: l.color }} />
-                  <span className="text-sm flex-1">{l.name}</span>
+                <div key={l.id}>
+                  {editingLabel?.id === l.id ? (
+                    <div className="flex items-center gap-2 py-1">
+                      <Input value={editLabelName} onChange={e => setEditLabelName(e.target.value)} className="flex-1 h-8 text-sm" />
+                      <input type="color" value={editLabelColor} onChange={e => setEditLabelColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer border-0" />
+                      <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => updateLabel.mutate()} disabled={!editLabelName.trim()}>
+                        Salvar
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => setEditingLabel(null)}>
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 py-1">
+                      <span className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: l.color }} />
+                      <span className="text-sm flex-1">{l.name}</span>
+                      <button onClick={() => startEditLabel(l)} className="text-muted-foreground hover:text-primary">
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                      <button onClick={() => setDeleteLabelId(l.id)} className="text-muted-foreground hover:text-destructive">
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Confirm Delete Label */}
+      <AlertDialog open={!!deleteLabelId} onOpenChange={() => setDeleteLabelId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir etiqueta?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Essa ação removerá a etiqueta de todos os cards vinculados. Deseja continuar?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteLabelId && deleteLabel.mutate(deleteLabelId)}>
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
+
+/* Extracted as a stable component to prevent focus loss */
+function CardFormContent({
+  title, setTitle, description, setDescription,
+  analystId, setAnalystId, analysts, labels,
+  selectedLabels, toggleLabel,
+  imageFile, setImageFile,
+  existingImageUrl, removeImage, setRemoveImage,
+  onSubmit, loading,
+}: {
+  title: string; setTitle: (v: string) => void;
+  description: string; setDescription: (v: string) => void;
+  analystId: string; setAnalystId: (v: string) => void;
+  analysts: any[]; labels: any[];
+  selectedLabels: string[]; toggleLabel: (id: string) => void;
+  imageFile: File | null; setImageFile: (f: File | null) => void;
+  existingImageUrl: string | null; removeImage: boolean; setRemoveImage: (v: boolean) => void;
+  onSubmit: () => void; loading: boolean;
+}) {
+  const showImage = existingImageUrl && !removeImage;
+
+  return (
+    <div className="space-y-3">
+      <Input
+        placeholder="Título"
+        value={title}
+        onChange={e => setTitle(e.target.value)}
+        autoComplete="off"
+      />
+      <Textarea
+        placeholder="Observações"
+        value={description}
+        onChange={e => setDescription(e.target.value)}
+        rows={4}
+        className="resize-y"
+      />
+      <Select value={analystId} onValueChange={setAnalystId}>
+        <SelectTrigger><SelectValue placeholder="Responsável" /></SelectTrigger>
+        <SelectContent>
+          {analysts.map((a: any) => (
+            <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {labels.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">Etiquetas:</p>
+          <div className="flex flex-wrap gap-1">
+            {labels.map((l: any) => (
+              <Badge
+                key={l.id}
+                variant={selectedLabels.includes(l.id) ? 'default' : 'outline'}
+                className="cursor-pointer text-xs"
+                style={selectedLabels.includes(l.id) ? { backgroundColor: l.color } : {}}
+                onClick={() => toggleLabel(l.id)}
+              >
+                {l.name}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {showImage && (
+          <div className="relative">
+            <img src={existingImageUrl} alt="" className="rounded-lg w-full max-h-48 object-contain border" />
+            <button
+              onClick={() => setRemoveImage(true)}
+              className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+        <label className="text-xs text-muted-foreground flex items-center gap-1 cursor-pointer">
+          <ImagePlus className="h-3 w-3" /> {showImage ? 'Trocar imagem' : 'Adicionar imagem'}
+          <input type="file" accept="image/*" className="hidden" onChange={e => { setImageFile(e.target.files?.[0] || null); setRemoveImage(false); }} />
+        </label>
+        {imageFile && <p className="text-xs text-muted-foreground">{imageFile.name}</p>}
+      </div>
+
+      <Button onClick={onSubmit} disabled={loading || !title.trim()} className="w-full">
+        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        Salvar
+      </Button>
+    </div>
+  );
+}
 
 export default Kanban;
