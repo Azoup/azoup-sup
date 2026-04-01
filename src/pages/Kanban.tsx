@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from 'sonner';
-import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X } from 'lucide-react';
+import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const COLUMNS = [
   { id: 'pending', title: 'Pendências' },
@@ -42,7 +42,7 @@ const Kanban = () => {
   const [description, setDescription] = useState('');
   const [analystId, setAnalystId] = useState('');
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
-  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [pendingImages, setPendingImages] = useState<File[]>([]);
   const [editingCard, setEditingCard] = useState<any>(null);
   const [viewingCard, setViewingCard] = useState<any>(null);
   const [newLabelName, setNewLabelName] = useState('');
@@ -51,7 +51,8 @@ const Kanban = () => {
   const [editLabelName, setEditLabelName] = useState('');
   const [editLabelColor, setEditLabelColor] = useState('#3b82f6');
   const [deleteLabelId, setDeleteLabelId] = useState<string | null>(null);
-  const [removeImage, setRemoveImage] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [lightboxImages, setLightboxImages] = useState<string[]>([]);
 
   const { data: analysts = [] } = useQuery({
     queryKey: ['analysts-active'],
@@ -85,11 +86,22 @@ const Kanban = () => {
     },
   });
 
+  const { data: cardImages = [] } = useQuery({
+    queryKey: ['kanban-card-images'],
+    queryFn: async () => {
+      const { data } = await supabase.from('kanban_card_images').select('*').order('created_at');
+      return data || [];
+    },
+  });
+
   useEffect(() => {
     const channel = supabase
       .channel('kanban-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'kanban_cards' }, () => {
         queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kanban_card_images' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['kanban-card-images'] });
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -102,29 +114,37 @@ const Kanban = () => {
       const col = map[card.status] || map['pending'];
       const cls = cardLabels.filter((cl: any) => cl.card_id === card.id);
       const analyst = analysts.find((a: any) => a.id === card.analyst_id);
-      col.push({ ...card, labels: cls.map((cl: any) => cl.kanban_labels), analyst });
+      const images = cardImages.filter((img: any) => img.card_id === card.id);
+      col.push({ ...card, labels: cls.map((cl: any) => cl.kanban_labels), analyst, images });
     });
     return map;
-  }, [cards, cardLabels, analysts]);
+  }, [cards, cardLabels, analysts, cardImages]);
 
   const uploadImage = async (file: File): Promise<string | null> => {
-    const ext = file.name.split('.').pop();
-    const path = `${Date.now()}.${ext}`;
+    const ext = file.name?.split('.').pop() || 'png';
+    const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
     const { error } = await supabase.storage.from('kanban-images').upload(path, file);
     if (error) { toast.error('Erro ao fazer upload da imagem.'); return null; }
     const { data } = supabase.storage.from('kanban-images').getPublicUrl(path);
     return data.publicUrl;
   };
 
+  const uploadAndSaveImages = async (cardId: string, files: File[]) => {
+    for (const file of files) {
+      const url = await uploadImage(file);
+      if (url) {
+        await supabase.from('kanban_card_images').insert({ card_id: cardId, image_url: url });
+      }
+    }
+  };
+
   const createCard = useMutation({
     mutationFn: async () => {
-      let imageUrl: string | null = null;
-      if (imageFile) imageUrl = await uploadImage(imageFile);
       const colCards = cardsByColumn[targetColumn] || [];
       const position = colCards.length;
       const { data, error } = await supabase.from('kanban_cards').insert({
         title, description: description || null, status: targetColumn,
-        position, analyst_id: analystId || null, image_url: imageUrl,
+        position, analyst_id: analystId || null, image_url: null,
         created_by: user!.id,
       }).select().single();
       if (error) throw error;
@@ -133,11 +153,15 @@ const Kanban = () => {
           selectedLabels.map(lid => ({ card_id: data.id, label_id: lid }))
         );
       }
+      if (pendingImages.length > 0) {
+        await uploadAndSaveImages(data.id, pendingImages);
+      }
       await logActivity('Criou card no Kanban', title);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
       queryClient.invalidateQueries({ queryKey: ['kanban-card-labels'] });
+      queryClient.invalidateQueries({ queryKey: ['kanban-card-images'] });
       resetForm(); setCreateOpen(false);
       toast.success('Card criado!');
     },
@@ -147,11 +171,8 @@ const Kanban = () => {
   const updateCard = useMutation({
     mutationFn: async () => {
       if (!editingCard) return;
-      let imageUrl = editingCard.image_url;
-      if (removeImage) imageUrl = null;
-      if (imageFile) imageUrl = await uploadImage(imageFile);
       const { error } = await supabase.from('kanban_cards')
-        .update({ title, description: description || null, analyst_id: analystId || null, image_url: imageUrl })
+        .update({ title, description: description || null, analyst_id: analystId || null })
         .eq('id', editingCard.id);
       if (error) throw error;
       await supabase.from('kanban_card_labels').delete().eq('card_id', editingCard.id);
@@ -160,11 +181,15 @@ const Kanban = () => {
           selectedLabels.map(lid => ({ card_id: editingCard.id, label_id: lid }))
         );
       }
+      if (pendingImages.length > 0) {
+        await uploadAndSaveImages(editingCard.id, pendingImages);
+      }
       await logActivity('Editou card no Kanban', title);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
       queryClient.invalidateQueries({ queryKey: ['kanban-card-labels'] });
+      queryClient.invalidateQueries({ queryKey: ['kanban-card-images'] });
       resetForm(); setEditOpen(false);
       toast.success('Card atualizado!');
     },
@@ -180,6 +205,17 @@ const Kanban = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
       toast.success('Card excluído!');
+    },
+  });
+
+  const deleteImage = useMutation({
+    mutationFn: async (imageId: string) => {
+      const { error } = await supabase.from('kanban_card_images').delete().eq('id', imageId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kanban-card-images'] });
+      toast.success('Imagem removida!');
     },
   });
 
@@ -238,8 +274,7 @@ const Kanban = () => {
 
   const resetForm = () => {
     setTitle(''); setDescription(''); setAnalystId('');
-    setSelectedLabels([]); setImageFile(null); setEditingCard(null);
-    setRemoveImage(false);
+    setSelectedLabels([]); setPendingImages([]); setEditingCard(null);
   };
 
   const openEdit = (card: any) => {
@@ -248,8 +283,7 @@ const Kanban = () => {
     setDescription(card.description || '');
     setAnalystId(card.analyst_id || '');
     setSelectedLabels((card.labels || []).map((l: any) => l.id));
-    setRemoveImage(false);
-    setImageFile(null);
+    setPendingImages([]);
     setEditOpen(true);
   };
 
@@ -273,6 +307,23 @@ const Kanban = () => {
     setEditLabelName(label.name);
     setEditLabelColor(label.color);
   };
+
+  const openLightbox = (images: string[], index: number) => {
+    setLightboxImages(images);
+    setLightboxIndex(index);
+  };
+
+  // Get images for the viewing card (live from query data)
+  const viewingCardImages = useMemo(() => {
+    if (!viewingCard) return [];
+    return cardImages.filter((img: any) => img.card_id === viewingCard.id);
+  }, [viewingCard, cardImages]);
+
+  // Get images for the editing card (live from query data)
+  const editingCardImages = useMemo(() => {
+    if (!editingCard) return [];
+    return cardImages.filter((img: any) => img.card_id === editingCard.id);
+  }, [editingCard, cardImages]);
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -319,15 +370,18 @@ const Kanban = () => {
                                 </div>
                               </div>
                               {card.description && <p className="text-xs text-muted-foreground line-clamp-2">{card.description}</p>}
-                              {card.labels?.length > 0 && (
-                                <div className="flex flex-wrap gap-1">
-                                  {card.labels.map((l: any) => (
-                                    <span key={l.id} className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: l.color }}>
-                                      {l.name}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {card.labels?.length > 0 && card.labels.map((l: any) => (
+                                  <span key={l.id} className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: l.color }}>
+                                    {l.name}
+                                  </span>
+                                ))}
+                                {card.images?.length > 0 && (
+                                  <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+                                    <Paperclip className="h-3 w-3" /> {card.images.length}
+                                  </span>
+                                )}
+                              </div>
                               {card.analyst && (
                                 <div className="flex items-center gap-1.5">
                                   <Avatar className="h-5 w-5">
@@ -356,7 +410,7 @@ const Kanban = () => {
 
       {/* View Card Dialog */}
       <Dialog open={viewOpen} onOpenChange={setViewOpen}>
-        <DialogContent className="max-w-lg sm:max-w-2xl">
+        <DialogContent className="max-w-lg sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{viewingCard?.title}</DialogTitle>
             <DialogDescription>
@@ -371,10 +425,20 @@ const Kanban = () => {
                   <p className="text-sm whitespace-pre-wrap">{viewingCard.description}</p>
                 </div>
               )}
-              {viewingCard.image_url && (
+              {viewingCardImages.length > 0 && (
                 <div>
-                  <p className="text-xs font-semibold text-muted-foreground mb-1">Imagem</p>
-                  <img src={viewingCard.image_url} alt="" className="rounded-lg w-full max-h-80 object-contain border" />
+                  <p className="text-xs font-semibold text-muted-foreground mb-2">Imagens ({viewingCardImages.length})</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {viewingCardImages.map((img: any, i: number) => (
+                      <img
+                        key={img.id}
+                        src={img.image_url}
+                        alt=""
+                        className="rounded-lg w-full h-32 object-cover border cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => openLightbox(viewingCardImages.map((im: any) => im.image_url), i)}
+                      />
+                    ))}
+                  </div>
                 </div>
               )}
               {viewingCard.labels?.length > 0 && (
@@ -421,8 +485,9 @@ const Kanban = () => {
             analystId={analystId} setAnalystId={setAnalystId}
             analysts={analysts} labels={labels}
             selectedLabels={selectedLabels} toggleLabel={toggleLabel}
-            imageFile={imageFile} setImageFile={setImageFile}
-            existingImageUrl={null} removeImage={false} setRemoveImage={() => {}}
+            pendingImages={pendingImages} setPendingImages={setPendingImages}
+            existingImages={[]}
+            onDeleteImage={() => {}}
             onSubmit={() => createCard.mutate()} loading={createCard.isPending}
           />
         </DialogContent>
@@ -430,7 +495,7 @@ const Kanban = () => {
 
       {/* Edit Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-lg sm:max-w-2xl" onPointerDownOutside={e => e.preventDefault()}>
+        <DialogContent className="max-w-lg sm:max-w-2xl max-h-[85vh] overflow-y-auto" onPointerDownOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Editar Card</DialogTitle>
             <DialogDescription>Altere os dados do card.</DialogDescription>
@@ -441,9 +506,9 @@ const Kanban = () => {
             analystId={analystId} setAnalystId={setAnalystId}
             analysts={analysts} labels={labels}
             selectedLabels={selectedLabels} toggleLabel={toggleLabel}
-            imageFile={imageFile} setImageFile={setImageFile}
-            existingImageUrl={editingCard?.image_url || null}
-            removeImage={removeImage} setRemoveImage={setRemoveImage}
+            pendingImages={pendingImages} setPendingImages={setPendingImages}
+            existingImages={editingCardImages}
+            onDeleteImage={(id) => deleteImage.mutate(id)}
             onSubmit={() => updateCard.mutate()} loading={updateCard.isPending}
           />
         </DialogContent>
@@ -514,6 +579,42 @@ const Kanban = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Lightbox */}
+      {lightboxIndex !== null && (
+        <Dialog open={true} onOpenChange={() => setLightboxIndex(null)}>
+          <DialogContent className="max-w-4xl p-2 bg-black/90 border-none">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Visualizar imagem</DialogTitle>
+              <DialogDescription>Imagem {(lightboxIndex || 0) + 1} de {lightboxImages.length}</DialogDescription>
+            </DialogHeader>
+            <div className="relative flex items-center justify-center min-h-[60vh]">
+              <img
+                src={lightboxImages[lightboxIndex]}
+                alt=""
+                className="max-h-[80vh] max-w-full object-contain rounded"
+              />
+              {lightboxImages.length > 1 && (
+                <>
+                  <button
+                    onClick={() => setLightboxIndex((lightboxIndex - 1 + lightboxImages.length) % lightboxImages.length)}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/20 hover:bg-white/40 text-white rounded-full p-2"
+                  >
+                    <ChevronLeft className="h-6 w-6" />
+                  </button>
+                  <button
+                    onClick={() => setLightboxIndex((lightboxIndex + 1) % lightboxImages.length)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/20 hover:bg-white/40 text-white rounded-full p-2"
+                  >
+                    <ChevronRight className="h-6 w-6" />
+                  </button>
+                </>
+              )}
+            </div>
+            <p className="text-center text-white/60 text-xs">{lightboxIndex + 1} / {lightboxImages.length}</p>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 };
@@ -523,8 +624,8 @@ function CardFormContent({
   title, setTitle, description, setDescription,
   analystId, setAnalystId, analysts, labels,
   selectedLabels, toggleLabel,
-  imageFile, setImageFile,
-  existingImageUrl, removeImage, setRemoveImage,
+  pendingImages, setPendingImages,
+  existingImages, onDeleteImage,
   onSubmit, loading,
 }: {
   title: string; setTitle: (v: string) => void;
@@ -532,14 +633,42 @@ function CardFormContent({
   analystId: string; setAnalystId: (v: string) => void;
   analysts: any[]; labels: any[];
   selectedLabels: string[]; toggleLabel: (id: string) => void;
-  imageFile: File | null; setImageFile: (f: File | null) => void;
-  existingImageUrl: string | null; removeImage: boolean; setRemoveImage: (v: boolean) => void;
+  pendingImages: File[]; setPendingImages: (f: File[]) => void;
+  existingImages: any[];
+  onDeleteImage: (id: string) => void;
   onSubmit: () => void; loading: boolean;
 }) {
-  const showImage = existingImageUrl && !removeImage;
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const newFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        if (file) newFiles.push(file);
+      }
+    }
+    if (newFiles.length > 0) {
+      e.preventDefault();
+      setPendingImages([...pendingImages, ...newFiles]);
+      toast.success(`${newFiles.length} imagem(ns) colada(s)!`);
+    }
+  }, [pendingImages, setPendingImages]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      setPendingImages([...pendingImages, ...files]);
+    }
+    e.target.value = '';
+  };
+
+  const removePending = (index: number) => {
+    setPendingImages(pendingImages.filter((_, i) => i !== index));
+  };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" onPaste={handlePaste}>
       <Input
         placeholder="Título"
         value={title}
@@ -547,7 +676,7 @@ function CardFormContent({
         autoComplete="off"
       />
       <Textarea
-        placeholder="Observações"
+        placeholder="Observações (use CTRL+V para colar imagens)"
         value={description}
         onChange={e => setDescription(e.target.value)}
         rows={4}
@@ -581,23 +710,52 @@ function CardFormContent({
         </div>
       )}
 
-      <div className="space-y-2">
-        {showImage && (
-          <div className="relative">
-            <img src={existingImageUrl} alt="" className="rounded-lg w-full max-h-48 object-contain border" />
-            <button
-              onClick={() => setRemoveImage(true)}
-              className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1"
-            >
-              <X className="h-3 w-3" />
-            </button>
+      {/* Existing images */}
+      {existingImages.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">Imagens anexadas:</p>
+          <div className="grid grid-cols-3 gap-2">
+            {existingImages.map((img: any) => (
+              <div key={img.id} className="relative group">
+                <img src={img.image_url} alt="" className="rounded-md w-full h-20 object-cover border" />
+                <button
+                  onClick={() => onDeleteImage(img.id)}
+                  className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
           </div>
-        )}
-        <label className="text-xs text-muted-foreground flex items-center gap-1 cursor-pointer">
-          <ImagePlus className="h-3 w-3" /> {showImage ? 'Trocar imagem' : 'Adicionar imagem'}
-          <input type="file" accept="image/*" className="hidden" onChange={e => { setImageFile(e.target.files?.[0] || null); setRemoveImage(false); }} />
+        </div>
+      )}
+
+      {/* Pending images (not yet uploaded) */}
+      {pendingImages.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">Novas imagens ({pendingImages.length}):</p>
+          <div className="grid grid-cols-3 gap-2">
+            {pendingImages.map((file, i) => (
+              <div key={i} className="relative group">
+                <img src={URL.createObjectURL(file)} alt="" className="rounded-md w-full h-20 object-cover border" />
+                <button
+                  onClick={() => removePending(i)}
+                  className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2">
+        <label className="text-xs text-muted-foreground flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors">
+          <ImagePlus className="h-3 w-3" /> Adicionar imagens
+          <input type="file" accept="image/*" multiple className="hidden" onChange={handleFileSelect} />
         </label>
-        {imageFile && <p className="text-xs text-muted-foreground">{imageFile.name}</p>}
+        <span className="text-[10px] text-muted-foreground">ou CTRL+V para colar</span>
       </div>
 
       <Button onClick={onSubmit} disabled={loading || !title.trim()} className="w-full">
