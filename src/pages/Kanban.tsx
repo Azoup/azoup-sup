@@ -15,19 +15,11 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from 'sonner';
 import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight } from 'lucide-react';
 
-const COLUMNS = [
-  { id: 'pending', title: 'Pendências' },
-  { id: 'scheduled', title: 'Agendamentos' },
-  { id: 'no_response', title: 'Sem Resposta' },
-  { id: 'done', title: 'Concluídos' },
+const COLUMN_COLOR_OPTIONS = [
+  'border-t-amber-500', 'border-t-blue-500', 'border-t-rose-500',
+  'border-t-emerald-500', 'border-t-purple-500', 'border-t-orange-500',
+  'border-t-cyan-500', 'border-t-pink-500', 'border-t-indigo-500',
 ];
-
-const COLUMN_COLORS: Record<string, string> = {
-  pending: 'border-t-amber-500',
-  scheduled: 'border-t-blue-500',
-  no_response: 'border-t-rose-500',
-  done: 'border-t-emerald-500',
-};
 
 const Kanban = () => {
   const { user } = useAuth();
@@ -53,6 +45,24 @@ const Kanban = () => {
   const [deleteLabelId, setDeleteLabelId] = useState<string | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [lightboxImages, setLightboxImages] = useState<string[]>([]);
+
+  // Column management state
+  const [addColumnOpen, setAddColumnOpen] = useState(false);
+  const [newColumnTitle, setNewColumnTitle] = useState('');
+  const [newColumnColor, setNewColumnColor] = useState('border-t-blue-500');
+  const [editColumnOpen, setEditColumnOpen] = useState(false);
+  const [editingColumn, setEditingColumn] = useState<any>(null);
+  const [editColumnTitle, setEditColumnTitle] = useState('');
+  const [editColumnColor, setEditColumnColor] = useState('');
+  const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
+
+  const { data: columns = [] } = useQuery({
+    queryKey: ['kanban-columns'],
+    queryFn: async () => {
+      const { data } = await supabase.from('kanban_columns').select('*').order('position');
+      return data || [];
+    },
+  });
 
   const { data: analysts = [] } = useQuery({
     queryKey: ['analysts-active'],
@@ -103,22 +113,30 @@ const Kanban = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'kanban_card_images' }, () => {
         queryClient.invalidateQueries({ queryKey: ['kanban-card-images'] });
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kanban_columns' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['kanban-columns'] });
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [queryClient]);
 
+  const sortedColumns = useMemo(() => {
+    return [...columns].sort((a: any, b: any) => a.position - b.position);
+  }, [columns]);
+
   const cardsByColumn = useMemo(() => {
     const map: Record<string, any[]> = {};
-    COLUMNS.forEach(c => { map[c.id] = []; });
+    sortedColumns.forEach((c: any) => { map[c.slug] = []; });
     cards.forEach((card: any) => {
-      const col = map[card.status] || map['pending'];
+      const col = map[card.status];
+      if (!col) { (map[sortedColumns[0]?.slug] || []).push(card); return; }
       const cls = cardLabels.filter((cl: any) => cl.card_id === card.id);
       const analyst = analysts.find((a: any) => a.id === card.analyst_id);
       const images = cardImages.filter((img: any) => img.card_id === card.id);
       col.push({ ...card, labels: cls.map((cl: any) => cl.kanban_labels), analyst, images });
     });
     return map;
-  }, [cards, cardLabels, analysts, cardImages]);
+  }, [cards, cardLabels, analysts, cardImages, sortedColumns]);
 
   const uploadImage = async (file: File): Promise<string | null> => {
     const ext = file.name?.split('.').pop() || 'png';
@@ -261,16 +279,88 @@ const Kanban = () => {
     },
   });
 
-  const onDragEnd = async (result: DropResult) => {
-    if (!result.destination) return;
-    const { destination, draggableId } = result;
-    const { error } = await supabase.from('kanban_cards')
-      .update({ status: destination.droppableId, position: destination.index })
-      .eq('id', draggableId);
-    if (!error) {
+  // --- Column mutations ---
+  const addColumn = useMutation({
+    mutationFn: async () => {
+      const slug = newColumnTitle.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') + '_' + Date.now();
+      const position = sortedColumns.length;
+      const { error } = await supabase.from('kanban_columns').insert({
+        title: newColumnTitle, slug, position, color: newColumnColor,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kanban-columns'] });
+      setNewColumnTitle(''); setNewColumnColor('border-t-blue-500');
+      setAddColumnOpen(false);
+      toast.success('Lista criada!');
+    },
+    onError: () => toast.error('Erro ao criar lista.'),
+  });
+
+  const editColumn = useMutation({
+    mutationFn: async () => {
+      if (!editingColumn) return;
+      const { error } = await supabase.from('kanban_columns')
+        .update({ title: editColumnTitle, color: editColumnColor })
+        .eq('id', editingColumn.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kanban-columns'] });
+      setEditColumnOpen(false); setEditingColumn(null);
+      toast.success('Lista atualizada!');
+    },
+  });
+
+  const removeColumn = useMutation({
+    mutationFn: async (id: string) => {
+      const col = sortedColumns.find((c: any) => c.id === id);
+      if (!col) return;
+      // Move cards from deleted column to first column
+      const firstCol = sortedColumns.find((c: any) => c.id !== id);
+      if (firstCol) {
+        await supabase.from('kanban_cards').update({ status: firstCol.slug }).eq('status', col.slug);
+      }
+      const { error } = await supabase.from('kanban_columns').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kanban-columns'] });
       queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
-    }
-  };
+      setDeleteColumnId(null);
+      toast.success('Lista excluída!');
+    },
+  });
+
+  // --- Optimistic drag and drop ---
+  const onDragEnd = useCallback((result: DropResult) => {
+    if (!result.destination) return;
+    const { source, destination, draggableId } = result;
+    if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+
+    // Optimistic update: immediately update the cache
+    queryClient.setQueryData(['kanban-cards'], (old: any[] | undefined) => {
+      if (!old) return old;
+      return old.map(card =>
+        card.id === draggableId
+          ? { ...card, status: destination.droppableId, position: destination.index }
+          : card
+      );
+    });
+
+    // Persist in background
+    supabase.from('kanban_cards')
+      .update({ status: destination.droppableId, position: destination.index })
+      .eq('id', draggableId)
+      .then(({ error }) => {
+        if (error) {
+          // Rollback on error
+          queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
+          toast.error('Erro ao mover card.');
+        }
+      });
+  }, [queryClient]);
 
   const resetForm = () => {
     setTitle(''); setDescription(''); setAnalystId('');
@@ -292,9 +382,9 @@ const Kanban = () => {
     setViewOpen(true);
   };
 
-  const openCreate = (colId: string) => {
+  const openCreate = (colSlug: string) => {
     resetForm();
-    setTargetColumn(colId);
+    setTargetColumn(colSlug);
     setCreateOpen(true);
   };
 
@@ -313,42 +403,68 @@ const Kanban = () => {
     setLightboxIndex(index);
   };
 
-  // Get images for the viewing card (live from query data)
+  const openEditColumn = (col: any) => {
+    setEditingColumn(col);
+    setEditColumnTitle(col.title);
+    setEditColumnColor(col.color);
+    setEditColumnOpen(true);
+  };
+
   const viewingCardImages = useMemo(() => {
     if (!viewingCard) return [];
     return cardImages.filter((img: any) => img.card_id === viewingCard.id);
   }, [viewingCard, cardImages]);
 
-  // Get images for the editing card (live from query data)
   const editingCardImages = useMemo(() => {
     if (!editingCard) return [];
     return cardImages.filter((img: any) => img.card_id === editingCard.id);
   }, [editingCard, cardImages]);
 
+  const gridCols = sortedColumns.length <= 4
+    ? 'lg:grid-cols-4'
+    : sortedColumns.length <= 6
+    ? 'lg:grid-cols-6'
+    : 'lg:grid-cols-4';
+
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-heading font-bold">Kanban Pendências</h1>
-        <Button variant="outline" size="sm" onClick={() => setLabelOpen(true)}>
-          <Tag className="h-4 w-4 mr-1" /> Etiquetas
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setLabelOpen(true)}>
+            <Tag className="h-4 w-4 mr-1" /> Etiquetas
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setAddColumnOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" /> Adicionar lista
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
         <div className="flex justify-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
       ) : (
         <DragDropContext onDragEnd={onDragEnd}>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {COLUMNS.map(col => (
-              <div key={col.id} className={`bg-muted/30 rounded-lg p-3 border-t-4 ${COLUMN_COLORS[col.id]} min-h-[300px]`}>
+          <div className={`grid grid-cols-1 md:grid-cols-2 ${gridCols} gap-4`} style={sortedColumns.length > 6 ? { gridTemplateColumns: `repeat(${sortedColumns.length}, minmax(220px, 1fr))`, overflowX: 'auto' } : undefined}>
+            {sortedColumns.map((col: any) => (
+              <div key={col.id} className={`bg-muted/30 rounded-lg p-3 border-t-4 ${col.color} min-h-[300px]`}>
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-semibold text-sm">{col.title}</h3>
-                  <Badge variant="secondary" className="text-xs">{(cardsByColumn[col.id] || []).length}</Badge>
+                  <div className="flex items-center gap-1">
+                    <Badge variant="secondary" className="text-xs">{(cardsByColumn[col.slug] || []).length}</Badge>
+                    <button onClick={() => openEditColumn(col)} className="text-muted-foreground hover:text-primary">
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                    {sortedColumns.length > 1 && (
+                      <button onClick={() => setDeleteColumnId(col.id)} className="text-muted-foreground hover:text-destructive">
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <Droppable droppableId={col.id}>
+                <Droppable droppableId={col.slug}>
                   {(provided) => (
                     <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-2 min-h-[100px]">
-                      {(cardsByColumn[col.id] || []).map((card: any, index: number) => (
+                      {(cardsByColumn[col.slug] || []).map((card: any, index: number) => (
                         <Draggable key={card.id} draggableId={card.id} index={index}>
                           {(provided, snapshot) => (
                             <div
@@ -399,7 +515,7 @@ const Kanban = () => {
                     </div>
                   )}
                 </Droppable>
-                <Button variant="ghost" size="sm" className="w-full mt-2 text-xs" onClick={() => openCreate(col.id)}>
+                <Button variant="ghost" size="sm" className="w-full mt-2 text-xs" onClick={() => openCreate(col.slug)}>
                   <Plus className="h-3 w-3 mr-1" /> Novo Card
                 </Button>
               </div>
@@ -414,7 +530,7 @@ const Kanban = () => {
           <DialogHeader>
             <DialogTitle>{viewingCard?.title}</DialogTitle>
             <DialogDescription>
-              {COLUMNS.find(c => c.id === viewingCard?.status)?.title}
+              {sortedColumns.find((c: any) => c.slug === viewingCard?.status)?.title}
             </DialogDescription>
           </DialogHeader>
           {viewingCard && (
@@ -580,6 +696,82 @@ const Kanban = () => {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Add Column Dialog */}
+      <Dialog open={addColumnOpen} onOpenChange={setAddColumnOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Nova Lista</DialogTitle>
+            <DialogDescription>Crie uma nova coluna no Kanban.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input placeholder="Nome da lista" value={newColumnTitle} onChange={e => setNewColumnTitle(e.target.value)} />
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">Cor da borda:</p>
+              <div className="flex flex-wrap gap-2">
+                {COLUMN_COLOR_OPTIONS.map(c => (
+                  <button
+                    key={c}
+                    onClick={() => setNewColumnColor(c)}
+                    className={`w-8 h-8 rounded-full border-2 border-t-4 ${c} ${newColumnColor === c ? 'ring-2 ring-primary ring-offset-2' : 'border-muted'}`}
+                  />
+                ))}
+              </div>
+            </div>
+            <Button onClick={() => addColumn.mutate()} disabled={!newColumnTitle.trim() || addColumn.isPending} className="w-full">
+              {addColumn.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Criar Lista
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Column Dialog */}
+      <Dialog open={editColumnOpen} onOpenChange={setEditColumnOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Editar Lista</DialogTitle>
+            <DialogDescription>Altere o nome ou cor da lista.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input placeholder="Nome da lista" value={editColumnTitle} onChange={e => setEditColumnTitle(e.target.value)} />
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">Cor da borda:</p>
+              <div className="flex flex-wrap gap-2">
+                {COLUMN_COLOR_OPTIONS.map(c => (
+                  <button
+                    key={c}
+                    onClick={() => setEditColumnColor(c)}
+                    className={`w-8 h-8 rounded-full border-2 border-t-4 ${c} ${editColumnColor === c ? 'ring-2 ring-primary ring-offset-2' : 'border-muted'}`}
+                  />
+                ))}
+              </div>
+            </div>
+            <Button onClick={() => editColumn.mutate()} disabled={!editColumnTitle.trim() || editColumn.isPending} className="w-full">
+              {editColumn.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Salvar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm Delete Column */}
+      <AlertDialog open={!!deleteColumnId} onOpenChange={() => setDeleteColumnId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir lista?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Os cards desta lista serão movidos para a primeira coluna. Deseja continuar?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteColumnId && removeColumn.mutate(deleteColumnId)}>
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Lightbox */}
       {lightboxIndex !== null && (
         <Dialog open={true} onOpenChange={() => setLightboxIndex(null)}>
@@ -710,7 +902,6 @@ function CardFormContent({
         </div>
       )}
 
-      {/* Existing images */}
       {existingImages.length > 0 && (
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">Imagens anexadas:</p>
@@ -730,7 +921,6 @@ function CardFormContent({
         </div>
       )}
 
-      {/* Pending images (not yet uploaded) */}
       {pendingImages.length > 0 && (
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">Novas imagens ({pendingImages.length}):</p>
