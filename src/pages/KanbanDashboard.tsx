@@ -77,11 +77,11 @@ const KanbanDashboard = () => {
   }, [cardLabels]);
 
   const statusData = useMemo(() => {
-    return Object.entries(COLUMN_LABELS).map(([key, label]) => ({
-      name: label,
-      cards: cards.filter((c: any) => c.status === key).length,
+    return columns.map((col: any) => ({
+      name: col.title,
+      cards: cards.filter((c: any) => c.status === col.slug).length,
     }));
-  }, [cards]);
+  }, [cards, columns]);
 
   if (isLoading) return <div className="flex justify-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
