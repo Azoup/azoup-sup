@@ -5,16 +5,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, ClipboardList, CheckCircle2, Clock, Users } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
-const COLUMN_LABELS: Record<string, string> = {
-  pending: 'Pendências',
-  scheduled: 'Agendamentos',
-  no_response: 'Sem Resposta',
-  done: 'Concluídos',
-};
-
 const COLORS = ['#f59e0b', '#3b82f6', '#ef4444', '#10b981', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
 const KanbanDashboard = () => {
+  const { data: columns = [] } = useQuery({
+    queryKey: ['kanban-columns'],
+    queryFn: async () => {
+      const { data } = await supabase.from('kanban_columns').select('*').order('position');
+      return data || [];
+    },
+  });
+
   const { data: cards = [], isLoading } = useQuery({
     queryKey: ['kanban-cards'],
     queryFn: async () => {
@@ -76,11 +77,11 @@ const KanbanDashboard = () => {
   }, [cardLabels]);
 
   const statusData = useMemo(() => {
-    return Object.entries(COLUMN_LABELS).map(([key, label]) => ({
-      name: label,
-      cards: cards.filter((c: any) => c.status === key).length,
+    return columns.map((col: any) => ({
+      name: col.title,
+      cards: cards.filter((c: any) => c.status === col.slug).length,
     }));
-  }, [cards]);
+  }, [cards, columns]);
 
   if (isLoading) return <div className="flex justify-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
