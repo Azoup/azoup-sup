@@ -28,6 +28,7 @@ const Kanban = () => {
   const { isAdmin } = useRole();
   const queryClient = useQueryClient();
   const [filterLabelIds, setFilterLabelIds] = useState<string[]>([]);
+  const [filterAnalystIds, setFilterAnalystIds] = useState<string[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
