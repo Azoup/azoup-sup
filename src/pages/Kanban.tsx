@@ -462,10 +462,10 @@ const Kanban = () => {
     setFilterAnalystIds(prev => prev.includes(analystId) ? prev.filter(id => id !== analystId) : [...prev, analystId]);
   }, []);
 
-  const gridCols = sortedColumns.length <= 4
+  const gridCols = sortedColumns.length <= 3
+    ? 'lg:grid-cols-3'
+    : sortedColumns.length <= 4
     ? 'lg:grid-cols-4'
-    : sortedColumns.length <= 6
-    ? 'lg:grid-cols-6'
     : 'lg:grid-cols-4';
 
   return (
