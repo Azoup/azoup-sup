@@ -28,6 +28,7 @@ const Kanban = () => {
   const { isAdmin } = useRole();
   const queryClient = useQueryClient();
   const [filterLabelIds, setFilterLabelIds] = useState<string[]>([]);
+  const [filterAnalystIds, setFilterAnalystIds] = useState<string[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -143,10 +144,14 @@ const Kanban = () => {
         const cardLabelIds = cls.map((cl: any) => cl.label_id);
         if (!filterLabelIds.some(fid => cardLabelIds.includes(fid))) return;
       }
+      // Apply analyst filter
+      if (filterAnalystIds.length > 0) {
+        if (!card.analyst_id || !filterAnalystIds.includes(card.analyst_id)) return;
+      }
       col.push(enriched);
     });
     return map;
-  }, [cards, cardLabels, analysts, cardImages, sortedColumns, filterLabelIds]);
+  }, [cards, cardLabels, analysts, cardImages, sortedColumns, filterLabelIds, filterAnalystIds]);
 
   const uploadImage = async (file: File): Promise<string | null> => {
     const ext = file.name?.split('.').pop() || 'png';
@@ -453,10 +458,14 @@ const Kanban = () => {
     setFilterLabelIds(prev => prev.includes(labelId) ? prev.filter(id => id !== labelId) : [...prev, labelId]);
   }, []);
 
-  const gridCols = sortedColumns.length <= 4
+  const toggleFilterAnalyst = useCallback((analystId: string) => {
+    setFilterAnalystIds(prev => prev.includes(analystId) ? prev.filter(id => id !== analystId) : [...prev, analystId]);
+  }, []);
+
+  const gridCols = sortedColumns.length <= 3
+    ? 'lg:grid-cols-3'
+    : sortedColumns.length <= 4
     ? 'lg:grid-cols-4'
-    : sortedColumns.length <= 6
-    ? 'lg:grid-cols-6'
     : 'lg:grid-cols-4';
 
   return (
@@ -473,35 +482,58 @@ const Kanban = () => {
         </div>
       </div>
 
-      {/* Label filter */}
-      {labels.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <Filter className="h-4 w-4 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">Filtrar:</span>
-          {labels.map((l: any) => (
-            <Badge
-              key={l.id}
-              variant={filterLabelIds.includes(l.id) ? 'default' : 'outline'}
-              className="cursor-pointer text-xs"
-              style={filterLabelIds.includes(l.id) ? { backgroundColor: l.color } : {}}
-              onClick={() => toggleFilterLabel(l.id)}
-            >
-              {l.name}
-            </Badge>
-          ))}
-          {filterLabelIds.length > 0 && (
-            <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setFilterLabelIds([])}>
-              Limpar filtro
-            </Button>
-          )}
-        </div>
-      )}
+      {/* Filters */}
+      <div className="flex items-center gap-4 flex-wrap">
+        {labels.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Etiquetas:</span>
+            {labels.map((l: any) => (
+              <Badge
+                key={l.id}
+                variant={filterLabelIds.includes(l.id) ? 'default' : 'outline'}
+                className="cursor-pointer text-xs"
+                style={filterLabelIds.includes(l.id) ? { backgroundColor: l.color } : {}}
+                onClick={() => toggleFilterLabel(l.id)}
+              >
+                {l.name}
+              </Badge>
+            ))}
+            {filterLabelIds.length > 0 && (
+              <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setFilterLabelIds([])}>
+                <X className="h-3 w-3 mr-1" /> Limpar
+              </Button>
+            )}
+          </div>
+        )}
+        {analysts.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Analista:</span>
+            {analysts.map((a: any) => (
+              <Badge
+                key={a.id}
+                variant={filterAnalystIds.includes(a.id) ? 'default' : 'outline'}
+                className="cursor-pointer text-xs"
+                onClick={() => toggleFilterAnalyst(a.id)}
+              >
+                {a.name}
+              </Badge>
+            ))}
+            {filterAnalystIds.length > 0 && (
+              <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setFilterAnalystIds([])}>
+                <X className="h-3 w-3 mr-1" /> Limpar
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
 
       {isLoading ? (
         <div className="flex justify-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
       ) : (
         <DragDropContext onDragEnd={onDragEnd}>
-          <div className={`grid grid-cols-1 md:grid-cols-2 ${gridCols} gap-4`} style={sortedColumns.length > 6 ? { gridTemplateColumns: `repeat(${sortedColumns.length}, minmax(220px, 1fr))`, overflowX: 'auto' } : undefined}>
+          <div className={`grid grid-cols-1 md:grid-cols-2 ${gridCols} gap-4`} style={sortedColumns.length > 4 ? { gridTemplateColumns: `repeat(${sortedColumns.length}, minmax(280px, 1fr))`, overflowX: 'auto' } : undefined}>
             {sortedColumns.map((col: any, colIdx: number) => (
               <div key={col.id} className={`bg-muted/30 rounded-lg p-3 border-t-4 ${col.color} min-h-[300px] flex flex-col`}>
                 <div className="flex items-center justify-between mb-3">
