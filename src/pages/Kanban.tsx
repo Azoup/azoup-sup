@@ -482,29 +482,52 @@ const Kanban = () => {
         </div>
       </div>
 
-      {/* Label filter */}
-      {labels.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <Filter className="h-4 w-4 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">Filtrar:</span>
-          {labels.map((l: any) => (
-            <Badge
-              key={l.id}
-              variant={filterLabelIds.includes(l.id) ? 'default' : 'outline'}
-              className="cursor-pointer text-xs"
-              style={filterLabelIds.includes(l.id) ? { backgroundColor: l.color } : {}}
-              onClick={() => toggleFilterLabel(l.id)}
-            >
-              {l.name}
-            </Badge>
-          ))}
-          {filterLabelIds.length > 0 && (
-            <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setFilterLabelIds([])}>
-              Limpar filtro
-            </Button>
-          )}
-        </div>
-      )}
+      {/* Filters */}
+      <div className="flex items-center gap-4 flex-wrap">
+        {labels.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Etiquetas:</span>
+            {labels.map((l: any) => (
+              <Badge
+                key={l.id}
+                variant={filterLabelIds.includes(l.id) ? 'default' : 'outline'}
+                className="cursor-pointer text-xs"
+                style={filterLabelIds.includes(l.id) ? { backgroundColor: l.color } : {}}
+                onClick={() => toggleFilterLabel(l.id)}
+              >
+                {l.name}
+              </Badge>
+            ))}
+            {filterLabelIds.length > 0 && (
+              <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setFilterLabelIds([])}>
+                <X className="h-3 w-3 mr-1" /> Limpar
+              </Button>
+            )}
+          </div>
+        )}
+        {analysts.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Analista:</span>
+            {analysts.map((a: any) => (
+              <Badge
+                key={a.id}
+                variant={filterAnalystIds.includes(a.id) ? 'default' : 'outline'}
+                className="cursor-pointer text-xs"
+                onClick={() => toggleFilterAnalyst(a.id)}
+              >
+                {a.name}
+              </Badge>
+            ))}
+            {filterAnalystIds.length > 0 && (
+              <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setFilterAnalystIds([])}>
+                <X className="h-3 w-3 mr-1" /> Limpar
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
 
       {isLoading ? (
         <div className="flex justify-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
