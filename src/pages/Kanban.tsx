@@ -151,7 +151,7 @@ const Kanban = () => {
       col.push(enriched);
     });
     return map;
-  }, [cards, cardLabels, analysts, cardImages, sortedColumns, filterLabelIds]);
+  }, [cards, cardLabels, analysts, cardImages, sortedColumns, filterLabelIds, filterAnalystIds]);
 
   const uploadImage = async (file: File): Promise<string | null> => {
     const ext = file.name?.split('.').pop() || 'png';
