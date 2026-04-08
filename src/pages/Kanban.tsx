@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useRole } from '@/hooks/useRole';
 import { logActivity } from '@/hooks/useActivityLog';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
@@ -12,8 +13,9 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
-import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight } from 'lucide-react';
 
 const COLUMN_COLOR_OPTIONS = [
   'border-t-amber-500', 'border-t-blue-500', 'border-t-rose-500',
@@ -23,7 +25,9 @@ const COLUMN_COLOR_OPTIONS = [
 
 const Kanban = () => {
   const { user } = useAuth();
+  const { isAdmin } = useRole();
   const queryClient = useQueryClient();
+  const [filterLabelIds, setFilterLabelIds] = useState<string[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -133,10 +137,16 @@ const Kanban = () => {
       const cls = cardLabels.filter((cl: any) => cl.card_id === card.id);
       const analyst = analysts.find((a: any) => a.id === card.analyst_id);
       const images = cardImages.filter((img: any) => img.card_id === card.id);
-      col.push({ ...card, labels: cls.map((cl: any) => cl.kanban_labels), analyst, images });
+      const enriched = { ...card, labels: cls.map((cl: any) => cl.kanban_labels), analyst, images };
+      // Apply label filter
+      if (filterLabelIds.length > 0) {
+        const cardLabelIds = cls.map((cl: any) => cl.label_id);
+        if (!filterLabelIds.some(fid => cardLabelIds.includes(fid))) return;
+      }
+      col.push(enriched);
     });
     return map;
-  }, [cards, cardLabels, analysts, cardImages, sortedColumns]);
+  }, [cards, cardLabels, analysts, cardImages, sortedColumns, filterLabelIds]);
 
   const uploadImage = async (file: File): Promise<string | null> => {
     const ext = file.name?.split('.').pop() || 'png';
@@ -420,6 +430,29 @@ const Kanban = () => {
     return cardImages.filter((img: any) => img.card_id === editingCard.id);
   }, [editingCard, cardImages]);
 
+  // Column reorder (admin only)
+  const moveColumn = useCallback(async (colId: string, direction: 'left' | 'right') => {
+    const idx = sortedColumns.findIndex((c: any) => c.id === colId);
+    const swapIdx = direction === 'left' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= sortedColumns.length) return;
+    const a = sortedColumns[idx];
+    const b = sortedColumns[swapIdx];
+    // Optimistic
+    queryClient.setQueryData(['kanban-columns'], (old: any[] | undefined) => {
+      if (!old) return old;
+      return old.map(c => c.id === a.id ? { ...c, position: b.position } : c.id === b.id ? { ...c, position: a.position } : c);
+    });
+    await Promise.all([
+      supabase.from('kanban_columns').update({ position: b.position }).eq('id', a.id),
+      supabase.from('kanban_columns').update({ position: a.position }).eq('id', b.id),
+    ]);
+    queryClient.invalidateQueries({ queryKey: ['kanban-columns'] });
+  }, [sortedColumns, queryClient]);
+
+  const toggleFilterLabel = useCallback((labelId: string) => {
+    setFilterLabelIds(prev => prev.includes(labelId) ? prev.filter(id => id !== labelId) : [...prev, labelId]);
+  }, []);
+
   const gridCols = sortedColumns.length <= 4
     ? 'lg:grid-cols-4'
     : sortedColumns.length <= 6
@@ -440,17 +473,51 @@ const Kanban = () => {
         </div>
       </div>
 
+      {/* Label filter */}
+      {labels.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <Filter className="h-4 w-4 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">Filtrar:</span>
+          {labels.map((l: any) => (
+            <Badge
+              key={l.id}
+              variant={filterLabelIds.includes(l.id) ? 'default' : 'outline'}
+              className="cursor-pointer text-xs"
+              style={filterLabelIds.includes(l.id) ? { backgroundColor: l.color } : {}}
+              onClick={() => toggleFilterLabel(l.id)}
+            >
+              {l.name}
+            </Badge>
+          ))}
+          {filterLabelIds.length > 0 && (
+            <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setFilterLabelIds([])}>
+              Limpar filtro
+            </Button>
+          )}
+        </div>
+      )}
+
       {isLoading ? (
         <div className="flex justify-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
       ) : (
         <DragDropContext onDragEnd={onDragEnd}>
           <div className={`grid grid-cols-1 md:grid-cols-2 ${gridCols} gap-4`} style={sortedColumns.length > 6 ? { gridTemplateColumns: `repeat(${sortedColumns.length}, minmax(220px, 1fr))`, overflowX: 'auto' } : undefined}>
-            {sortedColumns.map((col: any) => (
-              <div key={col.id} className={`bg-muted/30 rounded-lg p-3 border-t-4 ${col.color} min-h-[300px]`}>
+            {sortedColumns.map((col: any, colIdx: number) => (
+              <div key={col.id} className={`bg-muted/30 rounded-lg p-3 border-t-4 ${col.color} min-h-[300px] flex flex-col`}>
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-semibold text-sm">{col.title}</h3>
                   <div className="flex items-center gap-1">
                     <Badge variant="secondary" className="text-xs">{(cardsByColumn[col.slug] || []).length}</Badge>
+                    {isAdmin && colIdx > 0 && (
+                      <button onClick={() => moveColumn(col.id, 'left')} className="text-muted-foreground hover:text-primary">
+                        <ArrowLeft className="h-3 w-3" />
+                      </button>
+                    )}
+                    {isAdmin && colIdx < sortedColumns.length - 1 && (
+                      <button onClick={() => moveColumn(col.id, 'right')} className="text-muted-foreground hover:text-primary">
+                        <ArrowRight className="h-3 w-3" />
+                      </button>
+                    )}
                     <button onClick={() => openEditColumn(col)} className="text-muted-foreground hover:text-primary">
                       <Pencil className="h-3 w-3" />
                     </button>
@@ -463,56 +530,58 @@ const Kanban = () => {
                 </div>
                 <Droppable droppableId={col.slug}>
                   {(provided) => (
-                    <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-2 min-h-[100px]">
-                      {(cardsByColumn[col.slug] || []).map((card: any, index: number) => (
-                        <Draggable key={card.id} draggableId={card.id} index={index}>
-                          {(provided, snapshot) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              {...provided.dragHandleProps}
-                              onClick={() => openView(card)}
-                              className={`bg-card rounded-md border p-3 shadow-sm space-y-2 cursor-pointer hover:shadow-md transition-shadow ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''}`}
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <p className="font-medium text-sm flex-1">{card.title}</p>
-                                <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
-                                  <button onClick={() => openEdit(card)} className="text-muted-foreground hover:text-primary">
-                                    <Pencil className="h-3 w-3" />
-                                  </button>
-                                  <button onClick={() => deleteCard.mutate(card.id)} className="text-muted-foreground hover:text-destructive">
-                                    <Trash2 className="h-3 w-3" />
-                                  </button>
+                    <ScrollArea className="flex-1" style={{ maxHeight: '400px' }}>
+                      <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-2 min-h-[100px] pr-2">
+                        {(cardsByColumn[col.slug] || []).map((card: any, index: number) => (
+                          <Draggable key={card.id} draggableId={card.id} index={index}>
+                            {(provided, snapshot) => (
+                              <div
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                {...provided.dragHandleProps}
+                                onClick={() => openView(card)}
+                                className={`bg-card rounded-md border p-3 shadow-sm space-y-2 cursor-pointer hover:shadow-md transition-shadow ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''}`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className="font-medium text-sm flex-1">{card.title}</p>
+                                  <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                                    <button onClick={() => openEdit(card)} className="text-muted-foreground hover:text-primary">
+                                      <Pencil className="h-3 w-3" />
+                                    </button>
+                                    <button onClick={() => deleteCard.mutate(card.id)} className="text-muted-foreground hover:text-destructive">
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  </div>
                                 </div>
-                              </div>
-                              {card.description && <p className="text-xs text-muted-foreground line-clamp-2">{card.description}</p>}
-                              <div className="flex items-center gap-2 flex-wrap">
-                                {card.labels?.length > 0 && card.labels.map((l: any) => (
-                                  <span key={l.id} className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: l.color }}>
-                                    {l.name}
-                                  </span>
-                                ))}
-                                {card.images?.length > 0 && (
-                                  <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
-                                    <Paperclip className="h-3 w-3" /> {card.images.length}
-                                  </span>
+                                {card.description && <p className="text-xs text-muted-foreground line-clamp-2">{card.description}</p>}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {card.labels?.length > 0 && card.labels.map((l: any) => (
+                                    <span key={l.id} className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: l.color }}>
+                                      {l.name}
+                                    </span>
+                                  ))}
+                                  {card.images?.length > 0 && (
+                                    <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+                                      <Paperclip className="h-3 w-3" /> {card.images.length}
+                                    </span>
+                                  )}
+                                </div>
+                                {card.analyst && (
+                                  <div className="flex items-center gap-1.5">
+                                    <Avatar className="h-5 w-5">
+                                      <AvatarImage src={card.analyst.photo_url || ''} />
+                                      <AvatarFallback className="text-[8px]">{card.analyst.name?.charAt(0)}</AvatarFallback>
+                                    </Avatar>
+                                    <span className="text-[10px] text-muted-foreground">{card.analyst.name}</span>
+                                  </div>
                                 )}
                               </div>
-                              {card.analyst && (
-                                <div className="flex items-center gap-1.5">
-                                  <Avatar className="h-5 w-5">
-                                    <AvatarImage src={card.analyst.photo_url || ''} />
-                                    <AvatarFallback className="text-[8px]">{card.analyst.name?.charAt(0)}</AvatarFallback>
-                                  </Avatar>
-                                  <span className="text-[10px] text-muted-foreground">{card.analyst.name}</span>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </Draggable>
-                      ))}
-                      {provided.placeholder}
-                    </div>
+                            )}
+                          </Draggable>
+                        ))}
+                        {provided.placeholder}
+                      </div>
+                    </ScrollArea>
                   )}
                 </Droppable>
                 <Button variant="ghost" size="sm" className="w-full mt-2 text-xs" onClick={() => openCreate(col.slug)}>
@@ -803,7 +872,18 @@ const Kanban = () => {
                 </>
               )}
             </div>
-            <p className="text-center text-white/60 text-xs">{lightboxIndex + 1} / {lightboxImages.length}</p>
+            <div className="flex items-center justify-center gap-4">
+              <p className="text-white/60 text-xs">{lightboxIndex + 1} / {lightboxImages.length}</p>
+              <a
+                href={lightboxImages[lightboxIndex]}
+                download
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-white/80 hover:text-white text-xs bg-white/20 hover:bg-white/30 rounded px-3 py-1.5 transition-colors"
+              >
+                <Download className="h-4 w-4" /> Baixar
+              </a>
+            </div>
           </DialogContent>
         </Dialog>
       )}
