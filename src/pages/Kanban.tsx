@@ -872,7 +872,18 @@ const Kanban = () => {
                 </>
               )}
             </div>
-            <p className="text-center text-white/60 text-xs">{lightboxIndex + 1} / {lightboxImages.length}</p>
+            <div className="flex items-center justify-center gap-4">
+              <p className="text-white/60 text-xs">{lightboxIndex + 1} / {lightboxImages.length}</p>
+              <a
+                href={lightboxImages[lightboxIndex]}
+                download
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-white/80 hover:text-white text-xs bg-white/20 hover:bg-white/30 rounded px-3 py-1.5 transition-colors"
+              >
+                <Download className="h-4 w-4" /> Baixar
+              </a>
+            </div>
           </DialogContent>
         </Dialog>
       )}
