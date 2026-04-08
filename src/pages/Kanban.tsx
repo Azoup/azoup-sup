@@ -533,7 +533,7 @@ const Kanban = () => {
         <div className="flex justify-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
       ) : (
         <DragDropContext onDragEnd={onDragEnd}>
-          <div className={`grid grid-cols-1 md:grid-cols-2 ${gridCols} gap-4`} style={sortedColumns.length > 6 ? { gridTemplateColumns: `repeat(${sortedColumns.length}, minmax(220px, 1fr))`, overflowX: 'auto' } : undefined}>
+          <div className={`grid grid-cols-1 md:grid-cols-2 ${gridCols} gap-4`} style={sortedColumns.length > 4 ? { gridTemplateColumns: `repeat(${sortedColumns.length}, minmax(280px, 1fr))`, overflowX: 'auto' } : undefined}>
             {sortedColumns.map((col: any, colIdx: number) => (
               <div key={col.id} className={`bg-muted/30 rounded-lg p-3 border-t-4 ${col.color} min-h-[300px] flex flex-col`}>
                 <div className="flex items-center justify-between mb-3">
