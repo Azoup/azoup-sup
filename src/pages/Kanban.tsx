@@ -144,6 +144,10 @@ const Kanban = () => {
         const cardLabelIds = cls.map((cl: any) => cl.label_id);
         if (!filterLabelIds.some(fid => cardLabelIds.includes(fid))) return;
       }
+      // Apply analyst filter
+      if (filterAnalystIds.length > 0) {
+        if (!card.analyst_id || !filterAnalystIds.includes(card.analyst_id)) return;
+      }
       col.push(enriched);
     });
     return map;
