@@ -137,10 +137,16 @@ const Kanban = () => {
       const cls = cardLabels.filter((cl: any) => cl.card_id === card.id);
       const analyst = analysts.find((a: any) => a.id === card.analyst_id);
       const images = cardImages.filter((img: any) => img.card_id === card.id);
-      col.push({ ...card, labels: cls.map((cl: any) => cl.kanban_labels), analyst, images });
+      const enriched = { ...card, labels: cls.map((cl: any) => cl.kanban_labels), analyst, images };
+      // Apply label filter
+      if (filterLabelIds.length > 0) {
+        const cardLabelIds = cls.map((cl: any) => cl.label_id);
+        if (!filterLabelIds.some(fid => cardLabelIds.includes(fid))) return;
+      }
+      col.push(enriched);
     });
     return map;
-  }, [cards, cardLabels, analysts, cardImages, sortedColumns]);
+  }, [cards, cardLabels, analysts, cardImages, sortedColumns, filterLabelIds]);
 
   const uploadImage = async (file: File): Promise<string | null> => {
     const ext = file.name?.split('.').pop() || 'png';
