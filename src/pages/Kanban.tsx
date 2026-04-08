@@ -458,6 +458,10 @@ const Kanban = () => {
     setFilterLabelIds(prev => prev.includes(labelId) ? prev.filter(id => id !== labelId) : [...prev, labelId]);
   }, []);
 
+  const toggleFilterAnalyst = useCallback((analystId: string) => {
+    setFilterAnalystIds(prev => prev.includes(analystId) ? prev.filter(id => id !== analystId) : [...prev, analystId]);
+  }, []);
+
   const gridCols = sortedColumns.length <= 4
     ? 'lg:grid-cols-4'
     : sortedColumns.length <= 6
