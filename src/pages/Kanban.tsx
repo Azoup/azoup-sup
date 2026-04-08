@@ -430,6 +430,29 @@ const Kanban = () => {
     return cardImages.filter((img: any) => img.card_id === editingCard.id);
   }, [editingCard, cardImages]);
 
+  // Column reorder (admin only)
+  const moveColumn = useCallback(async (colId: string, direction: 'left' | 'right') => {
+    const idx = sortedColumns.findIndex((c: any) => c.id === colId);
+    const swapIdx = direction === 'left' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= sortedColumns.length) return;
+    const a = sortedColumns[idx];
+    const b = sortedColumns[swapIdx];
+    // Optimistic
+    queryClient.setQueryData(['kanban-columns'], (old: any[] | undefined) => {
+      if (!old) return old;
+      return old.map(c => c.id === a.id ? { ...c, position: b.position } : c.id === b.id ? { ...c, position: a.position } : c);
+    });
+    await Promise.all([
+      supabase.from('kanban_columns').update({ position: b.position }).eq('id', a.id),
+      supabase.from('kanban_columns').update({ position: a.position }).eq('id', b.id),
+    ]);
+    queryClient.invalidateQueries({ queryKey: ['kanban-columns'] });
+  }, [sortedColumns, queryClient]);
+
+  const toggleFilterLabel = useCallback((labelId: string) => {
+    setFilterLabelIds(prev => prev.includes(labelId) ? prev.filter(id => id !== labelId) : [...prev, labelId]);
+  }, []);
+
   const gridCols = sortedColumns.length <= 4
     ? 'lg:grid-cols-4'
     : sortedColumns.length <= 6
@@ -449,6 +472,30 @@ const Kanban = () => {
           </Button>
         </div>
       </div>
+
+      {/* Label filter */}
+      {labels.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <Filter className="h-4 w-4 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">Filtrar:</span>
+          {labels.map((l: any) => (
+            <Badge
+              key={l.id}
+              variant={filterLabelIds.includes(l.id) ? 'default' : 'outline'}
+              className="cursor-pointer text-xs"
+              style={filterLabelIds.includes(l.id) ? { backgroundColor: l.color } : {}}
+              onClick={() => toggleFilterLabel(l.id)}
+            >
+              {l.name}
+            </Badge>
+          ))}
+          {filterLabelIds.length > 0 && (
+            <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setFilterLabelIds([])}>
+              Limpar filtro
+            </Button>
+          )}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex justify-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
