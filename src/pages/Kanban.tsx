@@ -25,7 +25,9 @@ const COLUMN_COLOR_OPTIONS = [
 
 const Kanban = () => {
   const { user } = useAuth();
+  const { isAdmin } = useRole();
   const queryClient = useQueryClient();
+  const [filterLabelIds, setFilterLabelIds] = useState<string[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
