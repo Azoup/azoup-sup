@@ -483,50 +483,69 @@ const Kanban = () => {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex items-center gap-4 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
         {labels.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <Filter className="h-4 w-4 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">Etiquetas:</span>
-            {labels.map((l: any) => (
-              <Badge
-                key={l.id}
-                variant={filterLabelIds.includes(l.id) ? 'default' : 'outline'}
-                className="cursor-pointer text-xs"
-                style={filterLabelIds.includes(l.id) ? { backgroundColor: l.color } : {}}
-                onClick={() => toggleFilterLabel(l.id)}
-              >
-                {l.name}
-              </Badge>
-            ))}
-            {filterLabelIds.length > 0 && (
-              <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setFilterLabelIds([])}>
-                <X className="h-3 w-3 mr-1" /> Limpar
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="text-xs h-8">
+                <Filter className="h-3.5 w-3.5 mr-1" />
+                Etiquetas
+                {filterLabelIds.length > 0 && (
+                  <Badge variant="default" className="ml-1.5 h-5 px-1.5 text-[10px]">{filterLabelIds.length}</Badge>
+                )}
               </Button>
-            )}
-          </div>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-2" align="start">
+              <div className="flex flex-col gap-1">
+                {labels.map((l: any) => (
+                  <button
+                    key={l.id}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-accent transition-colors text-left ${filterLabelIds.includes(l.id) ? 'bg-accent font-medium' : ''}`}
+                    onClick={() => toggleFilterLabel(l.id)}
+                  >
+                    <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: l.color }} />
+                    {l.name}
+                  </button>
+                ))}
+                {filterLabelIds.length > 0 && (
+                  <Button variant="ghost" size="sm" className="text-xs h-7 mt-1" onClick={() => setFilterLabelIds([])}>
+                    <X className="h-3 w-3 mr-1" /> Limpar
+                  </Button>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
         )}
         {analysts.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <Filter className="h-4 w-4 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">Analista:</span>
-            {analysts.map((a: any) => (
-              <Badge
-                key={a.id}
-                variant={filterAnalystIds.includes(a.id) ? 'default' : 'outline'}
-                className="cursor-pointer text-xs"
-                onClick={() => toggleFilterAnalyst(a.id)}
-              >
-                {a.name}
-              </Badge>
-            ))}
-            {filterAnalystIds.length > 0 && (
-              <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setFilterAnalystIds([])}>
-                <X className="h-3 w-3 mr-1" /> Limpar
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="text-xs h-8">
+                <Filter className="h-3.5 w-3.5 mr-1" />
+                Analista
+                {filterAnalystIds.length > 0 && (
+                  <Badge variant="default" className="ml-1.5 h-5 px-1.5 text-[10px]">{filterAnalystIds.length}</Badge>
+                )}
               </Button>
-            )}
-          </div>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-2" align="start">
+              <div className="flex flex-col gap-1">
+                {analysts.map((a: any) => (
+                  <button
+                    key={a.id}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-accent transition-colors text-left ${filterAnalystIds.includes(a.id) ? 'bg-accent font-medium' : ''}`}
+                    onClick={() => toggleFilterAnalyst(a.id)}
+                  >
+                    {a.name}
+                  </button>
+                ))}
+                {filterAnalystIds.length > 0 && (
+                  <Button variant="ghost" size="sm" className="text-xs h-7 mt-1" onClick={() => setFilterAnalystIds([])}>
+                    <X className="h-3 w-3 mr-1" /> Limpar
+                  </Button>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
         )}
       </div>
 
