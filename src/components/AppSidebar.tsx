@@ -16,15 +16,15 @@ import {
 } from '@/components/ui/sidebar';
 
 const allItems = [
-  { title: 'Kanban Pendências', url: '/', icon: LayoutDashboard, adminOnly: false },
-  { title: 'Dashboard Kanban', url: '/kanban-dashboard', icon: BarChart3, adminOnly: false },
-  { title: 'Dashboard Dúvidas', url: '/dashboard', icon: BarChart3, adminOnly: false },
-  { title: 'Dashboard B.U', url: '/dashboard-bu', icon: Building2, adminOnly: false },
-  { title: 'Lançamentos Dúvidas', url: '/entries', icon: PenLine, adminOnly: true },
-  { title: 'Lançamentos B.U', url: '/entries-bu', icon: FileSpreadsheet, adminOnly: true },
-  { title: 'Analistas', url: '/analysts', icon: Users, adminOnly: true },
-  { title: 'Unidades', url: '/business-units', icon: Building2, adminOnly: true },
-  { title: 'Perfil', url: '/profile', icon: UserCircle, adminOnly: false },
+  { title: 'Kanban Pendências', url: '/', icon: LayoutDashboard },
+  { title: 'Dashboard Kanban', url: '/kanban-dashboard', icon: BarChart3 },
+  { title: 'Dashboard Dúvidas', url: '/dashboard', icon: BarChart3 },
+  { title: 'Dashboard B.U', url: '/dashboard-bu', icon: Building2 },
+  { title: 'Lançamentos Dúvidas', url: '/entries', icon: PenLine },
+  { title: 'Lançamentos B.U', url: '/entries-bu', icon: FileSpreadsheet },
+  { title: 'Analistas', url: '/analysts', icon: Users },
+  { title: 'Unidades', url: '/business-units', icon: Building2 },
+  { title: 'Perfil', url: '/profile', icon: UserCircle },
 ];
 
 export function AppSidebar() {
@@ -35,7 +35,6 @@ export function AppSidebar() {
   const { canView } = usePermissions();
 
   const items = allItems.filter(item => {
-    if (item.adminOnly && !isAdmin) return false;
     const screen = ROUTE_SCREEN_MAP[item.url];
     if (screen && !canView(screen)) return false;
     return true;
