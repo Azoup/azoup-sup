@@ -16,7 +16,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
-import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2 } from 'lucide-react';
 
 const COLUMN_COLOR_OPTIONS = [
   'border-t-amber-500', 'border-t-blue-500', 'border-t-rose-500',
@@ -595,7 +595,10 @@ const Kanban = () => {
                                 className={`bg-card rounded-md border p-3 shadow-sm space-y-2 cursor-pointer hover:shadow-md transition-shadow ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''}`}
                               >
                                 <div className="flex items-start justify-between gap-2">
-                                  <p className="font-medium text-sm flex-1">{card.title}</p>
+                                <p className="font-medium text-sm flex-1 flex items-center gap-1">
+                                      {card.status === 'done' && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />}
+                                      {card.title}
+                                    </p>
                                   <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                                     <button onClick={() => openEdit(card)} className="text-muted-foreground hover:text-primary">
                                       <Pencil className="h-3 w-3" />
