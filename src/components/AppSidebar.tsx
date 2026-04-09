@@ -2,6 +2,7 @@ import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, FileSpread
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
+import { usePermissions, ROUTE_SCREEN_MAP } from '@/hooks/usePermissions';
 import {
   Sidebar,
   SidebarContent,
@@ -31,8 +32,14 @@ export function AppSidebar() {
   const collapsed = state === 'collapsed';
   const { signOut, user } = useAuth();
   const { isAdmin } = useRole();
+  const { canView } = usePermissions();
 
-  const items = allItems.filter(item => !item.adminOnly || isAdmin);
+  const items = allItems.filter(item => {
+    if (item.adminOnly && !isAdmin) return false;
+    const screen = ROUTE_SCREEN_MAP[item.url];
+    if (screen && !canView(screen)) return false;
+    return true;
+  });
 
   return (
     <Sidebar collapsible="icon">
