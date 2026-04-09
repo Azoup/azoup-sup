@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -120,32 +120,21 @@ const Profile = () => {
 
   const startEditingPerms = (userId: string) => {
     setEditingPermsUserId(userId);
-    // Load existing perms into draft
-    const draft: Record<string, boolean> = {};
-    PERMISSION_KEYS.forEach(p => { draft[p.key] = true; }); // default all allowed
-    setPermsDraft(draft);
+    setPermsLoaded(false);
   };
 
-  // When perms load, update draft
-  const updateDraftFromPerms = () => {
-    if (userPermissions.length > 0) {
+  const [permsLoaded, setPermsLoaded] = useState(false);
+
+  // Sync draft from DB only once when permissions load for a user
+  useEffect(() => {
+    if (editingPermsUserId && userPermissions.length > 0 && !permsLoaded) {
       const draft: Record<string, boolean> = {};
       PERMISSION_KEYS.forEach(p => { draft[p.key] = true; });
       userPermissions.forEach((p: any) => { draft[p.permission_key] = p.allowed; });
       setPermsDraft(draft);
+      setPermsLoaded(true);
     }
-  };
-
-  // Effect-like: update draft when perms change
-  if (editingPermsUserId && userPermissions.length > 0) {
-    const currentDraftStr = JSON.stringify(permsDraft);
-    const newDraft: Record<string, boolean> = {};
-    PERMISSION_KEYS.forEach(p => { newDraft[p.key] = true; });
-    userPermissions.forEach((p: any) => { newDraft[p.permission_key] = p.allowed; });
-    if (JSON.stringify(newDraft) !== currentDraftStr && !permsSaving) {
-      setPermsDraft(newDraft);
-    }
-  }
+  }, [editingPermsUserId, userPermissions, permsLoaded]);
 
   const savePermissions = async () => {
     if (!editingPermsUserId) return;
