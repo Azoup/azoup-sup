@@ -14,16 +14,36 @@ import { Loader2, KeyRound, User, Shield, ScrollText, Filter } from 'lucide-reac
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-const PERMISSION_KEYS = [
-  { key: 'view_dashboard', label: 'Dashboard Dúvidas' },
-  { key: 'view_dashboard_bu', label: 'Dashboard B.U' },
-  { key: 'view_kanban', label: 'Kanban Pendências' },
-  { key: 'view_kanban_dashboard', label: 'Dashboard Kanban' },
-  { key: 'manage_entries', label: 'Lançamentos Dúvidas' },
-  { key: 'manage_entries_bu', label: 'Lançamentos B.U' },
-  { key: 'manage_analysts', label: 'Analistas' },
-  { key: 'manage_business_units', label: 'Unidades' },
+const PERMISSION_SCREENS = [
+  { screen: 'kanban', label: 'Kanban Pendências' },
+  { screen: 'entries', label: 'Lançamentos Dúvidas' },
+  { screen: 'entries_bu', label: 'Lançamentos B.U' },
+  { screen: 'dashboard', label: 'Dashboard Dúvidas' },
+  { screen: 'dashboard_bu', label: 'Dashboard B.U' },
+  { screen: 'kanban_dashboard', label: 'Dashboard Kanban' },
+  { screen: 'analysts', label: 'Cadastro de Analistas' },
+  { screen: 'business_units', label: 'Unidades de Negócio' },
+  { screen: 'profile_log', label: 'Perfil / Log' },
 ];
+
+const PERMISSION_ACTIONS = [
+  { action: 'view', label: 'Visualizar' },
+  { action: 'create', label: 'Criar' },
+  { action: 'edit', label: 'Editar' },
+  { action: 'delete', label: 'Excluir' },
+];
+
+// Generate all permission keys from screen x action
+const PERMISSION_KEYS = PERMISSION_SCREENS.flatMap(s =>
+  PERMISSION_ACTIONS.map(a => ({
+    key: `${s.screen}_${a.action}`,
+    label: `${s.label} — ${a.label}`,
+    screen: s.screen,
+    screenLabel: s.label,
+    action: a.action,
+    actionLabel: a.label,
+  }))
+);
 
 const Profile = () => {
   const { user } = useAuth();
@@ -273,16 +293,35 @@ const Profile = () => {
                     {editingPermsUserId === ur.user_id && (
                       <div className="mt-2 p-3 bg-muted/50 rounded-md space-y-2">
                         <p className="text-sm font-medium">Permissões de acesso:</p>
-                        <div className="grid grid-cols-2 gap-2">
-                          {PERMISSION_KEYS.map(p => (
-                            <label key={p.key} className="flex items-center gap-2 text-sm cursor-pointer">
-                              <Checkbox
-                                checked={permsDraft[p.key] ?? true}
-                                onCheckedChange={(checked) => setPermsDraft(prev => ({ ...prev, [p.key]: !!checked }))}
-                              />
-                              {p.label}
-                            </label>
-                          ))}
+                        <div className="overflow-auto">
+                          <table className="w-full text-xs border-collapse">
+                            <thead>
+                              <tr className="border-b">
+                                <th className="text-left py-1.5 pr-2 font-semibold">Tela</th>
+                                {PERMISSION_ACTIONS.map(a => (
+                                  <th key={a.action} className="text-center py-1.5 px-2 font-semibold">{a.label}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {PERMISSION_SCREENS.map(s => (
+                                <tr key={s.screen} className="border-b last:border-0">
+                                  <td className="py-1.5 pr-2 font-medium">{s.label}</td>
+                                  {PERMISSION_ACTIONS.map(a => {
+                                    const key = `${s.screen}_${a.action}`;
+                                    return (
+                                      <td key={key} className="text-center py-1.5 px-2">
+                                        <Checkbox
+                                          checked={permsDraft[key] ?? true}
+                                          onCheckedChange={(checked) => setPermsDraft(prev => ({ ...prev, [key]: !!checked }))}
+                                        />
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
                         <div className="flex gap-2 mt-2">
                           <Button size="sm" onClick={savePermissions} disabled={permsSaving}>
