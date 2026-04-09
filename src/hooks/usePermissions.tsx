@@ -3,6 +3,29 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 
+// Default permissions for standard (non-admin) users
+const DEFAULT_USER_PERMISSIONS: Record<string, boolean> = {
+  kanban_view: true,
+  kanban_create: true,
+  kanban_edit: true,
+  kanban_delete: false,
+  kanban_dashboard_view: true,
+  kanban_dashboard_create: false,
+  kanban_dashboard_edit: false,
+  kanban_dashboard_delete: false,
+  profile_log_view: true,
+  profile_log_edit: true,
+  analysts_view: true,
+  analysts_create: false,
+  analysts_edit: false,
+  analysts_delete: false,
+  dashboard_view: false,
+  dashboard_bu_view: false,
+  entries_view: false,
+  entries_bu_view: false,
+  business_units_view: false,
+};
+
 export function usePermissions() {
   const { user } = useAuth();
   const { isAdmin } = useRole();
@@ -15,8 +38,10 @@ export function usePermissions() {
         .from('user_permissions')
         .select('permission_key, allowed')
         .eq('user_id', user.id);
+      // If no explicit permissions exist, return null to use defaults
+      if (!data || data.length === 0) return null;
       const map: Record<string, boolean> = {};
-      data?.forEach(p => { map[p.permission_key] = p.allowed; });
+      data.forEach(p => { map[p.permission_key] = p.allowed; });
       return map;
     },
     enabled: !!user,
@@ -25,7 +50,9 @@ export function usePermissions() {
 
   const hasPermission = (key: string): boolean => {
     if (isAdmin) return true;
-    return permissions?.[key] === true;
+    // If explicit permissions exist, use them; otherwise use defaults
+    if (permissions) return permissions[key] === true;
+    return DEFAULT_USER_PERMISSIONS[key] === true;
   };
 
   const canView = (screen: string): boolean => hasPermission(`${screen}_view`);

@@ -60,10 +60,10 @@ const App = () => (
             <Route path="/dashboard-bu" element={<ProtectedRoute screen="dashboard_bu"><DashboardBU /></ProtectedRoute>} />
             <Route path="/kanban-dashboard" element={<ProtectedRoute screen="kanban_dashboard"><KanbanDashboard /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute screen="profile_log"><Profile /></ProtectedRoute>} />
-            <Route path="/analysts" element={<AdminRoute><Analysts /></AdminRoute>} />
-            <Route path="/entries" element={<AdminRoute><Entries /></AdminRoute>} />
-            <Route path="/entries-bu" element={<AdminRoute><EntriesBU /></AdminRoute>} />
-            <Route path="/business-units" element={<AdminRoute><BusinessUnits /></AdminRoute>} />
+            <Route path="/analysts" element={<ProtectedRoute screen="analysts"><Analysts /></ProtectedRoute>} />
+            <Route path="/entries" element={<ProtectedRoute screen="entries"><Entries /></ProtectedRoute>} />
+            <Route path="/entries-bu" element={<ProtectedRoute screen="entries_bu"><EntriesBU /></ProtectedRoute>} />
+            <Route path="/business-units" element={<ProtectedRoute screen="business_units"><BusinessUnits /></ProtectedRoute>} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
