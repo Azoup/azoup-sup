@@ -14,16 +14,36 @@ import { Loader2, KeyRound, User, Shield, ScrollText, Filter } from 'lucide-reac
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-const PERMISSION_KEYS = [
-  { key: 'view_dashboard', label: 'Dashboard Dúvidas' },
-  { key: 'view_dashboard_bu', label: 'Dashboard B.U' },
-  { key: 'view_kanban', label: 'Kanban Pendências' },
-  { key: 'view_kanban_dashboard', label: 'Dashboard Kanban' },
-  { key: 'manage_entries', label: 'Lançamentos Dúvidas' },
-  { key: 'manage_entries_bu', label: 'Lançamentos B.U' },
-  { key: 'manage_analysts', label: 'Analistas' },
-  { key: 'manage_business_units', label: 'Unidades' },
+const PERMISSION_SCREENS = [
+  { screen: 'kanban', label: 'Kanban Pendências' },
+  { screen: 'entries', label: 'Lançamentos Dúvidas' },
+  { screen: 'entries_bu', label: 'Lançamentos B.U' },
+  { screen: 'dashboard', label: 'Dashboard Dúvidas' },
+  { screen: 'dashboard_bu', label: 'Dashboard B.U' },
+  { screen: 'kanban_dashboard', label: 'Dashboard Kanban' },
+  { screen: 'analysts', label: 'Cadastro de Analistas' },
+  { screen: 'business_units', label: 'Unidades de Negócio' },
+  { screen: 'profile_log', label: 'Perfil / Log' },
 ];
+
+const PERMISSION_ACTIONS = [
+  { action: 'view', label: 'Visualizar' },
+  { action: 'create', label: 'Criar' },
+  { action: 'edit', label: 'Editar' },
+  { action: 'delete', label: 'Excluir' },
+];
+
+// Generate all permission keys from screen x action
+const PERMISSION_KEYS = PERMISSION_SCREENS.flatMap(s =>
+  PERMISSION_ACTIONS.map(a => ({
+    key: `${s.screen}_${a.action}`,
+    label: `${s.label} — ${a.label}`,
+    screen: s.screen,
+    screenLabel: s.label,
+    action: a.action,
+    actionLabel: a.label,
+  }))
+);
 
 const Profile = () => {
   const { user } = useAuth();
