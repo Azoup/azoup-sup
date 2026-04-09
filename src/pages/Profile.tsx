@@ -293,16 +293,35 @@ const Profile = () => {
                     {editingPermsUserId === ur.user_id && (
                       <div className="mt-2 p-3 bg-muted/50 rounded-md space-y-2">
                         <p className="text-sm font-medium">Permissões de acesso:</p>
-                        <div className="grid grid-cols-2 gap-2">
-                          {PERMISSION_KEYS.map(p => (
-                            <label key={p.key} className="flex items-center gap-2 text-sm cursor-pointer">
-                              <Checkbox
-                                checked={permsDraft[p.key] ?? true}
-                                onCheckedChange={(checked) => setPermsDraft(prev => ({ ...prev, [p.key]: !!checked }))}
-                              />
-                              {p.label}
-                            </label>
-                          ))}
+                        <div className="overflow-auto">
+                          <table className="w-full text-xs border-collapse">
+                            <thead>
+                              <tr className="border-b">
+                                <th className="text-left py-1.5 pr-2 font-semibold">Tela</th>
+                                {PERMISSION_ACTIONS.map(a => (
+                                  <th key={a.action} className="text-center py-1.5 px-2 font-semibold">{a.label}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {PERMISSION_SCREENS.map(s => (
+                                <tr key={s.screen} className="border-b last:border-0">
+                                  <td className="py-1.5 pr-2 font-medium">{s.label}</td>
+                                  {PERMISSION_ACTIONS.map(a => {
+                                    const key = `${s.screen}_${a.action}`;
+                                    return (
+                                      <td key={key} className="text-center py-1.5 px-2">
+                                        <Checkbox
+                                          checked={permsDraft[key] ?? true}
+                                          onCheckedChange={(checked) => setPermsDraft(prev => ({ ...prev, [key]: !!checked }))}
+                                        />
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
                         <div className="flex gap-2 mt-2">
                           <Button size="sm" onClick={savePermissions} disabled={permsSaving}>
