@@ -4,6 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { useRole } from "@/hooks/useRole";
+import { usePermissions } from "@/hooks/usePermissions";
 import { AppLayout } from "@/components/AppLayout";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -21,10 +22,12 @@ import { Loader2 } from "lucide-react";
 
 const queryClient = new QueryClient();
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+function ProtectedRoute({ children, screen }: { children: React.ReactNode; screen?: string }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  const { canView, isLoading: permsLoading } = usePermissions();
+  if (loading || permsLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   if (!user) return <Navigate to="/auth" replace />;
+  if (screen && !canView(screen)) return <Navigate to="/" replace />;
   return <AppLayout>{children}</AppLayout>;
 }
 
@@ -52,11 +55,11 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/auth" element={<AuthRoute />} />
-            <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/dashboard-bu" element={<ProtectedRoute><DashboardBU /></ProtectedRoute>} />
-            <Route path="/kanban-dashboard" element={<ProtectedRoute><KanbanDashboard /></ProtectedRoute>} />
-            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+            <Route path="/" element={<ProtectedRoute screen="kanban"><Index /></ProtectedRoute>} />
+            <Route path="/dashboard" element={<ProtectedRoute screen="dashboard"><Dashboard /></ProtectedRoute>} />
+            <Route path="/dashboard-bu" element={<ProtectedRoute screen="dashboard_bu"><DashboardBU /></ProtectedRoute>} />
+            <Route path="/kanban-dashboard" element={<ProtectedRoute screen="kanban_dashboard"><KanbanDashboard /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute screen="profile_log"><Profile /></ProtectedRoute>} />
             <Route path="/analysts" element={<AdminRoute><Analysts /></AdminRoute>} />
             <Route path="/entries" element={<AdminRoute><Entries /></AdminRoute>} />
             <Route path="/entries-bu" element={<AdminRoute><EntriesBU /></AdminRoute>} />
