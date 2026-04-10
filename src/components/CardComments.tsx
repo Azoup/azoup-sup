@@ -31,7 +31,24 @@ export function CardComments({ cardId }: CardCommentsProps) {
         .eq('card_id', cardId)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return data;
+
+      // Fetch display names from profiles for all unique user_ids
+      const userIds = [...new Set((data || []).map((c: any) => c.user_id))];
+      let profileMap: Record<string, string> = {};
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, display_name')
+          .in('id', userIds);
+        if (profiles) {
+          profiles.forEach((p: any) => { profileMap[p.id] = p.display_name || ''; });
+        }
+      }
+
+      return (data || []).map((c: any) => ({
+        ...c,
+        display_name: profileMap[c.user_id] || c.user_email?.split('@')[0] || '?',
+      }));
     },
   });
 
