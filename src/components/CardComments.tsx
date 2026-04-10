@@ -144,6 +144,7 @@ export function CardComments({ cardId }: CardCommentsProps) {
             {comments.map((c: any) => (
               <div key={c.id} className="flex gap-2 group">
                 <Avatar className="h-7 w-7 shrink-0 mt-0.5">
+                  {c.photo_url && <AvatarImage src={c.photo_url} alt={c.display_name} />}
                   <AvatarFallback className="text-[10px] bg-muted">
                     {(c.display_name || '?').charAt(0).toUpperCase()}
                   </AvatarFallback>
