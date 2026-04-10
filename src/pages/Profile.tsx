@@ -127,9 +127,11 @@ const Profile = () => {
 
   // Sync draft from DB only once when permissions load for a user
   useEffect(() => {
-    if (editingPermsUserId && userPermissions.length > 0 && !permsLoaded) {
+    if (editingPermsUserId && !permsLoaded) {
       const draft: Record<string, boolean> = {};
-      PERMISSION_KEYS.forEach(p => { draft[p.key] = true; });
+      // Start all unchecked by default
+      PERMISSION_KEYS.forEach(p => { draft[p.key] = false; });
+      // Override with saved values from DB
       userPermissions.forEach((p: any) => { draft[p.permission_key] = p.allowed; });
       setPermsDraft(draft);
       setPermsLoaded(true);
