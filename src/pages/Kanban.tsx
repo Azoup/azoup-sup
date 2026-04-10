@@ -703,6 +703,7 @@ const Kanban = () => {
                   <span className="text-sm text-muted-foreground">{viewingCard.analyst.name}</span>
                 </div>
               )}
+              <CardComments cardId={viewingCard.id} />
               <div className="flex gap-2 pt-2">
                 <Button size="sm" variant="outline" onClick={() => { setViewOpen(false); openEdit(viewingCard); }}>
                   <Pencil className="h-3 w-3 mr-1" /> Editar
