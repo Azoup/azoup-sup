@@ -132,7 +132,9 @@ const Profile = () => {
       // Start all unchecked by default
       PERMISSION_KEYS.forEach(p => { draft[p.key] = false; });
       // Override with saved values from DB
-      userPermissions.forEach((p: any) => { draft[p.permission_key] = p.allowed; });
+      if (Array.isArray(userPermissions)) {
+        userPermissions.forEach((p: any) => { draft[p.permission_key] = p.allowed; });
+      }
       setPermsDraft(draft);
       setPermsLoaded(true);
     }
