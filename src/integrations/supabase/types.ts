@@ -149,6 +149,44 @@ export type Database = {
           },
         ]
       }
+      kanban_card_comments: {
+        Row: {
+          card_id: string
+          content: string
+          created_at: string
+          id: string
+          updated_at: string
+          user_email: string
+          user_id: string
+        }
+        Insert: {
+          card_id: string
+          content: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_email?: string
+          user_id: string
+        }
+        Update: {
+          card_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_email?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kanban_card_comments_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "kanban_cards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       kanban_card_images: {
         Row: {
           card_id: string

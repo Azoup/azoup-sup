@@ -17,6 +17,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
 import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { CardComments } from '@/components/CardComments';
 
 const COLUMN_COLOR_OPTIONS = [
   'border-t-amber-500', 'border-t-blue-500', 'border-t-rose-500',
@@ -702,6 +703,7 @@ const Kanban = () => {
                   <span className="text-sm text-muted-foreground">{viewingCard.analyst.name}</span>
                 </div>
               )}
+              <CardComments cardId={viewingCard.id} />
               <div className="flex gap-2 pt-2">
                 <Button size="sm" variant="outline" onClick={() => { setViewOpen(false); openEdit(viewingCard); }}>
                   <Pencil className="h-3 w-3 mr-1" /> Editar
