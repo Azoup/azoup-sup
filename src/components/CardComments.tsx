@@ -34,7 +34,7 @@ export function CardComments({ cardId }: CardCommentsProps) {
 
       // Fetch display names from profiles for all unique user_ids
       const userIds = [...new Set((data || []).map((c: any) => c.user_id))];
-      let profileMap: Record<string, string> = {};
+      let profileMap: Record<string, { name: string; photo_url: string }> = {};
       if (userIds.length > 0) {
         const { data: profiles } = await supabase
           .from('profiles')
@@ -47,7 +47,8 @@ export function CardComments({ cardId }: CardCommentsProps) {
 
       return (data || []).map((c: any) => ({
         ...c,
-        display_name: profileMap[c.user_id] || c.user_email?.split('@')[0] || '?',
+        display_name: profileMap[c.user_id]?.name || c.user_email?.split('@')[0] || '?',
+        photo_url: profileMap[c.user_id]?.photo_url || '',
       }));
     },
   });
