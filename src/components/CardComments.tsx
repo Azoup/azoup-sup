@@ -38,10 +38,10 @@ export function CardComments({ cardId }: CardCommentsProps) {
       if (userIds.length > 0) {
         const { data: profiles } = await supabase
           .from('profiles')
-          .select('id, display_name')
+          .select('id, display_name, photo_url')
           .in('id', userIds);
         if (profiles) {
-          profiles.forEach((p: any) => { profileMap[p.id] = p.display_name || ''; });
+          profiles.forEach((p: any) => { profileMap[p.id] = { name: p.display_name || '', photo_url: p.photo_url || '' }; });
         }
       }
 
