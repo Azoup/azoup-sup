@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Trash2, Send, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -34,20 +34,21 @@ export function CardComments({ cardId }: CardCommentsProps) {
 
       // Fetch display names from profiles for all unique user_ids
       const userIds = [...new Set((data || []).map((c: any) => c.user_id))];
-      let profileMap: Record<string, string> = {};
+      let profileMap: Record<string, { name: string; photo_url: string }> = {};
       if (userIds.length > 0) {
         const { data: profiles } = await supabase
           .from('profiles')
-          .select('id, display_name')
+          .select('id, display_name, photo_url')
           .in('id', userIds);
         if (profiles) {
-          profiles.forEach((p: any) => { profileMap[p.id] = p.display_name || ''; });
+          profiles.forEach((p: any) => { profileMap[p.id] = { name: p.display_name || '', photo_url: p.photo_url || '' }; });
         }
       }
 
       return (data || []).map((c: any) => ({
         ...c,
-        display_name: profileMap[c.user_id] || c.user_email?.split('@')[0] || '?',
+        display_name: profileMap[c.user_id]?.name || c.user_email?.split('@')[0] || '?',
+        photo_url: profileMap[c.user_id]?.photo_url || '',
       }));
     },
   });
@@ -143,6 +144,7 @@ export function CardComments({ cardId }: CardCommentsProps) {
             {comments.map((c: any) => (
               <div key={c.id} className="flex gap-2 group">
                 <Avatar className="h-7 w-7 shrink-0 mt-0.5">
+                  {c.photo_url && <AvatarImage src={c.photo_url} alt={c.display_name} />}
                   <AvatarFallback className="text-[10px] bg-muted">
                     {(c.display_name || '?').charAt(0).toUpperCase()}
                   </AvatarFallback>
