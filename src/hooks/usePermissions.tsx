@@ -5,17 +5,17 @@ import { useRole } from '@/hooks/useRole';
 
 // Default permissions for standard (non-admin) users
 const DEFAULT_USER_PERMISSIONS: Record<string, boolean> = {
-  kanban_view: true,
-  kanban_create: true,
-  kanban_edit: true,
+  kanban_view: false,
+  kanban_create: false,
+  kanban_edit: false,
   kanban_delete: false,
-  kanban_dashboard_view: true,
+  kanban_dashboard_view: false,
   kanban_dashboard_create: false,
   kanban_dashboard_edit: false,
   kanban_dashboard_delete: false,
   profile_log_view: true,
   profile_log_edit: true,
-  analysts_view: true,
+  analysts_view: false,
   analysts_create: false,
   analysts_edit: false,
   analysts_delete: false,
