@@ -31,7 +31,24 @@ export function CardComments({ cardId }: CardCommentsProps) {
         .eq('card_id', cardId)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return data;
+
+      // Fetch display names from profiles for all unique user_ids
+      const userIds = [...new Set((data || []).map((c: any) => c.user_id))];
+      let profileMap: Record<string, string> = {};
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, display_name')
+          .in('id', userIds);
+        if (profiles) {
+          profiles.forEach((p: any) => { profileMap[p.id] = p.display_name || ''; });
+        }
+      }
+
+      return (data || []).map((c: any) => ({
+        ...c,
+        display_name: profileMap[c.user_id] || c.user_email?.split('@')[0] || '?',
+      }));
     },
   });
 
@@ -127,12 +144,12 @@ export function CardComments({ cardId }: CardCommentsProps) {
               <div key={c.id} className="flex gap-2 group">
                 <Avatar className="h-7 w-7 shrink-0 mt-0.5">
                   <AvatarFallback className="text-[10px] bg-muted">
-                    {(c.user_email || '?').charAt(0).toUpperCase()}
+                    {(c.display_name || '?').charAt(0).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium truncate">{c.user_email?.split('@')[0]}</span>
+                    <span className="text-xs font-medium truncate">{c.display_name}</span>
                     <span className="text-[10px] text-muted-foreground">
                       {format(new Date(c.created_at), "dd/MM/yy HH:mm", { locale: ptBR })}
                     </span>
