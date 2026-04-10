@@ -27,7 +27,10 @@ function ProtectedRoute({ children, screen }: { children: React.ReactNode; scree
   const { canView, isLoading: permsLoading } = usePermissions();
   if (loading || permsLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   if (!user) return <Navigate to="/auth" replace />;
-  if (screen && !canView(screen)) return <Navigate to="/" replace />;
+  if (screen && !canView(screen)) {
+    // Avoid infinite loop: if already on "/" redirect to /profile instead
+    return <Navigate to={screen === 'kanban' ? '/profile' : '/'} replace />;
+  }
   return <AppLayout>{children}</AppLayout>;
 }
 
