@@ -18,6 +18,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { toast } from 'sonner';
 import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { CardComments } from '@/components/CardComments';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import { Calendar } from 'lucide-react';
 
 const COLUMN_COLOR_OPTIONS = [
   'border-t-amber-500', 'border-t-blue-500', 'border-t-rose-500',
@@ -622,15 +625,21 @@ const Kanban = () => {
                                     </span>
                                   )}
                                 </div>
-                                {card.analyst && (
-                                  <div className="flex items-center gap-1.5">
-                                    <Avatar className="h-5 w-5">
-                                      <AvatarImage src={card.analyst.photo_url || ''} />
-                                      <AvatarFallback className="text-[8px]">{card.analyst.name?.charAt(0)}</AvatarFallback>
-                                    </Avatar>
-                                    <span className="text-[10px] text-muted-foreground">{card.analyst.name}</span>
-                                  </div>
-                                )}
+                                <div className="flex items-center justify-between">
+                                  {card.analyst && (
+                                    <div className="flex items-center gap-1.5">
+                                      <Avatar className="h-5 w-5">
+                                        <AvatarImage src={card.analyst.photo_url || ''} />
+                                        <AvatarFallback className="text-[8px]">{card.analyst.name?.charAt(0)}</AvatarFallback>
+                                      </Avatar>
+                                      <span className="text-[10px] text-muted-foreground">{card.analyst.name}</span>
+                                    </div>
+                                  )}
+                                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 ml-auto">
+                                    <Calendar className="h-3 w-3" />
+                                    {format(new Date(card.created_at), 'dd/MM HH:mm')}
+                                  </span>
+                                </div>
                               </div>
                             )}
                           </Draggable>
