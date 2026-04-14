@@ -15,6 +15,9 @@ import BusinessUnits from "./pages/BusinessUnits";
 import Dashboard from "./pages/Dashboard";
 import DashboardBU from "./pages/DashboardBU";
 import KanbanDashboard from "./pages/KanbanDashboard";
+import KanbanDev from "./pages/KanbanDev";
+import DashboardDev from "./pages/DashboardDev";
+import Developers from "./pages/Developers";
 import Profile from "./pages/Profile";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
@@ -67,6 +70,9 @@ const App = () => (
             <Route path="/entries" element={<ProtectedRoute screen="entries"><Entries /></ProtectedRoute>} />
             <Route path="/entries-bu" element={<ProtectedRoute screen="entries_bu"><EntriesBU /></ProtectedRoute>} />
             <Route path="/business-units" element={<ProtectedRoute screen="business_units"><BusinessUnits /></ProtectedRoute>} />
+            <Route path="/kanban-dev" element={<ProtectedRoute screen="kanban_dev"><KanbanDev /></ProtectedRoute>} />
+            <Route path="/dashboard-dev" element={<ProtectedRoute screen="dashboard_dev"><DashboardDev /></ProtectedRoute>} />
+            <Route path="/developers" element={<ProtectedRoute screen="developers"><Developers /></ProtectedRoute>} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

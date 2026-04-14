@@ -1,4 +1,4 @@
-import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, FileSpreadsheet, BarChart3, UserCircle } from 'lucide-react';
+import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, FileSpreadsheet, BarChart3, UserCircle, Code2 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
@@ -24,6 +24,9 @@ const allItems = [
   { title: 'Lançamentos B.U', url: '/entries-bu', icon: FileSpreadsheet },
   { title: 'Analistas', url: '/analysts', icon: Users },
   { title: 'Unidades', url: '/business-units', icon: Building2 },
+  { title: 'Kanban DEV', url: '/kanban-dev', icon: Code2 },
+  { title: 'Dashboard DEV', url: '/dashboard-dev', icon: BarChart3 },
+  { title: 'Desenvolvedores', url: '/developers', icon: Code2 },
   { title: 'Perfil', url: '/profile', icon: UserCircle },
 ];
 
