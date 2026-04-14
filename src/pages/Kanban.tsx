@@ -703,15 +703,21 @@ const Kanban = () => {
                   </div>
                 </div>
               )}
-              {viewingCard.analyst && (
-                <div className="flex items-center gap-2">
-                  <Avatar className="h-7 w-7">
-                    <AvatarImage src={viewingCard.analyst.photo_url || ''} />
-                    <AvatarFallback className="text-xs">{viewingCard.analyst.name?.charAt(0)}</AvatarFallback>
-                  </Avatar>
-                  <span className="text-sm text-muted-foreground">{viewingCard.analyst.name}</span>
+              <div className="flex items-center gap-4 flex-wrap">
+                {viewingCard.analyst && (
+                  <div className="flex items-center gap-2">
+                    <Avatar className="h-7 w-7">
+                      <AvatarImage src={viewingCard.analyst.photo_url || ''} />
+                      <AvatarFallback className="text-xs">{viewingCard.analyst.name?.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                    <span className="text-sm text-muted-foreground">{viewingCard.analyst.name}</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <Calendar className="h-4 w-4" />
+                  <span>Criado em: {format(new Date(viewingCard.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
                 </div>
-              )}
+              </div>
               <CardComments cardId={viewingCard.id} />
               <div className="flex gap-2 pt-2">
                 <Button size="sm" variant="outline" onClick={() => { setViewOpen(false); openEdit(viewingCard); }}>
