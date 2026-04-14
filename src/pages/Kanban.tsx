@@ -16,11 +16,10 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
-import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar } from 'lucide-react';
 import { CardComments } from '@/components/CardComments';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Calendar } from 'lucide-react';
 
 const COLUMN_COLOR_OPTIONS = [
   'border-t-amber-500', 'border-t-blue-500', 'border-t-rose-500',
