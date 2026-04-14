@@ -95,6 +95,238 @@ export type Database = {
         }
         Relationships: []
       }
+      dev_kanban_card_comments: {
+        Row: {
+          card_id: string
+          content: string
+          created_at: string
+          id: string
+          updated_at: string
+          user_email: string
+          user_id: string
+        }
+        Insert: {
+          card_id: string
+          content: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_email?: string
+          user_id: string
+        }
+        Update: {
+          card_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_email?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dev_kanban_card_comments_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "dev_kanban_cards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dev_kanban_card_images: {
+        Row: {
+          card_id: string
+          created_at: string
+          id: string
+          image_url: string
+        }
+        Insert: {
+          card_id: string
+          created_at?: string
+          id?: string
+          image_url: string
+        }
+        Update: {
+          card_id?: string
+          created_at?: string
+          id?: string
+          image_url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dev_kanban_card_images_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "dev_kanban_cards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dev_kanban_card_labels: {
+        Row: {
+          card_id: string
+          id: string
+          label_id: string
+        }
+        Insert: {
+          card_id: string
+          id?: string
+          label_id: string
+        }
+        Update: {
+          card_id?: string
+          id?: string
+          label_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dev_kanban_card_labels_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "dev_kanban_cards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dev_kanban_card_labels_label_id_fkey"
+            columns: ["label_id"]
+            isOneToOne: false
+            referencedRelation: "dev_kanban_labels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dev_kanban_cards: {
+        Row: {
+          analyst_id: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          developer_id: string | null
+          id: string
+          image_url: string | null
+          position: number
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          analyst_id?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          developer_id?: string | null
+          id?: string
+          image_url?: string | null
+          position?: number
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          analyst_id?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          developer_id?: string | null
+          id?: string
+          image_url?: string | null
+          position?: number
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dev_kanban_cards_analyst_id_fkey"
+            columns: ["analyst_id"]
+            isOneToOne: false
+            referencedRelation: "analysts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dev_kanban_cards_developer_id_fkey"
+            columns: ["developer_id"]
+            isOneToOne: false
+            referencedRelation: "developers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dev_kanban_columns: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          position: number
+          slug: string
+          title: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id?: string
+          position?: number
+          slug: string
+          title: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          position?: number
+          slug?: string
+          title?: string
+        }
+        Relationships: []
+      }
+      dev_kanban_labels: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      developers: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          photo_url: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          photo_url?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          photo_url?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       doubt_records: {
         Row: {
           analyst_id: string
