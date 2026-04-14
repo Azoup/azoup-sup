@@ -24,6 +24,15 @@ const DEFAULT_USER_PERMISSIONS: Record<string, boolean> = {
   entries_view: false,
   entries_bu_view: false,
   business_units_view: false,
+  kanban_dev_view: false,
+  kanban_dev_create: false,
+  kanban_dev_edit: false,
+  kanban_dev_delete: false,
+  dashboard_dev_view: false,
+  developers_view: false,
+  developers_create: false,
+  developers_edit: false,
+  developers_delete: false,
 };
 
 export function usePermissions() {
@@ -71,4 +80,7 @@ export const ROUTE_SCREEN_MAP: Record<string, string> = {
   '/analysts': 'analysts',
   '/business-units': 'business_units',
   '/profile': 'profile_log',
+  '/kanban-dev': 'kanban_dev',
+  '/dashboard-dev': 'dashboard_dev',
+  '/developers': 'developers',
 };
