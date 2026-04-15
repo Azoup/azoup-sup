@@ -24,6 +24,9 @@ const PERMISSION_SCREENS = [
   { screen: 'analysts', label: 'Cadastro de Analistas' },
   { screen: 'business_units', label: 'Unidades de Negócio' },
   { screen: 'profile_log', label: 'Perfil / Log' },
+  { screen: 'kanban_dev', label: 'Kanban DEV' },
+  { screen: 'dashboard_dev', label: 'Dashboard DEV' },
+  { screen: 'developers', label: 'Cadastro de Desenvolvedores' },
 ];
 
 const PERMISSION_ACTIONS = [
