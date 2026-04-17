@@ -153,10 +153,18 @@ const Kanban = () => {
       if (filterAnalystIds.length > 0) {
         if (!card.analyst_id || !filterAnalystIds.includes(card.analyst_id)) return;
       }
+      // Apply text search (only on open/non-concluded cards)
+      const q = searchQuery.trim().toLowerCase();
+      if (q) {
+        const slug = (card.status || '').toLowerCase();
+        const isDone = slug.includes('conclu') || slug.includes('final') || slug.includes('done');
+        if (isDone) return;
+        if (!(card.title || '').toLowerCase().includes(q)) return;
+      }
       col.push(enriched);
     });
     return map;
-  }, [cards, cardLabels, analysts, cardImages, sortedColumns, filterLabelIds, filterAnalystIds]);
+  }, [cards, cardLabels, analysts, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, searchQuery]);
 
   const uploadImage = async (file: File): Promise<string | null> => {
     const ext = file.name?.split('.').pop() || 'png';
