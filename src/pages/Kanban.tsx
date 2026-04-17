@@ -16,7 +16,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
-import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar } from 'lucide-react';
+import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar, Search } from 'lucide-react';
 import { CardComments } from '@/components/CardComments';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -33,6 +33,7 @@ const Kanban = () => {
   const queryClient = useQueryClient();
   const [filterLabelIds, setFilterLabelIds] = useState<string[]>([]);
   const [filterAnalystIds, setFilterAnalystIds] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -152,10 +153,18 @@ const Kanban = () => {
       if (filterAnalystIds.length > 0) {
         if (!card.analyst_id || !filterAnalystIds.includes(card.analyst_id)) return;
       }
+      // Apply text search (only on open/non-concluded cards)
+      const q = searchQuery.trim().toLowerCase();
+      if (q) {
+        const slug = (card.status || '').toLowerCase();
+        const isDone = slug.includes('conclu') || slug.includes('final') || slug.includes('done');
+        if (isDone) return;
+        if (!(card.title || '').toLowerCase().includes(q)) return;
+      }
       col.push(enriched);
     });
     return map;
-  }, [cards, cardLabels, analysts, cardImages, sortedColumns, filterLabelIds, filterAnalystIds]);
+  }, [cards, cardLabels, analysts, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, searchQuery]);
 
   const uploadImage = async (file: File): Promise<string | null> => {
     const ext = file.name?.split('.').pop() || 'png';
@@ -487,6 +496,25 @@ const Kanban = () => {
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[220px] max-w-sm">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Buscar por cliente ou título..."
+            className="h-8 pl-8 pr-8 text-xs"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              aria-label="Limpar busca"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
         {labels.length > 0 && (
           <Popover>
             <PopoverTrigger asChild>
