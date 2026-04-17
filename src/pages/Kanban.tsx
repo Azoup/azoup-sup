@@ -33,6 +33,7 @@ const Kanban = () => {
   const queryClient = useQueryClient();
   const [filterLabelIds, setFilterLabelIds] = useState<string[]>([]);
   const [filterAnalystIds, setFilterAnalystIds] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
