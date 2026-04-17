@@ -131,7 +131,7 @@ function SortableSubLeaf({ item }: { item: LeafItem }) {
           <item.icon className="mr-2 h-4 w-4" />
           <span>{item.title}</span>
         </NavLink>
-      </SidebarMenuSubItem>
+      </SidebarMenuSubButton>
     </SidebarMenuSubItem>
   );
 }
