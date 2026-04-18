@@ -35,13 +35,19 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
       const userIds = [...new Set((data || []).map((c: any) => c.user_id))];
       let profileMap: Record<string, { name: string; photo_url: string }> = {};
       if (userIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, display_name, photo_url')
-          .in('id', userIds);
-        if (profiles) {
-          profiles.forEach((p: any) => { profileMap[p.id] = { name: p.display_name || '', photo_url: p.photo_url || '' }; });
-        }
+        const [{ data: profiles }, { data: analysts }, { data: developers }] = await Promise.all([
+          supabase.from('profiles').select('id, display_name, photo_url').in('id', userIds),
+          supabase.from('analysts').select('name, photo_url'),
+          supabase.from('developers').select('name, photo_url'),
+        ]);
+        const byName: Record<string, string> = {};
+        (analysts || []).forEach((a: any) => { if (a.name && a.photo_url) byName[a.name.toLowerCase()] = a.photo_url; });
+        (developers || []).forEach((d: any) => { if (d.name && d.photo_url) byName[d.name.toLowerCase()] = d.photo_url; });
+        (profiles || []).forEach((p: any) => {
+          const name = p.display_name || '';
+          const photo = p.photo_url || byName[name.toLowerCase()] || '';
+          profileMap[p.id] = { name, photo_url: photo };
+        });
       }
 
       return (data || []).map((c: any) => ({
