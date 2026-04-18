@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
-import { Loader2, KeyRound, User, Shield, ScrollText, Filter } from 'lucide-react';
+import { Loader2, KeyRound, User, Shield, ScrollText, Filter, Camera, Trash2 } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -78,19 +79,53 @@ const Profile = () => {
     enabled: !!user,
   });
 
-  // Admin: all users with roles + profiles for email
+  // Admin: all users with roles + profiles for email + photo
   const { data: allUsers = [] } = useQuery({
     queryKey: ['all-users-roles-profiles'],
     queryFn: async () => {
       const { data: roles } = await supabase.from('user_roles').select('*');
       const { data: profiles } = await supabase.from('profiles').select('*');
-      return (roles || []).map((r: any) => ({
-        ...r,
-        email: profiles?.find((p: any) => p.id === r.user_id)?.display_name || r.user_id,
-      }));
+      return (roles || []).map((r: any) => {
+        const p = profiles?.find((x: any) => x.id === r.user_id);
+        return {
+          ...r,
+          email: p?.display_name || r.user_id,
+          photo_url: p?.photo_url || '',
+        };
+      });
     },
     enabled: isAdmin,
   });
+
+  // Photo upload (for self or admin-managed user)
+  const handlePhotoUpload = async (targetUserId: string, file: File) => {
+    try {
+      const ext = file.name.split('.').pop();
+      const path = `${targetUserId}/${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from('profile-photos').upload(path, file, { upsert: true });
+      if (upErr) throw upErr;
+      const { data: { publicUrl } } = supabase.storage.from('profile-photos').getPublicUrl(path);
+      const { error } = await supabase.from('profiles').update({ photo_url: publicUrl }).eq('id', targetUserId);
+      if (error) throw error;
+      toast.success('Foto atualizada!');
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+      queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['card-comments'] });
+      queryClient.invalidateQueries({ queryKey: ['dev-card-comments'] });
+    } catch (e: any) {
+      toast.error('Erro ao enviar foto: ' + (e.message || ''));
+    }
+  };
+
+  const handlePhotoRemove = async (targetUserId: string) => {
+    const { error } = await supabase.from('profiles').update({ photo_url: null }).eq('id', targetUserId);
+    if (error) { toast.error('Erro ao remover foto'); return; }
+    toast.success('Foto removida');
+    queryClient.invalidateQueries({ queryKey: ['profile'] });
+    queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
+    queryClient.invalidateQueries({ queryKey: ['card-comments'] });
+    queryClient.invalidateQueries({ queryKey: ['dev-card-comments'] });
+  };
 
   // Activity logs with date filter
   const { data: logs = [], isLoading: logsLoading } = useQuery({
@@ -206,6 +241,39 @@ const Profile = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            <div className="flex items-center gap-4">
+              <Avatar className="h-16 w-16">
+                {profile?.photo_url && <AvatarImage src={profile.photo_url} alt={profile.display_name || ''} />}
+                <AvatarFallback className="text-lg">
+                  {(profile?.display_name || user?.email || '?').charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex flex-col gap-1">
+                <label className="cursor-pointer">
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f && user) handlePhotoUpload(user.id, f);
+                      e.target.value = '';
+                    }}
+                  />
+                  <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border hover:bg-accent">
+                    <Camera className="h-3 w-3" /> Alterar foto
+                  </span>
+                </label>
+                {profile?.photo_url && (
+                  <button
+                    onClick={() => user && handlePhotoRemove(user.id)}
+                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded text-destructive hover:bg-destructive/10"
+                  >
+                    <Trash2 className="h-3 w-3" /> Remover
+                  </button>
+                )}
+              </div>
+            </div>
             <div>
               <span className="text-sm text-muted-foreground">Nome</span>
               <p className="font-medium">{profile?.display_name || user?.email?.split('@')[0] || '—'}</p>
@@ -263,11 +331,41 @@ const Profile = () => {
                 {allUsers.map((ur: any) => (
                   <div key={ur.id} className="p-3 rounded-lg border space-y-2">
                     <div className="flex items-center justify-between gap-4">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{ur.email}</p>
-                        <p className="text-xs text-muted-foreground truncate">{ur.user_id}</p>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Avatar className="h-10 w-10 shrink-0">
+                          {ur.photo_url && <AvatarImage src={ur.photo_url} alt={ur.email} />}
+                          <AvatarFallback>{(ur.email || '?').charAt(0).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{ur.email}</p>
+                          <p className="text-xs text-muted-foreground truncate">{ur.user_id}</p>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <label className="cursor-pointer" title="Alterar foto">
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) handlePhotoUpload(ur.user_id, f);
+                              e.target.value = '';
+                            }}
+                          />
+                          <span className="inline-flex items-center justify-center h-8 w-8 rounded border hover:bg-accent">
+                            <Camera className="h-3.5 w-3.5" />
+                          </span>
+                        </label>
+                        {ur.photo_url && (
+                          <button
+                            onClick={() => handlePhotoRemove(ur.user_id)}
+                            className="inline-flex items-center justify-center h-8 w-8 rounded border text-destructive hover:bg-destructive/10"
+                            title="Remover foto"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                         <Select
                           defaultValue={ur.role}
                           onValueChange={(val) => updateRole.mutate({ userId: ur.user_id, newRole: val })}
