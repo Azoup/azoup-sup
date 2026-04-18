@@ -241,6 +241,39 @@ const Profile = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            <div className="flex items-center gap-4">
+              <Avatar className="h-16 w-16">
+                {profile?.photo_url && <AvatarImage src={profile.photo_url} alt={profile.display_name || ''} />}
+                <AvatarFallback className="text-lg">
+                  {(profile?.display_name || user?.email || '?').charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex flex-col gap-1">
+                <label className="cursor-pointer">
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f && user) handlePhotoUpload(user.id, f);
+                      e.target.value = '';
+                    }}
+                  />
+                  <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border hover:bg-accent">
+                    <Camera className="h-3 w-3" /> Alterar foto
+                  </span>
+                </label>
+                {profile?.photo_url && (
+                  <button
+                    onClick={() => user && handlePhotoRemove(user.id)}
+                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded text-destructive hover:bg-destructive/10"
+                  >
+                    <Trash2 className="h-3 w-3" /> Remover
+                  </button>
+                )}
+              </div>
+            </div>
             <div>
               <span className="text-sm text-muted-foreground">Nome</span>
               <p className="font-medium">{profile?.display_name || user?.email?.split('@')[0] || '—'}</p>
