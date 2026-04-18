@@ -331,11 +331,41 @@ const Profile = () => {
                 {allUsers.map((ur: any) => (
                   <div key={ur.id} className="p-3 rounded-lg border space-y-2">
                     <div className="flex items-center justify-between gap-4">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{ur.email}</p>
-                        <p className="text-xs text-muted-foreground truncate">{ur.user_id}</p>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Avatar className="h-10 w-10 shrink-0">
+                          {ur.photo_url && <AvatarImage src={ur.photo_url} alt={ur.email} />}
+                          <AvatarFallback>{(ur.email || '?').charAt(0).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{ur.email}</p>
+                          <p className="text-xs text-muted-foreground truncate">{ur.user_id}</p>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <label className="cursor-pointer" title="Alterar foto">
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) handlePhotoUpload(ur.user_id, f);
+                              e.target.value = '';
+                            }}
+                          />
+                          <span className="inline-flex items-center justify-center h-8 w-8 rounded border hover:bg-accent">
+                            <Camera className="h-3.5 w-3.5" />
+                          </span>
+                        </label>
+                        {ur.photo_url && (
+                          <button
+                            onClick={() => handlePhotoRemove(ur.user_id)}
+                            className="inline-flex items-center justify-center h-8 w-8 rounded border text-destructive hover:bg-destructive/10"
+                            title="Remover foto"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                         <Select
                           defaultValue={ur.role}
                           onValueChange={(val) => updateRole.mutate({ userId: ur.user_id, newRole: val })}
