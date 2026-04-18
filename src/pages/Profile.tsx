@@ -79,19 +79,53 @@ const Profile = () => {
     enabled: !!user,
   });
 
-  // Admin: all users with roles + profiles for email
+  // Admin: all users with roles + profiles for email + photo
   const { data: allUsers = [] } = useQuery({
     queryKey: ['all-users-roles-profiles'],
     queryFn: async () => {
       const { data: roles } = await supabase.from('user_roles').select('*');
       const { data: profiles } = await supabase.from('profiles').select('*');
-      return (roles || []).map((r: any) => ({
-        ...r,
-        email: profiles?.find((p: any) => p.id === r.user_id)?.display_name || r.user_id,
-      }));
+      return (roles || []).map((r: any) => {
+        const p = profiles?.find((x: any) => x.id === r.user_id);
+        return {
+          ...r,
+          email: p?.display_name || r.user_id,
+          photo_url: p?.photo_url || '',
+        };
+      });
     },
     enabled: isAdmin,
   });
+
+  // Photo upload (for self or admin-managed user)
+  const handlePhotoUpload = async (targetUserId: string, file: File) => {
+    try {
+      const ext = file.name.split('.').pop();
+      const path = `${targetUserId}/${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from('profile-photos').upload(path, file, { upsert: true });
+      if (upErr) throw upErr;
+      const { data: { publicUrl } } = supabase.storage.from('profile-photos').getPublicUrl(path);
+      const { error } = await supabase.from('profiles').update({ photo_url: publicUrl }).eq('id', targetUserId);
+      if (error) throw error;
+      toast.success('Foto atualizada!');
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+      queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['card-comments'] });
+      queryClient.invalidateQueries({ queryKey: ['dev-card-comments'] });
+    } catch (e: any) {
+      toast.error('Erro ao enviar foto: ' + (e.message || ''));
+    }
+  };
+
+  const handlePhotoRemove = async (targetUserId: string) => {
+    const { error } = await supabase.from('profiles').update({ photo_url: null }).eq('id', targetUserId);
+    if (error) { toast.error('Erro ao remover foto'); return; }
+    toast.success('Foto removida');
+    queryClient.invalidateQueries({ queryKey: ['profile'] });
+    queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
+    queryClient.invalidateQueries({ queryKey: ['card-comments'] });
+    queryClient.invalidateQueries({ queryKey: ['dev-card-comments'] });
+  };
 
   // Activity logs with date filter
   const { data: logs = [], isLoading: logsLoading } = useQuery({
