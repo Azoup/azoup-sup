@@ -614,6 +614,7 @@ const KanbanDev = () => {
                                   {card.images?.length > 0 && (
                                     <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground"><Paperclip className="h-3 w-3" /> {card.images.length}</span>
                                   )}
+                                  <ChecklistBadge cardId={card.id} cardType="dev" />
                                 </div>
                                 <div className="flex items-center justify-between gap-1 flex-wrap">
                                   {card.analyst && (
@@ -704,6 +705,7 @@ const KanbanDev = () => {
                   <span>Criado em: {format(new Date(viewingCard.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
                 </div>
               </div>
+              <CardChecklist cardId={viewingCard.id} cardType="dev" description={viewingCard.description} />
               <DevCardComments cardId={viewingCard.id} />
               <div className="flex gap-2 pt-2">
                 <Button size="sm" variant="outline" onClick={() => { setViewOpen(false); openEdit(viewingCard); }}>
