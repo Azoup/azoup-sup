@@ -18,6 +18,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { toast } from 'sonner';
 import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar, Search } from 'lucide-react';
 import { DevCardComments } from '@/components/DevCardComments';
+import { CardChecklist } from '@/components/CardChecklist';
+import { ChecklistBadge } from '@/components/ChecklistBadge';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
