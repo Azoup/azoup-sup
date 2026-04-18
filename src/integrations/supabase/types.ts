@@ -381,6 +381,39 @@ export type Database = {
           },
         ]
       }
+      kanban_card_checklist: {
+        Row: {
+          card_id: string
+          card_type: string
+          content: string
+          created_at: string
+          done: boolean
+          id: string
+          position: number
+          updated_at: string
+        }
+        Insert: {
+          card_id: string
+          card_type: string
+          content: string
+          created_at?: string
+          done?: boolean
+          id?: string
+          position?: number
+          updated_at?: string
+        }
+        Update: {
+          card_id?: string
+          card_type?: string
+          content?: string
+          created_at?: string
+          done?: boolean
+          id?: string
+          position?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       kanban_card_comments: {
         Row: {
           card_id: string

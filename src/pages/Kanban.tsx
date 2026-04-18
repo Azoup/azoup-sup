@@ -18,6 +18,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { toast } from 'sonner';
 import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar, Search } from 'lucide-react';
 import { CardComments } from '@/components/CardComments';
+import { CardChecklist } from '@/components/CardChecklist';
+import { ChecklistBadge } from '@/components/ChecklistBadge';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -651,6 +653,7 @@ const Kanban = () => {
                                       <Paperclip className="h-3 w-3" /> {card.images.length}
                                     </span>
                                   )}
+                                  <ChecklistBadge cardId={card.id} cardType="kanban" />
                                 </div>
                                 <div className="flex items-center justify-between">
                                   {card.analyst && (
@@ -745,6 +748,7 @@ const Kanban = () => {
                   <span>Criado em: {format(new Date(viewingCard.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
                 </div>
               </div>
+              <CardChecklist cardId={viewingCard.id} cardType="kanban" description={viewingCard.description} />
               <CardComments cardId={viewingCard.id} />
               <div className="flex gap-2 pt-2">
                 <Button size="sm" variant="outline" onClick={() => { setViewOpen(false); openEdit(viewingCard); }}>
