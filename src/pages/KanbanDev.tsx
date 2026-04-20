@@ -570,7 +570,7 @@ const KanbanDev = () => {
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+        <div className="px-2"><KanbanSkeleton columns={Math.max(sortedColumns.length, 4)} /></div>
       ) : (
         <DragDropContext onDragEnd={onDragEnd}>
           <div className={`grid grid-cols-1 md:grid-cols-2 ${gridCols} gap-4`} style={sortedColumns.length > 4 ? { gridTemplateColumns: `repeat(${sortedColumns.length}, minmax(280px, 1fr))`, overflowX: 'auto' } : undefined}>
