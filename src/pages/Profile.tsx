@@ -342,8 +342,8 @@ const Profile = () => {
                           <p className="text-xs text-muted-foreground truncate">{ur.user_id}</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 flex-wrap md:flex-nowrap shrink-0">
-                        <label className="cursor-pointer" title="Alterar foto">
+                      <div className="flex items-center gap-2 flex-wrap justify-end md:flex-nowrap md:justify-end shrink-0 md:min-w-fit">
+                        <label className="cursor-pointer shrink-0" title="Alterar foto">
                           <input
                             type="file"
                             accept="image/png,image/jpeg"
@@ -358,7 +358,7 @@ const Profile = () => {
                             <Camera className="h-3.5 w-3.5" />
                           </span>
                         </label>
-                        {ur.photo_url && (
+                        {ur.photo_url ? (
                           <button
                             onClick={() => handlePhotoRemove(ur.user_id)}
                             className="inline-flex items-center justify-center h-8 w-8 rounded border text-destructive hover:bg-destructive/10 shrink-0"
@@ -366,6 +366,8 @@ const Profile = () => {
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
+                        ) : (
+                          <span className="h-8 w-8 shrink-0" aria-hidden="true" />
                         )}
                         <Select
                           defaultValue={ur.role}
@@ -382,7 +384,7 @@ const Profile = () => {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="min-w-[6.5rem] shrink-0 whitespace-nowrap"
+                          className="min-w-[6.75rem] shrink-0 whitespace-nowrap"
                           onClick={() => startEditingPerms(ur.user_id)}
                         >
                           Permissões
