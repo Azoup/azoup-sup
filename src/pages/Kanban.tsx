@@ -953,49 +953,12 @@ const Kanban = () => {
 
       {/* Lightbox */}
       {lightboxIndex !== null && (
-        <Dialog open={true} onOpenChange={() => setLightboxIndex(null)}>
-          <DialogContent className="max-w-4xl p-2 bg-black/90 border-none">
-            <DialogHeader className="sr-only">
-              <DialogTitle>Visualizar imagem</DialogTitle>
-              <DialogDescription>Imagem {(lightboxIndex || 0) + 1} de {lightboxImages.length}</DialogDescription>
-            </DialogHeader>
-            <div className="relative flex items-center justify-center min-h-[60vh]">
-              <img
-                src={lightboxImages[lightboxIndex]}
-                alt=""
-                className="max-h-[80vh] max-w-full object-contain rounded"
-              />
-              {lightboxImages.length > 1 && (
-                <>
-                  <button
-                    onClick={() => setLightboxIndex((lightboxIndex - 1 + lightboxImages.length) % lightboxImages.length)}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/20 hover:bg-white/40 text-white rounded-full p-2"
-                  >
-                    <ChevronLeft className="h-6 w-6" />
-                  </button>
-                  <button
-                    onClick={() => setLightboxIndex((lightboxIndex + 1) % lightboxImages.length)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/20 hover:bg-white/40 text-white rounded-full p-2"
-                  >
-                    <ChevronRight className="h-6 w-6" />
-                  </button>
-                </>
-              )}
-            </div>
-            <div className="flex items-center justify-center gap-4">
-              <p className="text-white/60 text-xs">{lightboxIndex + 1} / {lightboxImages.length}</p>
-              <a
-                href={lightboxImages[lightboxIndex]}
-                download
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-white/80 hover:text-white text-xs bg-white/20 hover:bg-white/30 rounded px-3 py-1.5 transition-colors"
-              >
-                <Download className="h-4 w-4" /> Baixar
-              </a>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <ImageLightbox
+          images={lightboxImages}
+          index={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onIndexChange={setLightboxIndex}
+        />
       )}
     </div>
   );
