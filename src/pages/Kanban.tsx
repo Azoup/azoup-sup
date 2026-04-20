@@ -21,6 +21,7 @@ import { CardComments } from '@/components/CardComments';
 import { CardChecklist } from '@/components/CardChecklist';
 import { ChecklistBadge } from '@/components/ChecklistBadge';
 import { KanbanSkeleton } from '@/components/KanbanSkeleton';
+import { ImageLightbox } from '@/components/ImageLightbox';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
