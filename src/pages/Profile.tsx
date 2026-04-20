@@ -69,6 +69,7 @@ const Profile = () => {
   const [editingPermsUserId, setEditingPermsUserId] = useState<string | null>(null);
   const [permsDraft, setPermsDraft] = useState<Record<string, boolean>>({});
   const [permsSaving, setPermsSaving] = useState(false);
+  const [showAllUsers, setShowAllUsers] = useState(false);
 
   const { data: profile } = useQuery({
     queryKey: ['profile', user?.id],
@@ -327,8 +328,8 @@ const Profile = () => {
             {allUsers.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nenhum usuário encontrado.</p>
             ) : (
-              <div className="space-y-3">
-                {allUsers.map((ur: any) => (
+              <div className="space-y-3 animate-in fade-in duration-200">
+                {(showAllUsers ? allUsers : allUsers.slice(0, 4)).map((ur: any) => (
                   <div key={ur.id} className="p-3 rounded-lg border space-y-2">
                     <div className="flex items-center justify-between gap-4">
                       <div className="flex items-center gap-3 min-w-0">
@@ -428,6 +429,13 @@ const Profile = () => {
                     )}
                   </div>
                 ))}
+                {allUsers.length > 4 && (
+                  <div className="flex justify-center pt-2">
+                    <Button variant="outline" size="sm" onClick={() => setShowAllUsers(v => !v)}>
+                      {showAllUsers ? 'Ver menos' : `Ver mais (${allUsers.length - 4})`}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
