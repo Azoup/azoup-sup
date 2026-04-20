@@ -20,6 +20,7 @@ import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLef
 import { DevCardComments } from '@/components/DevCardComments';
 import { CardChecklist } from '@/components/CardChecklist';
 import { ChecklistBadge } from '@/components/ChecklistBadge';
+import { KanbanSkeleton } from '@/components/KanbanSkeleton';
 
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
