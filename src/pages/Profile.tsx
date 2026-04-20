@@ -331,8 +331,8 @@ const Profile = () => {
               <div className="space-y-3 animate-in fade-in duration-200">
                 {(showAllUsers ? allUsers : allUsers.slice(0, 4)).map((ur: any) => (
                   <div key={ur.id} className="p-3 rounded-lg border space-y-2">
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
                         <Avatar className="h-10 w-10 shrink-0">
                           {ur.photo_url && <AvatarImage src={ur.photo_url} alt={ur.email} />}
                           <AvatarFallback>{(ur.email || '?').charAt(0).toUpperCase()}</AvatarFallback>
@@ -342,7 +342,7 @@ const Profile = () => {
                           <p className="text-xs text-muted-foreground truncate">{ur.user_id}</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap md:flex-nowrap shrink-0">
                         <label className="cursor-pointer" title="Alterar foto">
                           <input
                             type="file"
@@ -354,14 +354,14 @@ const Profile = () => {
                               e.target.value = '';
                             }}
                           />
-                          <span className="inline-flex items-center justify-center h-8 w-8 rounded border hover:bg-accent">
+                          <span className="inline-flex items-center justify-center h-8 w-8 rounded border hover:bg-accent shrink-0">
                             <Camera className="h-3.5 w-3.5" />
                           </span>
                         </label>
                         {ur.photo_url && (
                           <button
                             onClick={() => handlePhotoRemove(ur.user_id)}
-                            className="inline-flex items-center justify-center h-8 w-8 rounded border text-destructive hover:bg-destructive/10"
+                            className="inline-flex items-center justify-center h-8 w-8 rounded border text-destructive hover:bg-destructive/10 shrink-0"
                             title="Remover foto"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -371,7 +371,7 @@ const Profile = () => {
                           defaultValue={ur.role}
                           onValueChange={(val) => updateRole.mutate({ userId: ur.user_id, newRole: val })}
                         >
-                          <SelectTrigger className="w-28">
+                          <SelectTrigger className="w-28 min-w-[7rem] shrink-0">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -379,7 +379,12 @@ const Profile = () => {
                             <SelectItem value="user">Padrão</SelectItem>
                           </SelectContent>
                         </Select>
-                        <Button variant="outline" size="sm" onClick={() => startEditingPerms(ur.user_id)}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="min-w-[6.5rem] shrink-0 whitespace-nowrap"
+                          onClick={() => startEditingPerms(ur.user_id)}
+                        >
                           Permissões
                         </Button>
                       </div>
