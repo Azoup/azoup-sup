@@ -76,6 +76,7 @@ const KanbanDev = () => {
       const { data } = await supabase.from('dev_kanban_columns').select('*').order('position');
       return data || [];
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: analysts = [] } = useQuery({
@@ -84,6 +85,7 @@ const KanbanDev = () => {
       const { data } = await supabase.from('analysts').select('*').eq('status', 'active').order('name');
       return data || [];
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: developers = [] } = useQuery({
@@ -92,6 +94,7 @@ const KanbanDev = () => {
       const { data } = await supabase.from('developers').select('*').eq('status', 'active').order('name');
       return data || [];
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: cards = [], isLoading } = useQuery({
@@ -100,6 +103,7 @@ const KanbanDev = () => {
       const { data } = await supabase.from('dev_kanban_cards').select('*').order('position');
       return data || [];
     },
+    staleTime: 60 * 1000,
   });
 
   const { data: labels = [] } = useQuery({
@@ -108,6 +112,7 @@ const KanbanDev = () => {
       const { data } = await supabase.from('dev_kanban_labels').select('*').order('name');
       return data || [];
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: cardLabels = [] } = useQuery({
@@ -116,6 +121,7 @@ const KanbanDev = () => {
       const { data } = await supabase.from('dev_kanban_card_labels').select('*, dev_kanban_labels(*)');
       return data || [];
     },
+    staleTime: 60 * 1000,
   });
 
   const { data: cardImages = [] } = useQuery({
@@ -124,6 +130,7 @@ const KanbanDev = () => {
       const { data } = await supabase.from('dev_kanban_card_images').select('*').order('created_at');
       return data || [];
     },
+    staleTime: 60 * 1000,
   });
 
   useEffect(() => {
