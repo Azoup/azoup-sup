@@ -20,6 +20,7 @@ import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLef
 import { CardComments } from '@/components/CardComments';
 import { CardChecklist } from '@/components/CardChecklist';
 import { ChecklistBadge } from '@/components/ChecklistBadge';
+import { KanbanSkeleton } from '@/components/KanbanSkeleton';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -74,6 +75,7 @@ const Kanban = () => {
       const { data } = await supabase.from('kanban_columns').select('*').order('position');
       return data || [];
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: analysts = [] } = useQuery({
@@ -82,6 +84,7 @@ const Kanban = () => {
       const { data } = await supabase.from('analysts').select('*').eq('status', 'active').order('name');
       return data || [];
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: cards = [], isLoading } = useQuery({
@@ -90,6 +93,7 @@ const Kanban = () => {
       const { data } = await supabase.from('kanban_cards').select('*').order('position');
       return data || [];
     },
+    staleTime: 60 * 1000,
   });
 
   const { data: labels = [] } = useQuery({
@@ -98,6 +102,7 @@ const Kanban = () => {
       const { data } = await supabase.from('kanban_labels').select('*').order('name');
       return data || [];
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: cardLabels = [] } = useQuery({
@@ -106,6 +111,7 @@ const Kanban = () => {
       const { data } = await supabase.from('kanban_card_labels').select('*, kanban_labels(*)');
       return data || [];
     },
+    staleTime: 60 * 1000,
   });
 
   const { data: cardImages = [] } = useQuery({
@@ -114,6 +120,7 @@ const Kanban = () => {
       const { data } = await supabase.from('kanban_card_images').select('*').order('created_at');
       return data || [];
     },
+    staleTime: 60 * 1000,
   });
 
   useEffect(() => {
@@ -583,7 +590,7 @@ const Kanban = () => {
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+        <div className="px-2"><KanbanSkeleton columns={Math.max(sortedColumns.length, 4)} /></div>
       ) : (
         <DragDropContext onDragEnd={onDragEnd}>
           <div className={`grid grid-cols-1 md:grid-cols-2 ${gridCols} gap-4`} style={sortedColumns.length > 4 ? { gridTemplateColumns: `repeat(${sortedColumns.length}, minmax(280px, 1fr))`, overflowX: 'auto' } : undefined}>
