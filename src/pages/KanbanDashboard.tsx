@@ -159,26 +159,39 @@ const KanbanDashboard = () => {
           <Card className="lg:col-span-2">
             <CardHeader><CardTitle className="text-sm">Cards por Etiqueta</CardTitle></CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={350}>
-                <PieChart>
+              <ResponsiveContainer width="100%" height={340}>
+                <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                   <Pie
                     data={labelData}
                     dataKey="count"
                     nameKey="name"
                     cx="50%"
-                    cy="45%"
-                    outerRadius={100}
-                    label={({ name, count }) => `${name}: ${count}`}
-                    labelLine={{ strokeWidth: 1 }}
+                    cy="42%"
+                    outerRadius="70%"
+                    innerRadius="40%"
+                    paddingAngle={2}
+                    label={false}
+                    labelLine={false}
                   >
                     {labelData.map((entry, i) => (
                       <Cell key={entry.name} fill={entry.color || COLORS[i % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip
+                    formatter={(value: number, name: string) => [`${value} card(s)`, name]}
+                    contentStyle={{ fontSize: '12px' }}
+                  />
                   <Legend
                     verticalAlign="bottom"
-                    wrapperStyle={{ paddingTop: '16px', fontSize: '12px' }}
+                    align="center"
+                    layout="horizontal"
+                    iconType="circle"
+                    wrapperStyle={{ paddingTop: '12px', fontSize: '12px', lineHeight: '20px', maxHeight: '90px', overflowY: 'auto' }}
+                    formatter={(value: string, entry: any) => (
+                      <span className="text-foreground">
+                        {value} <span className="text-muted-foreground">({entry?.payload?.count ?? 0})</span>
+                      </span>
+                    )}
                   />
                 </PieChart>
               </ResponsiveContainer>
