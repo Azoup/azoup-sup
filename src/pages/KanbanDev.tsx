@@ -576,7 +576,7 @@ const KanbanDev = () => {
         <div className="px-2"><KanbanSkeleton columns={Math.max(sortedColumns.length, 4)} /></div>
       ) : (
         <DragDropContext onDragEnd={onDragEnd}>
-          <div className={`grid grid-cols-1 md:grid-cols-2 ${gridCols} gap-4`} style={sortedColumns.length > 4 ? { gridTemplateColumns: `repeat(${sortedColumns.length}, minmax(280px, 1fr))`, overflowX: 'auto' } : undefined}>
+          <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 ${gridCols} gap-3 sm:gap-4`} style={sortedColumns.length > 4 ? { gridTemplateColumns: `repeat(${sortedColumns.length}, minmax(260px, 1fr))`, overflowX: 'auto' } : undefined}>
             {sortedColumns.map((col: any, colIdx: number) => (
               <div key={col.id} className={`bg-muted/30 rounded-lg p-3 border-t-4 ${col.color} min-h-[300px] flex flex-col`}>
                 <div className="flex items-center justify-between mb-3">
@@ -607,19 +607,20 @@ const KanbanDev = () => {
                                 {...provided.draggableProps}
                                 {...provided.dragHandleProps}
                                 onClick={() => openView(card)}
-                                className={`bg-card rounded-md border p-3 shadow-sm space-y-2 cursor-pointer hover:shadow-md transition-shadow ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''}`}
+                                className={`bg-card rounded-md border p-3 shadow-sm space-y-2 cursor-pointer hover:shadow-md transition-shadow break-words ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''}`}
+                                style={{ wordWrap: 'break-word', overflowWrap: 'anywhere' }}
                               >
                                 <div className="flex items-start justify-between gap-2">
-                                  <p className="font-medium text-sm flex-1 flex items-center gap-1">
-                                    {card.status === 'finalizados' && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />}
-                                    {card.title}
+                                  <p className="font-medium text-sm flex-1 flex items-start gap-1 break-words" style={{ overflowWrap: 'anywhere' }}>
+                                    {card.status === 'finalizados' && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />}
+                                    <span className="break-words">{card.title}</span>
                                   </p>
                                   <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                                     <button onClick={() => openEdit(card)} className="text-muted-foreground hover:text-primary"><Pencil className="h-3 w-3" /></button>
                                     <button onClick={() => deleteCard.mutate(card.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
                                   </div>
                                 </div>
-                                {card.description && <p className="text-xs text-muted-foreground line-clamp-2">{card.description}</p>}
+                                {card.description && <p className="text-xs text-muted-foreground line-clamp-2 break-words" style={{ overflowWrap: 'anywhere' }}>{card.description}</p>}
                                 <div className="flex items-center gap-2 flex-wrap">
                                   {card.labels?.length > 0 && card.labels.map((l: any) => (
                                     <span key={l.id} className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: l.color }}>{l.name}</span>
