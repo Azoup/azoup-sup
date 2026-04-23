@@ -18,6 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { toast } from 'sonner';
 import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar, Search } from 'lucide-react';
 import { DevCardComments } from '@/components/DevCardComments';
+import { DevCardFiles } from '@/components/DevCardFiles';
 import { CardChecklist } from '@/components/CardChecklist';
 import { ChecklistBadge } from '@/components/ChecklistBadge';
 import { KanbanSkeleton } from '@/components/KanbanSkeleton';
@@ -718,6 +719,7 @@ const KanbanDev = () => {
                 </div>
               </div>
               <CardChecklist cardId={viewingCard.id} cardType="dev" description={viewingCard.description} />
+              <DevCardFiles cardId={viewingCard.id} />
               <DevCardComments cardId={viewingCard.id} />
               <div className="flex gap-2 pt-2">
                 <Button size="sm" variant="outline" onClick={() => { setViewOpen(false); openEdit(viewingCard); }}>
