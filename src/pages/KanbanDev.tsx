@@ -576,7 +576,7 @@ const KanbanDev = () => {
         <div className="px-2"><KanbanSkeleton columns={Math.max(sortedColumns.length, 4)} /></div>
       ) : (
         <DragDropContext onDragEnd={onDragEnd}>
-          <div className={`grid grid-cols-1 md:grid-cols-2 ${gridCols} gap-4`} style={sortedColumns.length > 4 ? { gridTemplateColumns: `repeat(${sortedColumns.length}, minmax(280px, 1fr))`, overflowX: 'auto' } : undefined}>
+          <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 ${gridCols} gap-3 sm:gap-4`} style={sortedColumns.length > 4 ? { gridTemplateColumns: `repeat(${sortedColumns.length}, minmax(260px, 1fr))`, overflowX: 'auto' } : undefined}>
             {sortedColumns.map((col: any, colIdx: number) => (
               <div key={col.id} className={`bg-muted/30 rounded-lg p-3 border-t-4 ${col.color} min-h-[300px] flex flex-col`}>
                 <div className="flex items-center justify-between mb-3">
