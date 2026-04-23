@@ -133,6 +133,53 @@ export type Database = {
           },
         ]
       }
+      dev_kanban_card_files: {
+        Row: {
+          card_id: string
+          created_at: string
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string | null
+          file_url: string
+          id: string
+          uploaded_by: string | null
+          uploaded_by_email: string | null
+        }
+        Insert: {
+          card_id: string
+          created_at?: string
+          file_name: string
+          file_path: string
+          file_size?: number
+          file_type?: string | null
+          file_url: string
+          id?: string
+          uploaded_by?: string | null
+          uploaded_by_email?: string | null
+        }
+        Update: {
+          card_id?: string
+          created_at?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number
+          file_type?: string | null
+          file_url?: string
+          id?: string
+          uploaded_by?: string | null
+          uploaded_by_email?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dev_kanban_card_files_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "dev_kanban_cards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dev_kanban_card_images: {
         Row: {
           card_id: string
