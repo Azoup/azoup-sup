@@ -412,6 +412,9 @@ const Kanban = () => {
     const { source, destination, draggableId } = result;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
 
+    const movedCard = cards.find((c: any) => c.id === draggableId);
+    const statusChanged = source.droppableId !== destination.droppableId;
+
     // Optimistic update: immediately update the cache
     queryClient.setQueryData(['kanban-cards'], (old: any[] | undefined) => {
       if (!old) return old;
@@ -426,14 +429,40 @@ const Kanban = () => {
     supabase.from('kanban_cards')
       .update({ status: destination.droppableId, position: destination.index })
       .eq('id', draggableId)
-      .then(({ error }) => {
+      .then(async ({ error }) => {
         if (error) {
           // Rollback on error
           queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
           toast.error('Erro ao mover card.');
+          return;
+        }
+        // Notify analyst on column change
+        if (statusChanged && movedCard?.analyst_id) {
+          const colTitle = (columns as any[]).find(c => c.slug === destination.droppableId)?.title || destination.droppableId;
+          const actorName = await getActorName();
+          await notifySupportAnalyst({
+            cardId: movedCard.id, cardTitle: movedCard.title, analystId: movedCard.analyst_id,
+            actionType: 'status', actorId: user?.id, actorName,
+            message: `${actorName} moveu o ticket "${movedCard.title}" para "${colTitle}"`,
+          });
         }
       });
-  }, [queryClient]);
+  }, [queryClient, cards, columns, getActorName, user?.id]);
+
+  // Auto-open a card when navigated with ?card=<id> (e.g., from notifications)
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const cardParam = searchParams.get('card');
+    if (!cardParam || cards.length === 0) return;
+    const target = cards.find((c: any) => c.id === cardParam);
+    if (target) {
+      setViewingCard(target);
+      setViewOpen(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete('card');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, cards, setSearchParams]);
 
   const resetForm = () => {
     setTitle(''); setDescription(''); setAnalystId('');
