@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { logActivity } from '@/hooks/useActivityLog';
+import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -194,6 +196,13 @@ const Kanban = () => {
     }
   };
 
+  // Resolve current user's display name once for notification labels
+  const getActorName = useCallback(async (): Promise<string> => {
+    if (!user) return 'Alguém';
+    const { data } = await supabase.from('profiles').select('display_name').eq('id', user.id).maybeSingle();
+    return data?.display_name || user.email?.split('@')[0] || 'Alguém';
+  }, [user]);
+
   const createCard = useMutation({
     mutationFn: async () => {
       const colCards = cardsByColumn[targetColumn] || [];
@@ -213,6 +222,15 @@ const Kanban = () => {
         await uploadAndSaveImages(data.id, pendingImages);
       }
       await logActivity('Criou card no Kanban', title);
+      // Notify analyst on assignment
+      if (analystId) {
+        const actorName = await getActorName();
+        await notifySupportAnalyst({
+          cardId: data.id, cardTitle: title, analystId,
+          actionType: 'assignee', actorId: user?.id, actorName,
+          message: `${actorName} criou o ticket "${title}" e atribuiu para você`,
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
@@ -227,8 +245,10 @@ const Kanban = () => {
   const updateCard = useMutation({
     mutationFn: async () => {
       if (!editingCard) return;
+      const prevAnalystId = editingCard.analyst_id || null;
+      const newAnalystId = analystId || null;
       const { error } = await supabase.from('kanban_cards')
-        .update({ title, description: description || null, analyst_id: analystId || null })
+        .update({ title, description: description || null, analyst_id: newAnalystId })
         .eq('id', editingCard.id);
       if (error) throw error;
       await supabase.from('kanban_card_labels').delete().eq('card_id', editingCard.id);
@@ -241,6 +261,21 @@ const Kanban = () => {
         await uploadAndSaveImages(editingCard.id, pendingImages);
       }
       await logActivity('Editou card no Kanban', title);
+      // Notifications
+      const actorName = await getActorName();
+      if (newAnalystId && newAnalystId !== prevAnalystId) {
+        await notifySupportAnalyst({
+          cardId: editingCard.id, cardTitle: title, analystId: newAnalystId,
+          actionType: 'assignee', actorId: user?.id, actorName,
+          message: `${actorName} atribuiu o ticket "${title}" para você`,
+        });
+      } else if (newAnalystId) {
+        await notifySupportAnalyst({
+          cardId: editingCard.id, cardTitle: title, analystId: newAnalystId,
+          actionType: 'edit', actorId: user?.id, actorName,
+          message: `${actorName} editou o ticket "${title}"`,
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
@@ -377,6 +412,9 @@ const Kanban = () => {
     const { source, destination, draggableId } = result;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
 
+    const movedCard = cards.find((c: any) => c.id === draggableId);
+    const statusChanged = source.droppableId !== destination.droppableId;
+
     // Optimistic update: immediately update the cache
     queryClient.setQueryData(['kanban-cards'], (old: any[] | undefined) => {
       if (!old) return old;
@@ -391,14 +429,40 @@ const Kanban = () => {
     supabase.from('kanban_cards')
       .update({ status: destination.droppableId, position: destination.index })
       .eq('id', draggableId)
-      .then(({ error }) => {
+      .then(async ({ error }) => {
         if (error) {
           // Rollback on error
           queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
           toast.error('Erro ao mover card.');
+          return;
+        }
+        // Notify analyst on column change
+        if (statusChanged && movedCard?.analyst_id) {
+          const colTitle = (columns as any[]).find(c => c.slug === destination.droppableId)?.title || destination.droppableId;
+          const actorName = await getActorName();
+          await notifySupportAnalyst({
+            cardId: movedCard.id, cardTitle: movedCard.title, analystId: movedCard.analyst_id,
+            actionType: 'status', actorId: user?.id, actorName,
+            message: `${actorName} moveu o ticket "${movedCard.title}" para "${colTitle}"`,
+          });
         }
       });
-  }, [queryClient]);
+  }, [queryClient, cards, columns, getActorName, user?.id]);
+
+  // Auto-open a card when navigated with ?card=<id> (e.g., from notifications)
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const cardParam = searchParams.get('card');
+    if (!cardParam || cards.length === 0) return;
+    const target = cards.find((c: any) => c.id === cardParam);
+    if (target) {
+      setViewingCard(target);
+      setViewOpen(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete('card');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, cards, setSearchParams]);
 
   const resetForm = () => {
     setTitle(''); setDescription(''); setAnalystId('');

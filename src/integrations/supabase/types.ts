@@ -354,6 +354,7 @@ export type Database = {
           actor_name: string
           card_id: string
           card_title: string
+          card_type: string
           created_at: string
           id: string
           message: string
@@ -366,6 +367,7 @@ export type Database = {
           actor_name: string
           card_id: string
           card_title: string
+          card_type?: string
           created_at?: string
           id?: string
           message: string
@@ -378,6 +380,7 @@ export type Database = {
           actor_name?: string
           card_id?: string
           card_title?: string
+          card_type?: string
           created_at?: string
           id?: string
           message?: string
