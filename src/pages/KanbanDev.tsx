@@ -241,8 +241,15 @@ const KanbanDev = () => {
   const updateCard = useMutation({
     mutationFn: async () => {
       if (!editingCard) return;
+      const prevDevId = editingCard.developer_id || null;
+      const newDevId = developerId || null;
+      const titleChanged = editingCard.title !== title;
+      const descChanged = (editingCard.description || '') !== (description || '');
+      const analystChanged = (editingCard.analyst_id || null) !== (analystId || null);
+      const devChanged = prevDevId !== newDevId;
+
       const { error } = await supabase.from('dev_kanban_cards')
-        .update({ title, description: description || null, analyst_id: analystId || null, developer_id: developerId || null })
+        .update({ title, description: description || null, analyst_id: analystId || null, developer_id: newDevId })
         .eq('id', editingCard.id);
       if (error) throw error;
       await supabase.from('dev_kanban_card_labels').delete().eq('card_id', editingCard.id);
@@ -255,6 +262,22 @@ const KanbanDev = () => {
         await uploadAndSaveImages(editingCard.id, pendingImages);
       }
       await logActivity('Editou card no Kanban DEV', title);
+
+      // Notifications
+      const recipientId = await resolveDeveloperUserId(newDevId);
+      if (devChanged && recipientId) {
+        await notifyDev({
+          cardId: editingCard.id, cardTitle: title, recipientId,
+          actionType: 'assignee', actorId: user?.id, actorName,
+          message: `${actorName} atribuiu o ticket "${title}" a você`,
+        });
+      } else if ((titleChanged || descChanged || analystChanged) && recipientId) {
+        await notifyDev({
+          cardId: editingCard.id, cardTitle: title, recipientId,
+          actionType: 'edit', actorId: user?.id, actorName,
+          message: `${actorName} editou o ticket "${title}"`,
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dev-kanban-cards'] });
