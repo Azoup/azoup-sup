@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Trash2, Send, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { notifySupportAnalyst, notifySupportResponsible } from '@/hooks/useDevNotifications';
+import { notifySupportResponsible } from '@/hooks/useDevNotifications';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -112,7 +112,6 @@ export function CardComments({ cardId }: CardCommentsProps) {
           };
 
           await notifySupportResponsible(notificationPayload);
-          await notifySupportAnalyst(notificationPayload);
         }
       } catch (e) {
         console.warn('[CardComments] notify failed:', e);
