@@ -1,5 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 
+type CardType = 'dev' | 'support';
+
 interface NotifyArgs {
   cardId: string;
   cardTitle: string;
@@ -8,10 +10,11 @@ interface NotifyArgs {
   actorId: string | null | undefined;
   actorName: string;
   message: string;
+  cardType?: CardType;
 }
 
 /**
- * Creates a notification for the responsible user of a DEV Kanban card.
+ * Creates a notification for the responsible user of a Kanban card (DEV or Support).
  * Skips if there's no recipient or if recipient is the actor (no self-notify).
  */
 export async function notifyDev({
@@ -22,6 +25,7 @@ export async function notifyDev({
   actorId,
   actorName,
   message,
+  cardType = 'dev',
 }: NotifyArgs) {
   if (!recipientId) return;
   if (actorId && actorId === recipientId) return;
@@ -35,11 +39,40 @@ export async function notifyDev({
       actor_id: actorId || null,
       actor_name: actorName || 'Alguém',
       message,
+      card_type: cardType,
     });
   } catch (e) {
     // Silently swallow — notification failures should not break primary flow.
     console.warn('[notifyDev] failed:', e);
   }
+}
+
+/**
+ * Notifies only the analyst responsible for a Support Kanban card.
+ * Skips if actor is the analyst.
+ */
+export async function notifySupportAnalyst(params: {
+  cardId: string;
+  cardTitle: string;
+  analystId: string | null | undefined;
+  actionType: 'edit' | 'comment' | 'attachment' | 'status' | 'assignee';
+  actorId: string | null | undefined;
+  actorName: string;
+  message: string;
+}) {
+  const analystUserId = await resolveAnalystUserId(params.analystId);
+  if (!analystUserId) return;
+  if (params.actorId && params.actorId === analystUserId) return;
+  await notifyDev({
+    cardId: params.cardId,
+    cardTitle: params.cardTitle,
+    recipientId: analystUserId,
+    actionType: params.actionType,
+    actorId: params.actorId,
+    actorName: params.actorName,
+    message: params.message,
+    cardType: 'support',
+  });
 }
 
 // Normalize a name: lowercase + strip accents
