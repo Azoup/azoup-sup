@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Bell, CheckCheck } from 'lucide-react';
+import { Bell, CheckCheck, MapPin } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { usePermissions } from '@/hooks/usePermissions';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 const ACTION_LABEL: Record<string, string> = {
   edit: 'Edição',
@@ -19,8 +21,14 @@ const ACTION_LABEL: Record<string, string> = {
   assignee: 'Responsável',
 };
 
+const BOARD_LABEL: Record<string, string> = {
+  dev: 'Kanban DEV',
+  support: 'Kanban Pendências',
+};
+
 export function NotificationsBell() {
   const { user } = useAuth();
+  const { canView } = usePermissions();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -57,12 +65,18 @@ export function NotificationsBell() {
   const unreadCount = notifications.filter((n: any) => !n.read).length;
 
   const handleClick = async (n: any) => {
+    const isSupport = n.card_type === 'support';
+    const screen = isSupport ? 'kanban' : 'kanban_dev';
+    if (!canView(screen)) {
+      toast.error('Você não possui acesso a este ticket');
+      return;
+    }
     setOpen(false);
     if (!n.read) {
       await (supabase as any).from('dev_kanban_notifications').update({ read: true }).eq('id', n.id);
       queryClient.invalidateQueries({ queryKey: ['dev-notifications', user?.id] });
     }
-    const route = n.card_type === 'support' ? '/kanban' : '/kanban-dev';
+    const route = isSupport ? '/kanban' : '/kanban-dev';
     navigate(`${route}?card=${n.card_id}`);
   };
 
@@ -122,9 +136,15 @@ export function NotificationsBell() {
                       {!n.read && <span className="h-2 w-2 rounded-full bg-primary mt-1 shrink-0" />}
                     </div>
                     <p className="text-sm break-words leading-snug">{n.message}</p>
-                    <p className="text-[10px] text-muted-foreground mt-1">
-                      {formatDistanceToNow(new Date(n.created_at), { addSuffix: true, locale: ptBR })}
-                    </p>
+                    <div className="flex items-center justify-between gap-2 mt-1">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                        <MapPin className="h-2.5 w-2.5" />
+                        {BOARD_LABEL[n.card_type] || 'Kanban'}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {formatDistanceToNow(new Date(n.created_at), { addSuffix: true, locale: ptBR })}
+                      </span>
+                    </div>
                   </button>
                 </li>
               ))}
