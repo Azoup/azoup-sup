@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { logActivity } from '@/hooks/useActivityLog';
-import { notifyDev, resolveDeveloperUserId } from '@/hooks/useDevNotifications';
+import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
