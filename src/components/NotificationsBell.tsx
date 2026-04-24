@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Bell, CheckCheck } from 'lucide-react';
+import { Bell, CheckCheck, MapPin } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { usePermissions } from '@/hooks/usePermissions';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 const ACTION_LABEL: Record<string, string> = {
   edit: 'Edição',
@@ -17,6 +19,11 @@ const ACTION_LABEL: Record<string, string> = {
   attachment: 'Anexo',
   status: 'Status',
   assignee: 'Responsável',
+};
+
+const BOARD_LABEL: Record<string, string> = {
+  dev: 'Kanban DEV',
+  support: 'Kanban Pendências',
 };
 
 export function NotificationsBell() {
