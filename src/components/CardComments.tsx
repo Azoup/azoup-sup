@@ -105,7 +105,7 @@ export function CardComments({ cardId }: CardCommentsProps) {
             cardId,
             cardTitle: card.title,
             analystId: card.analyst_id,
-            actionType: 'comment',
+            actionType: 'comment' as const,
             actorId: user!.id,
             actorName,
             message: `${actorName} comentou no ticket "${card.title}" 📍 Kanban Pendências`,
