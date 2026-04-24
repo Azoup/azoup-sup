@@ -39,6 +39,7 @@ const KanbanDev = () => {
   const { user } = useAuth();
   const { isAdmin } = useRole();
   const queryClient = useQueryClient();
+  const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Alguém';
   const [filterLabelIds, setFilterLabelIds] = useState<string[]>([]);
   const [filterAnalystIds, setFilterAnalystIds] = useState<string[]>([]);
   const [filterDevIds, setFilterDevIds] = useState<string[]>([]);
@@ -481,8 +482,6 @@ const KanbanDev = () => {
     if (!editingCard) return [];
     return cardImages.filter((img: any) => img.card_id === editingCard.id);
   }, [editingCard, cardImages]);
-
-  const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Alguém';
 
   // Auto-open a card when navigated with ?card=<id> (e.g., from notifications)
   const [searchParams, setSearchParams] = useSearchParams();
