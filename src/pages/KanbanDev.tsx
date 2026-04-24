@@ -410,6 +410,8 @@ const KanbanDev = () => {
     if (!result.destination) return;
     const { source, destination, draggableId } = result;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+    const movedCard = cards.find((c: any) => c.id === draggableId);
+    const statusChanged = source.droppableId !== destination.droppableId;
     queryClient.setQueryData(['dev-kanban-cards'], (old: any[] | undefined) => {
       if (!old) return old;
       return old.map(card =>
@@ -421,13 +423,23 @@ const KanbanDev = () => {
     supabase.from('dev_kanban_cards')
       .update({ status: destination.droppableId, position: destination.index })
       .eq('id', draggableId)
-      .then(({ error }) => {
+      .then(async ({ error }) => {
         if (error) {
           queryClient.invalidateQueries({ queryKey: ['dev-kanban-cards'] });
           toast.error('Erro ao mover card.');
+          return;
+        }
+        if (statusChanged && movedCard?.developer_id) {
+          const recipientId = await resolveDeveloperUserId(movedCard.developer_id);
+          const colTitle = sortedColumns.find((c: any) => c.slug === destination.droppableId)?.title || destination.droppableId;
+          await notifyDev({
+            cardId: movedCard.id, cardTitle: movedCard.title, recipientId,
+            actionType: 'status', actorId: user?.id, actorName,
+            message: `${actorName} moveu "${movedCard.title}" para "${colTitle}"`,
+          });
         }
       });
-  }, [queryClient]);
+  }, [queryClient, cards, sortedColumns, user, actorName]);
 
   const resetForm = () => {
     setTitle(''); setDescription(''); setAnalystId(''); setDeveloperId('');
