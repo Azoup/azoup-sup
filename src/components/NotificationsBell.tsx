@@ -29,7 +29,7 @@ export function NotificationsBell() {
     queryKey: ['dev-notifications', user?.id],
     queryFn: async () => {
       if (!user) return [];
-      const { data } = await supabase
+      const { data } = await (supabase as any)
         .from('dev_kanban_notifications')
         .select('*')
         .eq('recipient_id', user.id)
@@ -59,7 +59,7 @@ export function NotificationsBell() {
   const handleClick = async (n: any) => {
     setOpen(false);
     if (!n.read) {
-      await supabase.from('dev_kanban_notifications').update({ read: true }).eq('id', n.id);
+      await (supabase as any).from('dev_kanban_notifications').update({ read: true }).eq('id', n.id);
       queryClient.invalidateQueries({ queryKey: ['dev-notifications', user?.id] });
     }
     navigate(`/kanban-dev?card=${n.card_id}`);
@@ -67,7 +67,7 @@ export function NotificationsBell() {
 
   const markAllRead = async () => {
     if (!user || unreadCount === 0) return;
-    await supabase
+    await (supabase as any)
       .from('dev_kanban_notifications')
       .update({ read: true })
       .eq('recipient_id', user.id)

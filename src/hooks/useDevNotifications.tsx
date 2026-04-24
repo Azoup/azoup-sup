@@ -27,7 +27,7 @@ export async function notifyDev({
   if (actorId && actorId === recipientId) return;
 
   try {
-    await supabase.from('dev_kanban_notifications').insert({
+    await (supabase as any).from('dev_kanban_notifications').insert({
       recipient_id: recipientId,
       card_id: cardId,
       card_title: cardTitle,
