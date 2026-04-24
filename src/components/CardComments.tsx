@@ -94,6 +94,7 @@ export function CardComments({ cardId }: CardCommentsProps) {
           .select('title, analyst_id')
           .eq('id', cardId)
           .maybeSingle();
+        console.log('[CardComments] notify check', { cardId, analyst_id: card?.analyst_id, actor: user!.id });
         if (card?.analyst_id) {
           const { data: profile } = await supabase
             .from('profiles')
@@ -108,7 +109,7 @@ export function CardComments({ cardId }: CardCommentsProps) {
             actionType: 'comment',
             actorId: user!.id,
             actorName,
-            message: `${actorName} comentou no ticket "${card.title}"`,
+            message: `${actorName} comentou no ticket "${card.title}" 📍 Kanban Pendências`,
           });
         }
       } catch (e) {

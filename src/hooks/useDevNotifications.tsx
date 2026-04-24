@@ -61,6 +61,12 @@ export async function notifySupportAnalyst(params: {
   message: string;
 }) {
   const analystUserId = await resolveAnalystUserId(params.analystId);
+  console.log('[notifySupportAnalyst]', {
+    analystId: params.analystId,
+    resolvedAnalystUserId: analystUserId,
+    actorId: params.actorId,
+    willSkip: !analystUserId || params.actorId === analystUserId,
+  });
   if (!analystUserId) return;
   if (params.actorId && params.actorId === analystUserId) return;
   await notifyDev({
