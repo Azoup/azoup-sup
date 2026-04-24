@@ -228,12 +228,12 @@ const KanbanDev = () => {
         await uploadAndSaveImages(data.id, pendingImages);
       }
       await logActivity('Criou card no Kanban DEV', title);
-      if (developerId) {
-        const recipientId = await resolveDeveloperUserId(developerId);
-        await notifyDev({
-          cardId: data.id, cardTitle: title, recipientId,
+      if (developerId || analystId) {
+        await notifyDevAndAnalyst({
+          cardId: data.id, cardTitle: title,
+          developerId: developerId || null, analystId: analystId || null,
           actionType: 'assignee', actorId: user?.id, actorName,
-          message: `${actorName} criou e atribuiu o ticket "${title}" a você`,
+          message: `${actorName} criou o ticket "${title}"`,
         });
       }
     },
