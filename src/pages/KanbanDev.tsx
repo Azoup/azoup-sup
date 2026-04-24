@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { logActivity } from '@/hooks/useActivityLog';
-import { notifyDev, resolveDeveloperUserId } from '@/hooks/useDevNotifications';
+import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -228,12 +228,12 @@ const KanbanDev = () => {
         await uploadAndSaveImages(data.id, pendingImages);
       }
       await logActivity('Criou card no Kanban DEV', title);
-      if (developerId) {
-        const recipientId = await resolveDeveloperUserId(developerId);
-        await notifyDev({
-          cardId: data.id, cardTitle: title, recipientId,
+      if (developerId || analystId) {
+        await notifyDevAndAnalyst({
+          cardId: data.id, cardTitle: title,
+          developerId: developerId || null, analystId: analystId || null,
           actionType: 'assignee', actorId: user?.id, actorName,
-          message: `${actorName} criou e atribuiu o ticket "${title}" a você`,
+          message: `${actorName} criou o ticket "${title}"`,
         });
       }
     },
@@ -272,17 +272,18 @@ const KanbanDev = () => {
       }
       await logActivity('Editou card no Kanban DEV', title);
 
-      // Notifications
-      const recipientId = await resolveDeveloperUserId(newDevId);
-      if (devChanged && recipientId) {
-        await notifyDev({
-          cardId: editingCard.id, cardTitle: title, recipientId,
+      // Notifications — notify both developer and analyst
+      if (devChanged) {
+        await notifyDevAndAnalyst({
+          cardId: editingCard.id, cardTitle: title,
+          developerId: newDevId, analystId: analystId || null,
           actionType: 'assignee', actorId: user?.id, actorName,
-          message: `${actorName} atribuiu o ticket "${title}" a você`,
+          message: `${actorName} alterou o responsável do ticket "${title}"`,
         });
-      } else if ((titleChanged || descChanged || analystChanged) && recipientId) {
-        await notifyDev({
-          cardId: editingCard.id, cardTitle: title, recipientId,
+      } else if (titleChanged || descChanged || analystChanged) {
+        await notifyDevAndAnalyst({
+          cardId: editingCard.id, cardTitle: title,
+          developerId: newDevId, analystId: analystId || null,
           actionType: 'edit', actorId: user?.id, actorName,
           message: `${actorName} editou o ticket "${title}"`,
         });
@@ -438,11 +439,12 @@ const KanbanDev = () => {
           toast.error('Erro ao mover card.');
           return;
         }
-        if (statusChanged && movedCard?.developer_id) {
-          const recipientId = await resolveDeveloperUserId(movedCard.developer_id);
+        if (statusChanged && movedCard) {
           const colTitle = sortedColumns.find((c: any) => c.slug === destination.droppableId)?.title || destination.droppableId;
-          await notifyDev({
-            cardId: movedCard.id, cardTitle: movedCard.title, recipientId,
+          await notifyDevAndAnalyst({
+            cardId: movedCard.id, cardTitle: movedCard.title,
+            developerId: movedCard.developer_id || null,
+            analystId: movedCard.analyst_id || null,
             actionType: 'status', actorId: user?.id, actorName,
             message: `${actorName} moveu "${movedCard.title}" para "${colTitle}"`,
           });

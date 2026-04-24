@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { notifyDev, resolveDeveloperUserId } from '@/hooks/useDevNotifications';
+import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Paperclip, Download, Trash2, FileText, FileVideo, FileImage, File as FileIcon, Loader2, Eye } from 'lucide-react';
@@ -129,17 +129,17 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
       setUploads(prev => prev.map((u, i) => i === idx ? { ...u, progress: 100, status: 'done' } : u));
       queryClient.invalidateQueries({ queryKey: ['dev-card-files', cardId] });
 
-      // Notify ticket assignee about the new attachment
+      // Notify developer AND analyst about the new attachment
       const { data: card } = await supabase
         .from('dev_kanban_cards')
-        .select('title, developer_id')
+        .select('title, developer_id, analyst_id')
         .eq('id', cardId)
         .maybeSingle();
-      if (card?.developer_id) {
-        const recipientId = await resolveDeveloperUserId(card.developer_id);
+      if (card && (card.developer_id || card.analyst_id)) {
         const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Alguém';
-        await notifyDev({
-          cardId, cardTitle: card.title, recipientId,
+        await notifyDevAndAnalyst({
+          cardId, cardTitle: card.title,
+          developerId: card.developer_id, analystId: card.analyst_id,
           actionType: 'attachment', actorId: user?.id, actorName,
           message: `${actorName} anexou "${file.name}" ao ticket "${card.title}"`,
         });
