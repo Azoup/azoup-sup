@@ -439,11 +439,12 @@ const KanbanDev = () => {
           toast.error('Erro ao mover card.');
           return;
         }
-        if (statusChanged && movedCard?.developer_id) {
-          const recipientId = await resolveDeveloperUserId(movedCard.developer_id);
+        if (statusChanged && movedCard) {
           const colTitle = sortedColumns.find((c: any) => c.slug === destination.droppableId)?.title || destination.droppableId;
-          await notifyDev({
-            cardId: movedCard.id, cardTitle: movedCard.title, recipientId,
+          await notifyDevAndAnalyst({
+            cardId: movedCard.id, cardTitle: movedCard.title,
+            developerId: movedCard.developer_id || null,
+            analystId: movedCard.analyst_id || null,
             actionType: 'status', actorId: user?.id, actorName,
             message: `${actorName} moveu "${movedCard.title}" para "${colTitle}"`,
           });
