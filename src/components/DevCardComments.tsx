@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
+import { notifyDev, resolveDeveloperUserId } from '@/hooks/useDevNotifications';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -75,13 +76,30 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
 
   const addComment = useMutation({
     mutationFn: async () => {
+      const content = text.trim();
       const { error } = await supabase.from('dev_kanban_card_comments').insert({
         card_id: cardId,
         user_id: user!.id,
         user_email: user!.email || '',
-        content: text.trim(),
+        content,
       });
       if (error) throw error;
+
+      // Notify ticket assignee (developer) about the new comment
+      const { data: card } = await supabase
+        .from('dev_kanban_cards')
+        .select('title, developer_id')
+        .eq('id', cardId)
+        .maybeSingle();
+      if (card?.developer_id) {
+        const recipientId = await resolveDeveloperUserId(card.developer_id);
+        const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Alguém';
+        await notifyDev({
+          cardId, cardTitle: card.title, recipientId,
+          actionType: 'comment', actorId: user?.id, actorName,
+          message: `${actorName} comentou no ticket "${card.title}"`,
+        });
+      }
     },
     onSuccess: () => {
       setText('');
