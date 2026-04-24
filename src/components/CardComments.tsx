@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Trash2, Send, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -77,13 +78,42 @@ export function CardComments({ cardId }: CardCommentsProps) {
 
   const addComment = useMutation({
     mutationFn: async () => {
+      const content = text.trim();
       const { error } = await supabase.from('kanban_card_comments').insert({
         card_id: cardId,
         user_id: user!.id,
         user_email: user!.email || '',
-        content: text.trim(),
+        content,
       });
       if (error) throw error;
+
+      // Fire notification to the analyst responsible for the card (if not the actor)
+      try {
+        const { data: card } = await supabase
+          .from('kanban_cards')
+          .select('title, analyst_id')
+          .eq('id', cardId)
+          .maybeSingle();
+        if (card?.analyst_id) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('display_name')
+            .eq('id', user!.id)
+            .maybeSingle();
+          const actorName = profile?.display_name || user!.email?.split('@')[0] || 'Alguém';
+          await notifySupportAnalyst({
+            cardId,
+            cardTitle: card.title,
+            analystId: card.analyst_id,
+            actionType: 'comment',
+            actorId: user!.id,
+            actorName,
+            message: `${actorName} comentou no ticket "${card.title}"`,
+          });
+        }
+      } catch (e) {
+        console.warn('[CardComments] notify failed:', e);
+      }
     },
     onSuccess: () => {
       setText('');
