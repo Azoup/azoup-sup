@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { logActivity } from '@/hooks/useActivityLog';
+import { notifyDev, resolveDeveloperUserId } from '@/hooks/useDevNotifications';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,6 +39,7 @@ const KanbanDev = () => {
   const { user } = useAuth();
   const { isAdmin } = useRole();
   const queryClient = useQueryClient();
+  const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Alguém';
   const [filterLabelIds, setFilterLabelIds] = useState<string[]>([]);
   const [filterAnalystIds, setFilterAnalystIds] = useState<string[]>([]);
   const [filterDevIds, setFilterDevIds] = useState<string[]>([]);
@@ -225,6 +228,14 @@ const KanbanDev = () => {
         await uploadAndSaveImages(data.id, pendingImages);
       }
       await logActivity('Criou card no Kanban DEV', title);
+      if (developerId) {
+        const recipientId = await resolveDeveloperUserId(developerId);
+        await notifyDev({
+          cardId: data.id, cardTitle: title, recipientId,
+          actionType: 'assignee', actorId: user?.id, actorName,
+          message: `${actorName} criou e atribuiu o ticket "${title}" a você`,
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dev-kanban-cards'] });
@@ -239,8 +250,15 @@ const KanbanDev = () => {
   const updateCard = useMutation({
     mutationFn: async () => {
       if (!editingCard) return;
+      const prevDevId = editingCard.developer_id || null;
+      const newDevId = developerId || null;
+      const titleChanged = editingCard.title !== title;
+      const descChanged = (editingCard.description || '') !== (description || '');
+      const analystChanged = (editingCard.analyst_id || null) !== (analystId || null);
+      const devChanged = prevDevId !== newDevId;
+
       const { error } = await supabase.from('dev_kanban_cards')
-        .update({ title, description: description || null, analyst_id: analystId || null, developer_id: developerId || null })
+        .update({ title, description: description || null, analyst_id: analystId || null, developer_id: newDevId })
         .eq('id', editingCard.id);
       if (error) throw error;
       await supabase.from('dev_kanban_card_labels').delete().eq('card_id', editingCard.id);
@@ -253,6 +271,22 @@ const KanbanDev = () => {
         await uploadAndSaveImages(editingCard.id, pendingImages);
       }
       await logActivity('Editou card no Kanban DEV', title);
+
+      // Notifications
+      const recipientId = await resolveDeveloperUserId(newDevId);
+      if (devChanged && recipientId) {
+        await notifyDev({
+          cardId: editingCard.id, cardTitle: title, recipientId,
+          actionType: 'assignee', actorId: user?.id, actorName,
+          message: `${actorName} atribuiu o ticket "${title}" a você`,
+        });
+      } else if ((titleChanged || descChanged || analystChanged) && recipientId) {
+        await notifyDev({
+          cardId: editingCard.id, cardTitle: title, recipientId,
+          actionType: 'edit', actorId: user?.id, actorName,
+          message: `${actorName} editou o ticket "${title}"`,
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dev-kanban-cards'] });
@@ -385,6 +419,8 @@ const KanbanDev = () => {
     if (!result.destination) return;
     const { source, destination, draggableId } = result;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+    const movedCard = cards.find((c: any) => c.id === draggableId);
+    const statusChanged = source.droppableId !== destination.droppableId;
     queryClient.setQueryData(['dev-kanban-cards'], (old: any[] | undefined) => {
       if (!old) return old;
       return old.map(card =>
@@ -396,13 +432,23 @@ const KanbanDev = () => {
     supabase.from('dev_kanban_cards')
       .update({ status: destination.droppableId, position: destination.index })
       .eq('id', draggableId)
-      .then(({ error }) => {
+      .then(async ({ error }) => {
         if (error) {
           queryClient.invalidateQueries({ queryKey: ['dev-kanban-cards'] });
           toast.error('Erro ao mover card.');
+          return;
+        }
+        if (statusChanged && movedCard?.developer_id) {
+          const recipientId = await resolveDeveloperUserId(movedCard.developer_id);
+          const colTitle = sortedColumns.find((c: any) => c.slug === destination.droppableId)?.title || destination.droppableId;
+          await notifyDev({
+            cardId: movedCard.id, cardTitle: movedCard.title, recipientId,
+            actionType: 'status', actorId: user?.id, actorName,
+            message: `${actorName} moveu "${movedCard.title}" para "${colTitle}"`,
+          });
         }
       });
-  }, [queryClient]);
+  }, [queryClient, cards, sortedColumns, user, actorName]);
 
   const resetForm = () => {
     setTitle(''); setDescription(''); setAnalystId(''); setDeveloperId('');
@@ -444,6 +490,22 @@ const KanbanDev = () => {
     if (!editingCard) return [];
     return cardImages.filter((img: any) => img.card_id === editingCard.id);
   }, [editingCard, cardImages]);
+
+  // Auto-open a card when navigated with ?card=<id> (e.g., from notifications)
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const cardParam = searchParams.get('card');
+    if (!cardParam || cards.length === 0) return;
+    const target = cards.find((c: any) => c.id === cardParam);
+    if (target) {
+      setViewingCard(target);
+      setViewOpen(true);
+      // Clean up URL so re-opening doesn't reopen the same card
+      const next = new URLSearchParams(searchParams);
+      next.delete('card');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, cards, setSearchParams]);
 
   const moveColumn = useCallback(async (colId: string, direction: 'left' | 'right') => {
     const idx = sortedColumns.findIndex((c: any) => c.id === colId);

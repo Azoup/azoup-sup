@@ -347,6 +347,45 @@ export type Database = {
         }
         Relationships: []
       }
+      dev_kanban_notifications: {
+        Row: {
+          action_type: string
+          actor_id: string | null
+          actor_name: string
+          card_id: string
+          card_title: string
+          created_at: string
+          id: string
+          message: string
+          read: boolean
+          recipient_id: string
+        }
+        Insert: {
+          action_type: string
+          actor_id?: string | null
+          actor_name: string
+          card_id: string
+          card_title: string
+          created_at?: string
+          id?: string
+          message: string
+          read?: boolean
+          recipient_id: string
+        }
+        Update: {
+          action_type?: string
+          actor_id?: string | null
+          actor_name?: string
+          card_id?: string
+          card_title?: string
+          created_at?: string
+          id?: string
+          message?: string
+          read?: boolean
+          recipient_id?: string
+        }
+        Relationships: []
+      }
       developers: {
         Row: {
           created_at: string
