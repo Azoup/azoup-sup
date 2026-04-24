@@ -44,8 +44,6 @@ export async function notifyDev({
 
 /**
  * Resolves the developer's auth user id by their developer record id.
- * The "developer" table has a `name` and `id` but no auth user_id link.
- * We try to match by display_name in profiles. Returns null if not found.
  */
 export async function resolveDeveloperUserId(developerId: string | null | undefined): Promise<string | null> {
   if (!developerId) return null;
@@ -57,4 +55,56 @@ export async function resolveDeveloperUserId(developerId: string | null | undefi
     .ilike('display_name', dev.name)
     .maybeSingle();
   return profile?.id || null;
+}
+
+/**
+ * Resolves the analyst's auth user id by their analyst record id.
+ */
+export async function resolveAnalystUserId(analystId: string | null | undefined): Promise<string | null> {
+  if (!analystId) return null;
+  const { data: an } = await supabase.from('analysts').select('name').eq('id', analystId).maybeSingle();
+  if (!an?.name) return null;
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id')
+    .ilike('display_name', an.name)
+    .maybeSingle();
+  return profile?.id || null;
+}
+
+/**
+ * Notifies both the developer and analyst responsible for a card.
+ * Skips the actor and de-duplicates if dev/analyst resolve to same user.
+ */
+export async function notifyDevAndAnalyst(params: {
+  cardId: string;
+  cardTitle: string;
+  developerId: string | null | undefined;
+  analystId: string | null | undefined;
+  actionType: 'edit' | 'comment' | 'attachment' | 'status' | 'assignee';
+  actorId: string | null | undefined;
+  actorName: string;
+  message: string;
+}) {
+  const [devUserId, analystUserId] = await Promise.all([
+    resolveDeveloperUserId(params.developerId),
+    resolveAnalystUserId(params.analystId),
+  ]);
+  const recipients = new Set<string>();
+  if (devUserId) recipients.add(devUserId);
+  if (analystUserId) recipients.add(analystUserId);
+  if (params.actorId) recipients.delete(params.actorId);
+  await Promise.all(
+    Array.from(recipients).map((rid) =>
+      notifyDev({
+        cardId: params.cardId,
+        cardTitle: params.cardTitle,
+        recipientId: rid,
+        actionType: params.actionType,
+        actorId: params.actorId,
+        actorName: params.actorName,
+        message: params.message,
+      })
+    )
+  );
 }
