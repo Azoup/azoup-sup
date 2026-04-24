@@ -272,17 +272,18 @@ const KanbanDev = () => {
       }
       await logActivity('Editou card no Kanban DEV', title);
 
-      // Notifications
-      const recipientId = await resolveDeveloperUserId(newDevId);
-      if (devChanged && recipientId) {
-        await notifyDev({
-          cardId: editingCard.id, cardTitle: title, recipientId,
+      // Notifications — notify both developer and analyst
+      if (devChanged) {
+        await notifyDevAndAnalyst({
+          cardId: editingCard.id, cardTitle: title,
+          developerId: newDevId, analystId: analystId || null,
           actionType: 'assignee', actorId: user?.id, actorName,
-          message: `${actorName} atribuiu o ticket "${title}" a você`,
+          message: `${actorName} alterou o responsável do ticket "${title}"`,
         });
-      } else if ((titleChanged || descChanged || analystChanged) && recipientId) {
-        await notifyDev({
-          cardId: editingCard.id, cardTitle: title, recipientId,
+      } else if (titleChanged || descChanged || analystChanged) {
+        await notifyDevAndAnalyst({
+          cardId: editingCard.id, cardTitle: title,
+          developerId: newDevId, analystId: analystId || null,
           actionType: 'edit', actorId: user?.id, actorName,
           message: `${actorName} editou o ticket "${title}"`,
         });
