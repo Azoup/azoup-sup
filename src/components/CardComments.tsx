@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Trash2, Send, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
+import { notifySupportResponsible } from '@/hooks/useDevNotifications';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -87,14 +87,13 @@ export function CardComments({ cardId }: CardCommentsProps) {
       });
       if (error) throw error;
 
-      // Fire notification to the analyst responsible for the card (if not the actor)
+      // Fire support notification using the same pattern as DEV, preserving the original helper.
       try {
         const { data: card } = await supabase
           .from('kanban_cards')
           .select('title, analyst_id')
           .eq('id', cardId)
           .maybeSingle();
-        console.log('[CardComments] notify check', { cardId, analyst_id: card?.analyst_id, actor: user!.id });
         if (card?.analyst_id) {
           const { data: profile } = await supabase
             .from('profiles')
@@ -102,15 +101,17 @@ export function CardComments({ cardId }: CardCommentsProps) {
             .eq('id', user!.id)
             .maybeSingle();
           const actorName = profile?.display_name || user!.email?.split('@')[0] || 'Alguém';
-          await notifySupportAnalyst({
+          const notificationPayload = {
             cardId,
             cardTitle: card.title,
             analystId: card.analyst_id,
-            actionType: 'comment',
+            actionType: 'comment' as const,
             actorId: user!.id,
             actorName,
             message: `${actorName} comentou no ticket "${card.title}" 📍 Kanban Pendências`,
-          });
+          };
+
+          await notifySupportResponsible(notificationPayload);
         }
       } catch (e) {
         console.warn('[CardComments] notify failed:', e);

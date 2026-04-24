@@ -1,12 +1,13 @@
 import { supabase } from '@/integrations/supabase/client';
 
 type CardType = 'dev' | 'support';
+type NotifyActionType = 'edit' | 'comment' | 'attachment' | 'status' | 'assignee';
 
 interface NotifyArgs {
   cardId: string;
   cardTitle: string;
   recipientId: string | null | undefined;
-  actionType: 'edit' | 'comment' | 'attachment' | 'status' | 'assignee';
+  actionType: NotifyActionType;
   actorId: string | null | undefined;
   actorName: string;
   message: string;
@@ -55,18 +56,28 @@ export async function notifySupportAnalyst(params: {
   cardId: string;
   cardTitle: string;
   analystId: string | null | undefined;
-  actionType: 'edit' | 'comment' | 'attachment' | 'status' | 'assignee';
+  actionType: NotifyActionType;
+  actorId: string | null | undefined;
+  actorName: string;
+  message: string;
+}) {
+  return notifySupportResponsible(params);
+}
+
+/**
+ * DEV-style notification for the responsible analyst in Support Kanban.
+ * Keeps the original helper available while centralizing the working flow.
+ */
+export async function notifySupportResponsible(params: {
+  cardId: string;
+  cardTitle: string;
+  analystId: string | null | undefined;
+  actionType: NotifyActionType;
   actorId: string | null | undefined;
   actorName: string;
   message: string;
 }) {
   const analystUserId = await resolveAnalystUserId(params.analystId);
-  console.log('[notifySupportAnalyst]', {
-    analystId: params.analystId,
-    resolvedAnalystUserId: analystUserId,
-    actorId: params.actorId,
-    willSkip: !analystUserId || params.actorId === analystUserId,
-  });
   if (!analystUserId) return;
   if (params.actorId && params.actorId === analystUserId) return;
   await notifyDev({
@@ -123,6 +134,19 @@ async function findProfileIdByName(name: string): Promise<string | null> {
   return best?.id || null;
 }
 
+async function resolveProfileIdByNameViaRpc(name: string): Promise<string | null> {
+  const { data, error } = await (supabase as any).rpc('resolve_profile_id_by_name', {
+    name_input: name,
+  });
+
+  if (error) {
+    console.warn('[resolve_profile_id_by_name] failed:', error);
+    return null;
+  }
+
+  return data || null;
+}
+
 /**
  * Resolves the developer's auth user id by their developer record id.
  */
@@ -130,7 +154,7 @@ export async function resolveDeveloperUserId(developerId: string | null | undefi
   if (!developerId) return null;
   const { data: dev } = await supabase.from('developers').select('name').eq('id', developerId).maybeSingle();
   if (!dev?.name) return null;
-  return findProfileIdByName(dev.name);
+  return (await findProfileIdByName(dev.name)) || (await resolveProfileIdByNameViaRpc(dev.name));
 }
 
 /**
@@ -140,7 +164,7 @@ export async function resolveAnalystUserId(analystId: string | null | undefined)
   if (!analystId) return null;
   const { data: an } = await supabase.from('analysts').select('name').eq('id', analystId).maybeSingle();
   if (!an?.name) return null;
-  return findProfileIdByName(an.name);
+  return (await findProfileIdByName(an.name)) || (await resolveProfileIdByNameViaRpc(an.name));
 }
 
 /**
@@ -152,7 +176,7 @@ export async function notifyDevAndAnalyst(params: {
   cardTitle: string;
   developerId: string | null | undefined;
   analystId: string | null | undefined;
-  actionType: 'edit' | 'comment' | 'attachment' | 'status' | 'assignee';
+  actionType: NotifyActionType;
   actorId: string | null | undefined;
   actorName: string;
   message: string;

@@ -776,6 +776,11 @@ export type Database = {
         }
         Returns: boolean
       }
+      normalize_person_name: { Args: { input: string }; Returns: string }
+      resolve_profile_id_by_name: {
+        Args: { name_input: string }
+        Returns: string
+      }
     }
     Enums: {
       app_role: "admin" | "user"
