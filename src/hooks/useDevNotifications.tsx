@@ -42,6 +42,48 @@ export async function notifyDev({
   }
 }
 
+// Normalize a name: lowercase + strip accents
+function normalize(s: string): string {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
+/**
+ * Match a person name (e.g. "Beatriz", "Flávia") against profile display_names
+ * (e.g. "bea.azoup", "flavia.andreotti", "gianluca"). Matches when the
+ * normalized first name of either side is a prefix of the other's first token.
+ */
+async function findProfileIdByName(name: string): Promise<string | null> {
+  const norm = normalize(name);
+  const firstName = norm.split(/[\s.]+/)[0];
+  if (!firstName) return null;
+
+  // 1) Exact (case-insensitive) match first
+  const { data: exact } = await supabase
+    .from('profiles')
+    .select('id, display_name')
+    .ilike('display_name', name)
+    .maybeSingle();
+  if (exact?.id) return exact.id;
+
+  // 2) Pull all profiles and match by first-name prefix (handles "Beatriz" ↔ "bea.azoup")
+  const { data: all } = await supabase.from('profiles').select('id, display_name');
+  if (!all) return null;
+  // Prefer longer/closer matches
+  let best: { id: string; score: number } | null = null;
+  for (const p of all) {
+    if (!p.display_name) continue;
+    const dn = normalize(p.display_name);
+    const dnFirst = dn.split(/[\s.]+/)[0];
+    if (!dnFirst) continue;
+    let score = 0;
+    if (dnFirst === firstName) score = 100;
+    else if (dnFirst.startsWith(firstName)) score = 80 - (dnFirst.length - firstName.length);
+    else if (firstName.startsWith(dnFirst) && dnFirst.length >= 3) score = 60 - (firstName.length - dnFirst.length);
+    if (score > 0 && (!best || score > best.score)) best = { id: p.id, score };
+  }
+  return best?.id || null;
+}
+
 /**
  * Resolves the developer's auth user id by their developer record id.
  */
@@ -49,12 +91,7 @@ export async function resolveDeveloperUserId(developerId: string | null | undefi
   if (!developerId) return null;
   const { data: dev } = await supabase.from('developers').select('name').eq('id', developerId).maybeSingle();
   if (!dev?.name) return null;
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id')
-    .ilike('display_name', dev.name)
-    .maybeSingle();
-  return profile?.id || null;
+  return findProfileIdByName(dev.name);
 }
 
 /**
@@ -64,12 +101,7 @@ export async function resolveAnalystUserId(analystId: string | null | undefined)
   if (!analystId) return null;
   const { data: an } = await supabase.from('analysts').select('name').eq('id', analystId).maybeSingle();
   if (!an?.name) return null;
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id')
-    .ilike('display_name', an.name)
-    .maybeSingle();
-  return profile?.id || null;
+  return findProfileIdByName(an.name);
 }
 
 /**

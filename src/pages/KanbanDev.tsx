@@ -660,65 +660,68 @@ const KanbanDev = () => {
                   </div>
                 </div>
                 <Droppable droppableId={col.slug}>
-                  {(provided) => (
-                    <ScrollArea className="flex-1" style={{ maxHeight: '400px' }}>
-                      <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-2 min-h-[100px] pr-2">
-                        {(cardsByColumn[col.slug] || []).map((card: any, index: number) => (
-                          <Draggable key={card.id} draggableId={card.id} index={index}>
-                            {(provided, snapshot) => (
-                              <div
-                                ref={provided.innerRef}
-                                {...provided.draggableProps}
-                                {...provided.dragHandleProps}
-                                onClick={() => openView(card)}
-                                className={`bg-card rounded-md border p-3 shadow-sm space-y-2 cursor-pointer hover:shadow-md transition-shadow break-words ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''}`}
-                                style={{ wordWrap: 'break-word', overflowWrap: 'anywhere' }}
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <p className="font-medium text-sm flex-1 flex items-start gap-1 break-words" style={{ overflowWrap: 'anywhere' }}>
-                                    {card.status === 'finalizados' && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />}
-                                    <span className="break-words">{card.title}</span>
-                                  </p>
-                                  <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
-                                    <button onClick={() => openEdit(card)} className="text-muted-foreground hover:text-primary"><Pencil className="h-3 w-3" /></button>
-                                    <button onClick={() => deleteCard.mutate(card.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
-                                  </div>
-                                </div>
-                                {card.description && <p className="text-xs text-muted-foreground line-clamp-2 break-words" style={{ overflowWrap: 'anywhere' }}>{card.description}</p>}
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  {card.labels?.length > 0 && card.labels.map((l: any) => (
-                                    <span key={l.id} className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: l.color }}>{l.name}</span>
-                                  ))}
-                                  {card.images?.length > 0 && (
-                                    <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground"><Paperclip className="h-3 w-3" /> {card.images.length}</span>
-                                  )}
-                                  <ChecklistBadge cardId={card.id} cardType="dev" />
-                                </div>
-                                <div className="flex items-center justify-between gap-1 flex-wrap">
-                                  {card.analyst && (
-                                    <div className="flex items-center gap-1">
-                                      <Avatar className="h-5 w-5"><AvatarImage src={card.analyst.photo_url || ''} /><AvatarFallback className="text-[8px]">{card.analyst.name?.charAt(0)}</AvatarFallback></Avatar>
-                                      <span className="text-[10px] text-muted-foreground">{card.analyst.name}</span>
-                                    </div>
-                                  )}
-                                  {card.developer && (
-                                    <div className="flex items-center gap-1">
-                                      <Avatar className="h-5 w-5"><AvatarImage src={card.developer.photo_url || ''} /><AvatarFallback className="text-[8px]">{card.developer.name?.charAt(0)}</AvatarFallback></Avatar>
-                                      <span className="text-[10px] text-muted-foreground">{card.developer.name}</span>
-                                    </div>
-                                  )}
-                                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 ml-auto">
-                                    <Calendar className="h-3 w-3" />
-                                    {format(new Date(card.created_at), 'dd/MM HH:mm')}
-                                  </span>
+                  {(provided, dropSnapshot) => (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.droppableProps}
+                      className={`flex-1 overflow-y-auto space-y-2 min-h-[100px] pr-1 transition-colors ${dropSnapshot.isDraggingOver ? 'bg-muted/40 rounded-md' : ''}`}
+                      style={{ maxHeight: '400px' }}
+                    >
+                      {(cardsByColumn[col.slug] || []).map((card: any, index: number) => (
+                        <Draggable key={card.id} draggableId={card.id} index={index}>
+                          {(provided, snapshot) => (
+                            <div
+                              ref={provided.innerRef}
+                              {...provided.draggableProps}
+                              {...provided.dragHandleProps}
+                              onClick={() => { if (!snapshot.isDragging) openView(card); }}
+                              className={`bg-card rounded-md border p-3 shadow-sm space-y-2 cursor-pointer hover:shadow-md transition-shadow break-words ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''}`}
+                              style={{ wordWrap: 'break-word', overflowWrap: 'anywhere', ...provided.draggableProps.style }}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="font-medium text-sm flex-1 flex items-start gap-1 break-words" style={{ overflowWrap: 'anywhere' }}>
+                                  {card.status === 'finalizados' && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />}
+                                  <span className="break-words">{card.title}</span>
+                                </p>
+                                <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                                  <button onClick={() => openEdit(card)} className="text-muted-foreground hover:text-primary"><Pencil className="h-3 w-3" /></button>
+                                  <button onClick={() => deleteCard.mutate(card.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
                                 </div>
                               </div>
-                            )}
-                          </Draggable>
-                        ))}
-                        {provided.placeholder}
-                      </div>
-                    </ScrollArea>
+                              {card.description && <p className="text-xs text-muted-foreground line-clamp-2 break-words" style={{ overflowWrap: 'anywhere' }}>{card.description}</p>}
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {card.labels?.length > 0 && card.labels.map((l: any) => (
+                                  <span key={l.id} className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: l.color }}>{l.name}</span>
+                                ))}
+                                {card.images?.length > 0 && (
+                                  <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground"><Paperclip className="h-3 w-3" /> {card.images.length}</span>
+                                )}
+                                <ChecklistBadge cardId={card.id} cardType="dev" />
+                              </div>
+                              <div className="flex items-center justify-between gap-1 flex-wrap">
+                                {card.analyst && (
+                                  <div className="flex items-center gap-1">
+                                    <Avatar className="h-5 w-5"><AvatarImage src={card.analyst.photo_url || ''} /><AvatarFallback className="text-[8px]">{card.analyst.name?.charAt(0)}</AvatarFallback></Avatar>
+                                    <span className="text-[10px] text-muted-foreground">{card.analyst.name}</span>
+                                  </div>
+                                )}
+                                {card.developer && (
+                                  <div className="flex items-center gap-1">
+                                    <Avatar className="h-5 w-5"><AvatarImage src={card.developer.photo_url || ''} /><AvatarFallback className="text-[8px]">{card.developer.name?.charAt(0)}</AvatarFallback></Avatar>
+                                    <span className="text-[10px] text-muted-foreground">{card.developer.name}</span>
+                                  </div>
+                                )}
+                                <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 ml-auto">
+                                  <Calendar className="h-3 w-3" />
+                                  {format(new Date(card.created_at), 'dd/MM HH:mm')}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </Draggable>
+                      ))}
+                      {provided.placeholder}
+                    </div>
                   )}
                 </Droppable>
                 <Button variant="ghost" size="sm" className="w-full mt-2 text-xs" onClick={() => openCreate(col.slug)}>
