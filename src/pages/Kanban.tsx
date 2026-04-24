@@ -196,6 +196,13 @@ const Kanban = () => {
     }
   };
 
+  // Resolve current user's display name once for notification labels
+  const getActorName = useCallback(async (): Promise<string> => {
+    if (!user) return 'Alguém';
+    const { data } = await supabase.from('profiles').select('display_name').eq('id', user.id).maybeSingle();
+    return data?.display_name || user.email?.split('@')[0] || 'Alguém';
+  }, [user]);
+
   const createCard = useMutation({
     mutationFn: async () => {
       const colCards = cardsByColumn[targetColumn] || [];
@@ -215,6 +222,15 @@ const Kanban = () => {
         await uploadAndSaveImages(data.id, pendingImages);
       }
       await logActivity('Criou card no Kanban', title);
+      // Notify analyst on assignment
+      if (analystId) {
+        const actorName = await getActorName();
+        await notifySupportAnalyst({
+          cardId: data.id, cardTitle: title, analystId,
+          actionType: 'assignee', actorId: user?.id, actorName,
+          message: `${actorName} criou o ticket "${title}" e atribuiu para você`,
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
@@ -229,8 +245,10 @@ const Kanban = () => {
   const updateCard = useMutation({
     mutationFn: async () => {
       if (!editingCard) return;
+      const prevAnalystId = editingCard.analyst_id || null;
+      const newAnalystId = analystId || null;
       const { error } = await supabase.from('kanban_cards')
-        .update({ title, description: description || null, analyst_id: analystId || null })
+        .update({ title, description: description || null, analyst_id: newAnalystId })
         .eq('id', editingCard.id);
       if (error) throw error;
       await supabase.from('kanban_card_labels').delete().eq('card_id', editingCard.id);
@@ -243,6 +261,21 @@ const Kanban = () => {
         await uploadAndSaveImages(editingCard.id, pendingImages);
       }
       await logActivity('Editou card no Kanban', title);
+      // Notifications
+      const actorName = await getActorName();
+      if (newAnalystId && newAnalystId !== prevAnalystId) {
+        await notifySupportAnalyst({
+          cardId: editingCard.id, cardTitle: title, analystId: newAnalystId,
+          actionType: 'assignee', actorId: user?.id, actorName,
+          message: `${actorName} atribuiu o ticket "${title}" para você`,
+        });
+      } else if (newAnalystId) {
+        await notifySupportAnalyst({
+          cardId: editingCard.id, cardTitle: title, analystId: newAnalystId,
+          actionType: 'edit', actorId: user?.id, actorName,
+          message: `${actorName} editou o ticket "${title}"`,
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
