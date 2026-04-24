@@ -136,9 +136,15 @@ export function NotificationsBell() {
                       {!n.read && <span className="h-2 w-2 rounded-full bg-primary mt-1 shrink-0" />}
                     </div>
                     <p className="text-sm break-words leading-snug">{n.message}</p>
-                    <p className="text-[10px] text-muted-foreground mt-1">
-                      {formatDistanceToNow(new Date(n.created_at), { addSuffix: true, locale: ptBR })}
-                    </p>
+                    <div className="flex items-center justify-between gap-2 mt-1">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                        <MapPin className="h-2.5 w-2.5" />
+                        {BOARD_LABEL[n.card_type] || 'Kanban'}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {formatDistanceToNow(new Date(n.created_at), { addSuffix: true, locale: ptBR })}
+                      </span>
+                    </div>
                   </button>
                 </li>
               ))}
