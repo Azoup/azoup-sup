@@ -447,6 +447,24 @@ const KanbanDev = () => {
     return cardImages.filter((img: any) => img.card_id === editingCard.id);
   }, [editingCard, cardImages]);
 
+  const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Alguém';
+
+  // Auto-open a card when navigated with ?card=<id> (e.g., from notifications)
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const cardParam = searchParams.get('card');
+    if (!cardParam || cards.length === 0) return;
+    const target = cards.find((c: any) => c.id === cardParam);
+    if (target) {
+      setViewingCard(target);
+      setViewOpen(true);
+      // Clean up URL so re-opening doesn't reopen the same card
+      const next = new URLSearchParams(searchParams);
+      next.delete('card');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, cards, setSearchParams]);
+
   const moveColumn = useCallback(async (colId: string, direction: 'left' | 'right') => {
     const idx = sortedColumns.findIndex((c: any) => c.id === colId);
     const swapIdx = direction === 'left' ? idx - 1 : idx + 1;
