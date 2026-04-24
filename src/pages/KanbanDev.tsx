@@ -228,6 +228,14 @@ const KanbanDev = () => {
         await uploadAndSaveImages(data.id, pendingImages);
       }
       await logActivity('Criou card no Kanban DEV', title);
+      if (developerId) {
+        const recipientId = await resolveDeveloperUserId(developerId);
+        await notifyDev({
+          cardId: data.id, cardTitle: title, recipientId,
+          actionType: 'assignee', actorId: user?.id, actorName,
+          message: `${actorName} criou e atribuiu o ticket "${title}" a você`,
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dev-kanban-cards'] });
