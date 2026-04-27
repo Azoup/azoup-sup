@@ -206,6 +206,27 @@ export function NotificationsBell() {
           )}
         </ScrollArea>
       </PopoverContent>
+
+      <AlertDialog open={confirmMode !== null} onOpenChange={(o) => !o && setConfirmMode(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmMode === 'all' ? 'Limpar todas as notificações?' : 'Limpar notificações lidas?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmMode === 'all'
+                ? 'Todas as notificações (lidas e não lidas) serão removidas. Esta ação não pode ser desfeita.'
+                : 'Apenas as notificações já lidas serão removidas. Esta ação não pode ser desfeita.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => confirmMode && performClear(confirmMode)}>
+              Confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Popover>
   );
 }
