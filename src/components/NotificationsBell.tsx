@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Bell, CheckCheck, MapPin } from 'lucide-react';
+import { Bell, CheckCheck, MapPin, Trash2, Eraser } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
@@ -10,6 +10,16 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -32,6 +42,7 @@ export function NotificationsBell() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [confirmMode, setConfirmMode] = useState<null | 'read' | 'all'>(null);
 
   const { data: notifications = [] } = useQuery({
     queryKey: ['dev-notifications', user?.id],
@@ -90,6 +101,25 @@ export function NotificationsBell() {
     queryClient.invalidateQueries({ queryKey: ['dev-notifications', user.id] });
   };
 
+  const readCount = notifications.length - unreadCount;
+
+  const performClear = async (mode: 'read' | 'all') => {
+    if (!user) return;
+    let q = (supabase as any)
+      .from('dev_kanban_notifications')
+      .delete()
+      .eq('recipient_id', user.id);
+    if (mode === 'read') q = q.eq('read', true);
+    const { error } = await q;
+    if (error) {
+      toast.error('Erro ao limpar notificações');
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ['dev-notifications', user.id] });
+    toast.success(mode === 'read' ? 'Notificações lidas removidas' : 'Notificações removidas');
+    setConfirmMode(null);
+  };
+
   if (!user) return null;
 
   return (
@@ -105,13 +135,37 @@ export function NotificationsBell() {
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-0">
-        <div className="flex items-center justify-between px-3 py-2 border-b">
+        <div className="flex items-center justify-between gap-1 px-3 py-2 border-b">
           <span className="text-sm font-semibold">Notificações</span>
-          {unreadCount > 0 && (
-            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={markAllRead}>
-              <CheckCheck className="h-3.5 w-3.5" /> Marcar todas
-            </Button>
-          )}
+          <div className="flex items-center gap-1">
+            {unreadCount > 0 && (
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 px-2" onClick={markAllRead}>
+                <CheckCheck className="h-3.5 w-3.5" /> Marcar todas
+              </Button>
+            )}
+            {readCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs gap-1 px-2"
+                onClick={() => setConfirmMode('read')}
+                title="Limpar notificações lidas"
+              >
+                <Eraser className="h-3.5 w-3.5" /> Limpar lidas
+              </Button>
+            )}
+            {notifications.length > 0 && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-destructive hover:text-destructive"
+                onClick={() => setConfirmMode('all')}
+                title="Limpar todas"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
         </div>
         <ScrollArea className="max-h-96">
           {notifications.length === 0 ? (
@@ -152,6 +206,27 @@ export function NotificationsBell() {
           )}
         </ScrollArea>
       </PopoverContent>
+
+      <AlertDialog open={confirmMode !== null} onOpenChange={(o) => !o && setConfirmMode(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmMode === 'all' ? 'Limpar todas as notificações?' : 'Limpar notificações lidas?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmMode === 'all'
+                ? 'Todas as notificações (lidas e não lidas) serão removidas. Esta ação não pode ser desfeita.'
+                : 'Apenas as notificações já lidas serão removidas. Esta ação não pode ser desfeita.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => confirmMode && performClear(confirmMode)}>
+              Confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Popover>
   );
 }
