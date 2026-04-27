@@ -101,6 +101,25 @@ export function NotificationsBell() {
     queryClient.invalidateQueries({ queryKey: ['dev-notifications', user.id] });
   };
 
+  const readCount = notifications.length - unreadCount;
+
+  const performClear = async (mode: 'read' | 'all') => {
+    if (!user) return;
+    let q = (supabase as any)
+      .from('dev_kanban_notifications')
+      .delete()
+      .eq('recipient_id', user.id);
+    if (mode === 'read') q = q.eq('read', true);
+    const { error } = await q;
+    if (error) {
+      toast.error('Erro ao limpar notificações');
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ['dev-notifications', user.id] });
+    toast.success(mode === 'read' ? 'Notificações lidas removidas' : 'Notificações removidas');
+    setConfirmMode(null);
+  };
+
   if (!user) return null;
 
   return (
