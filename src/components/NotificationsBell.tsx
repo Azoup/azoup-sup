@@ -135,13 +135,37 @@ export function NotificationsBell() {
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-0">
-        <div className="flex items-center justify-between px-3 py-2 border-b">
+        <div className="flex items-center justify-between gap-1 px-3 py-2 border-b">
           <span className="text-sm font-semibold">Notificações</span>
-          {unreadCount > 0 && (
-            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={markAllRead}>
-              <CheckCheck className="h-3.5 w-3.5" /> Marcar todas
-            </Button>
-          )}
+          <div className="flex items-center gap-1">
+            {unreadCount > 0 && (
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 px-2" onClick={markAllRead}>
+                <CheckCheck className="h-3.5 w-3.5" /> Marcar todas
+              </Button>
+            )}
+            {readCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs gap-1 px-2"
+                onClick={() => setConfirmMode('read')}
+                title="Limpar notificações lidas"
+              >
+                <Eraser className="h-3.5 w-3.5" /> Limpar lidas
+              </Button>
+            )}
+            {notifications.length > 0 && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-destructive hover:text-destructive"
+                onClick={() => setConfirmMode('all')}
+                title="Limpar todas"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
         </div>
         <ScrollArea className="max-h-96">
           {notifications.length === 0 ? (
