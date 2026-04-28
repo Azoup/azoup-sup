@@ -606,6 +606,7 @@ export type Database = {
       kanban_cards: {
         Row: {
           analyst_id: string | null
+          completed_at: string | null
           created_at: string
           created_by: string
           description: string | null
@@ -618,6 +619,7 @@ export type Database = {
         }
         Insert: {
           analyst_id?: string | null
+          completed_at?: string | null
           created_at?: string
           created_by: string
           description?: string | null
@@ -630,6 +632,7 @@ export type Database = {
         }
         Update: {
           analyst_id?: string | null
+          completed_at?: string | null
           created_at?: string
           created_by?: string
           description?: string | null
