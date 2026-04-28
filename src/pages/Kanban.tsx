@@ -876,6 +876,7 @@ const Kanban = () => {
                     <span>Concluído em: {format(new Date(viewingCard.completed_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
                   </div>
                 )}
+              </div>
               <CardChecklist cardId={viewingCard.id} cardType="kanban" description={viewingCard.description} />
               <CardComments cardId={viewingCard.id} />
               <div className="flex gap-2 pt-2">
