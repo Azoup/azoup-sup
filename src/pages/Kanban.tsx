@@ -870,7 +870,12 @@ const Kanban = () => {
                   <Calendar className="h-4 w-4" />
                   <span>Criado em: {format(new Date(viewingCard.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
                 </div>
-              </div>
+                {viewingCard.completed_at && (
+                  <div className="flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>Concluído em: {format(new Date(viewingCard.completed_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
+                  </div>
+                )}
               <CardChecklist cardId={viewingCard.id} cardType="kanban" description={viewingCard.description} />
               <CardComments cardId={viewingCard.id} />
               <div className="flex gap-2 pt-2">
