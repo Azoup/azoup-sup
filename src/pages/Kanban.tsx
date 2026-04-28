@@ -406,6 +406,46 @@ const Kanban = () => {
     },
   });
 
+  // Helper: detecta se um slug de coluna representa "Concluídos"
+  const isDoneSlug = (slug: string) => {
+    const s = (slug || '').toLowerCase();
+    return s.includes('conclu') || s.includes('final') || s.includes('done');
+  };
+
+  // Helper: garante existência da etiqueta "Concluído" e retorna seu id
+  const ensureDoneLabel = useCallback(async (): Promise<string | null> => {
+    const existing = (labels as any[]).find((l: any) => (l.name || '').toLowerCase() === 'concluído' || (l.name || '').toLowerCase() === 'concluido');
+    if (existing) return existing.id;
+    const { data, error } = await supabase.from('kanban_labels')
+      .insert({ name: 'Concluído', color: '#10b981' })
+      .select().single();
+    if (error || !data) return null;
+    queryClient.invalidateQueries({ queryKey: ['kanban-labels'] });
+    return data.id;
+  }, [labels, queryClient]);
+
+  // Aplica regra automática de etiquetas ao mover entre colunas
+  const applyDoneLabelRule = useCallback(async (cardId: string, fromSlug: string, toSlug: string) => {
+    const movedToDone = !isDoneSlug(fromSlug) && isDoneSlug(toSlug);
+    const movedFromDone = isDoneSlug(fromSlug) && !isDoneSlug(toSlug);
+    if (!movedToDone && !movedFromDone) return;
+
+    if (movedToDone) {
+      const doneLabelId = await ensureDoneLabel();
+      if (!doneLabelId) return;
+      // Remove todas as etiquetas e adiciona apenas "Concluído"
+      await supabase.from('kanban_card_labels').delete().eq('card_id', cardId);
+      await supabase.from('kanban_card_labels').insert({ card_id: cardId, label_id: doneLabelId });
+    } else if (movedFromDone) {
+      // Remove apenas a etiqueta "Concluído" (não restaura antigas)
+      const doneLabelId = await ensureDoneLabel();
+      if (!doneLabelId) return;
+      await supabase.from('kanban_card_labels').delete()
+        .eq('card_id', cardId).eq('label_id', doneLabelId);
+    }
+    queryClient.invalidateQueries({ queryKey: ['kanban-card-labels'] });
+  }, [ensureDoneLabel, queryClient]);
+
   // --- Optimistic drag and drop ---
   const onDragEnd = useCallback((result: DropResult) => {
     if (!result.destination) return;
@@ -436,6 +476,10 @@ const Kanban = () => {
           toast.error('Erro ao mover card.');
           return;
         }
+        // Regra automática de etiquetas para coluna "Concluídos"
+        if (statusChanged) {
+          await applyDoneLabelRule(draggableId, source.droppableId, destination.droppableId);
+        }
         // Notify analyst on column change
         if (statusChanged && movedCard?.analyst_id) {
           const colTitle = (columns as any[]).find(c => c.slug === destination.droppableId)?.title || destination.droppableId;
@@ -447,7 +491,7 @@ const Kanban = () => {
           });
         }
       });
-  }, [queryClient, cards, columns, getActorName, user?.id]);
+  }, [queryClient, cards, columns, getActorName, user?.id, applyDoneLabelRule]);
 
   // Auto-open a card when navigated with ?card=<id> (e.g., from notifications)
   const [searchParams, setSearchParams] = useSearchParams();
