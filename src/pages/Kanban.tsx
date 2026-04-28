@@ -455,19 +455,26 @@ const Kanban = () => {
     const movedCard = cards.find((c: any) => c.id === draggableId);
     const statusChanged = source.droppableId !== destination.droppableId;
 
+    // Determina mudança para/de "Concluídos" para gerenciar completed_at
+    const wasDone = isDoneSlug(source.droppableId);
+    const willBeDone = isDoneSlug(destination.droppableId);
+    let completedAtUpdate: { completed_at: string | null } | {} = {};
+    if (statusChanged && willBeDone) completedAtUpdate = { completed_at: new Date().toISOString() };
+    else if (statusChanged && wasDone && !willBeDone) completedAtUpdate = { completed_at: null };
+
     // Optimistic update: immediately update the cache
     queryClient.setQueryData(['kanban-cards'], (old: any[] | undefined) => {
       if (!old) return old;
       return old.map(card =>
         card.id === draggableId
-          ? { ...card, status: destination.droppableId, position: destination.index }
+          ? { ...card, status: destination.droppableId, position: destination.index, ...completedAtUpdate }
           : card
       );
     });
 
     // Persist in background
     supabase.from('kanban_cards')
-      .update({ status: destination.droppableId, position: destination.index })
+      .update({ status: destination.droppableId, position: destination.index, ...completedAtUpdate })
       .eq('id', draggableId)
       .then(async ({ error }) => {
         if (error) {
@@ -863,6 +870,12 @@ const Kanban = () => {
                   <Calendar className="h-4 w-4" />
                   <span>Criado em: {format(new Date(viewingCard.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
                 </div>
+                {viewingCard.completed_at && (
+                  <div className="flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>Concluído em: {format(new Date(viewingCard.completed_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
+                  </div>
+                )}
               </div>
               <CardChecklist cardId={viewingCard.id} cardType="kanban" description={viewingCard.description} />
               <CardComments cardId={viewingCard.id} />
