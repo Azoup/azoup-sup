@@ -416,6 +416,41 @@ export type Database = {
         }
         Relationships: []
       }
+      digisac_analyst_mapping: {
+        Row: {
+          analyst_id: string
+          created_at: string
+          digisac_user_id: string
+          digisac_user_name: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          analyst_id: string
+          created_at?: string
+          digisac_user_id: string
+          digisac_user_name: string
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          analyst_id?: string
+          created_at?: string
+          digisac_user_id?: string
+          digisac_user_name?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "digisac_analyst_mapping_analyst_id_fkey"
+            columns: ["analyst_id"]
+            isOneToOne: false
+            referencedRelation: "analysts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       doubt_records: {
         Row: {
           analyst_id: string
