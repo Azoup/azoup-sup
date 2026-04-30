@@ -79,17 +79,14 @@ Deno.serve(async (req) => {
         users = cache[cacheKey].data.users;
       } else {
         console.log("Fetching fresh data from Digisac");
-        // Digisac typically returns paginated data, assuming we fetch recent tickets.
-        // For demonstration, we fetch the default first page of tickets. In a real scenario, you'd iterate pagination or filter by date.
-        // Digisac API expects `where` as a single URL-encoded JSON string.
-        const whereClause: Record<string, any> = { isOpen: false };
-        if (startDate || endDate) {
-          const closedAt: Record<string, string> = {};
-          if (startDate) closedAt.gte = `${startDate}T00:00:00.000Z`;
-          if (endDate) closedAt.lte = `${endDate}T23:59:59.999Z`;
-          whereClause.closedAt = closedAt;
-        }
-        const ticketsEndpoint = `/tickets?where=${encodeURIComponent(JSON.stringify(whereClause))}`;
+        // Digisac API: usa bracket notation simples. Apenas `createdAt` aceita gte/lte.
+        // `closedAt` com operadores retorna 500. `where` como JSON string também falha.
+        const params = new URLSearchParams();
+        params.append('where[isOpen]', 'false');
+        if (startDate) params.append('where[createdAt][gte]', `${startDate}T00:00:00.000Z`);
+        if (endDate) params.append('where[createdAt][lte]', `${endDate}T23:59:59.999Z`);
+        params.append('limit', '500');
+        const ticketsEndpoint = `/tickets?${params.toString()}`;
         
         const ticketsRes = await fetchDigisac(ticketsEndpoint);
         const usersRes = await fetchDigisac('/users');
