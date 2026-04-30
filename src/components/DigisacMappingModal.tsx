@@ -37,6 +37,9 @@ export function DigisacMappingModal() {
     enabled: isOpen
   });
 
+  const usersError = queryClient.getQueryState(['digisac-users'])?.error as Error | null | undefined;
+  const mappingsError = queryClient.getQueryState(['digisac-mappings'])?.error as Error | null | undefined;
+
   // Save mapping mutation
   const saveMappingMutation = useMutation({
     mutationFn: (vars: { digisacUserId: string, digisacUserName: string, analystId: string }) => 
@@ -95,6 +98,11 @@ export function DigisacMappingModal() {
         <div className="mt-4">
           {(isLoadingUsers || isLoadingMappings) ? (
             <div className="text-center py-8 text-muted-foreground">Carregando dados...</div>
+          ) : (usersError || mappingsError) ? (
+            <div className="text-center py-8 text-destructive space-y-2">
+              <p className="font-medium">Não foi possível carregar o mapeamento do Digisac.</p>
+              <p className="text-sm">{usersError?.message || mappingsError?.message}</p>
+            </div>
           ) : (
             <Table>
               <TableHeader>
