@@ -152,15 +152,17 @@ Deno.serve(async (req) => {
     );
 
     // Verify authentication
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return handledErrorResponse(action, 'Usuário não autenticado. Faça login para acessar a integração.', { code: 'UNAUTHORIZED' });
-    }
+    if (action !== 'test_digisac') {
+      const authHeader = req.headers.get('Authorization');
+      if (!authHeader) {
+        return handledErrorResponse(action, 'Usuário não autenticado. Faça login para acessar a integração.', { code: 'UNAUTHORIZED' });
+      }
 
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
-    if (authError || !user) {
-      console.error('[Digisac] Auth error:', authError?.message || 'Usuário não encontrado');
-      return handledErrorResponse(action, 'Usuário não autenticado. Faça login para acessar a integração.', { code: 'UNAUTHORIZED' });
+      const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+      if (authError || !user) {
+        console.error('[Digisac] Auth error:', authError?.message || 'Usuário não encontrado');
+        return handledErrorResponse(action, 'Usuário não autenticado. Faça login para acessar a integração.', { code: 'UNAUTHORIZED' });
+      }
     }
 
     const startDate = typeof payload?.startDate === 'string' ? payload.startDate : undefined;
