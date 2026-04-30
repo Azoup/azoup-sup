@@ -21,6 +21,7 @@ import Developers from "./pages/Developers";
 import Profile from "./pages/Profile";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
+import DigisacDashboard from "./pages/DigisacDashboard";
 import { Loader2 } from "lucide-react";
 
 const queryClient = new QueryClient({
@@ -83,6 +84,7 @@ const App = () => (
             <Route path="/kanban-dev" element={<ProtectedRoute screen="kanban_dev"><KanbanDev /></ProtectedRoute>} />
             <Route path="/dashboard-dev" element={<ProtectedRoute screen="dashboard_dev"><DashboardDev /></ProtectedRoute>} />
             <Route path="/developers" element={<ProtectedRoute screen="developers"><Developers /></ProtectedRoute>} />
+            <Route path="/digisac-dashboard" element={<ProtectedRoute><DigisacDashboard /></ProtectedRoute>} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
