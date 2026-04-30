@@ -145,24 +145,25 @@ Deno.serve(async (req) => {
     console.log('[Digisac] Action:', action);
     console.log('[Digisac] Payload:', JSON.stringify(payload));
 
+    const authHeader = req.headers.get('Authorization');
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: req.headers.get('Authorization') ? { Authorization: req.headers.get('Authorization')! } : {} } }
+      { global: { headers: authHeader ? { Authorization: authHeader } : {} } }
     );
 
-    // Verify authentication
+    // Verify authentication via JWT claims (lightweight, no DB call)
     if (action !== 'test_digisac') {
-      const authHeader = req.headers.get('Authorization');
-      if (!authHeader) {
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return handledErrorResponse(action, 'Usuário não autenticado. Faça login para acessar a integração.', { code: 'UNAUTHORIZED' });
       }
-
-      const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
-      if (authError || !user) {
-        console.error('[Digisac] Auth error:', authError?.message || 'Usuário não encontrado');
+      const token = authHeader.replace('Bearer ', '');
+      const { data: claimsData, error: claimsError } = await supabaseClient.auth.getClaims(token);
+      if (claimsError || !claimsData?.claims?.sub) {
+        console.error('[Digisac] Auth error:', claimsError?.message || 'Claims inválidos');
         return handledErrorResponse(action, 'Usuário não autenticado. Faça login para acessar a integração.', { code: 'UNAUTHORIZED' });
       }
+      console.log('[Digisac] Authenticated user:', claimsData.claims.sub);
     }
 
     const startDate = typeof payload?.startDate === 'string' ? payload.startDate : undefined;

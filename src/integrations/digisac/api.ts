@@ -39,8 +39,16 @@ function isDigisacErrorPayload(value: unknown): value is DigisacErrorPayload {
  * bloqueando todas as chamadas no preview do Lovable.
  */
 async function invokeDigisac<T>(action: string, payload: Record<string, any> = {}): Promise<T> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData?.session?.access_token;
+
+  if (!accessToken) {
+    throw new Error('Faça login para visualizar os dados da integração Digisac.');
+  }
+
   const { data, error } = await supabase.functions.invoke('digisac-dashboard', {
-    body: { action, payload }
+    body: { action, payload },
+    headers: { Authorization: `Bearer ${accessToken}` },
   });
 
   if (error) {
