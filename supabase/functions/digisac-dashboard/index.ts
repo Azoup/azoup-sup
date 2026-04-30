@@ -217,8 +217,9 @@ Deno.serve(async (req) => {
         // `closedAt` com operadores retorna 500. `where` como JSON string também falha.
         const params = new URLSearchParams();
         params.append('where[isOpen]', 'false');
-        if (startDate) params.append('where[createdAt][gte]', `${startDate}T00:00:00.000Z`);
-        if (endDate) params.append('where[createdAt][lte]', `${endDate}T23:59:59.999Z`);
+        // Digisac usa `startedAt` / `endedAt` (não createdAt/closedAt)
+        if (startDate) params.append('where[startedAt][gte]', `${startDate}T00:00:00.000Z`);
+        if (endDate) params.append('where[startedAt][lte]', `${endDate}T23:59:59.999Z`);
         params.append('limit', '500');
 
         const ticketsRes = await fetchDigisac(digisacUrl, digisacToken, '/tickets', params);
@@ -272,29 +273,33 @@ Deno.serve(async (req) => {
 
       tickets.forEach((ticket: any) => {
         totalTickets++;
-        
-        // Calculate TMA
-        if (ticket.createdAt && ticket.closedAt) {
-           const opened = new Date(ticket.createdAt).getTime();
-           const closed = new Date(ticket.closedAt).getTime();
-           const diffMinutes = (closed - opened) / 60000;
-           
-           if (diffMinutes > 0) {
-             totalTmaMinutes += diffMinutes;
-             ticketsWithTmaCount++;
 
-             const userId = ticket.userId || ticket.ownerId; // Adjust based on Digisac ticket structure
-             if (userId && analistasStats[userId]) {
-               analistasStats[userId].total++;
-               analistasStats[userId].closed_count++;
-               analistasStats[userId].tma_minutes += diffMinutes;
-             }
-           }
-        } else {
-           const userId = ticket.userId || ticket.ownerId;
-           if (userId && analistasStats[userId]) {
-             analistasStats[userId].total++;
-           }
+        const userId = ticket.userId || ticket.ownerId;
+        const startISO = ticket.startedAt || ticket.createdAt;
+        const endISO = ticket.endedAt || ticket.closedAt || ticket.updatedAt;
+
+        // Preferir métrica oficial do Digisac (em segundos), senão calcular
+        let diffMinutes = 0;
+        if (typeof ticket?.metrics?.ticketTime === 'number' && ticket.metrics.ticketTime > 0) {
+          diffMinutes = ticket.metrics.ticketTime / 60;
+        } else if (startISO && endISO) {
+          const opened = new Date(startISO).getTime();
+          const closed = new Date(endISO).getTime();
+          const d = (closed - opened) / 60000;
+          if (d > 0) diffMinutes = d;
+        }
+
+        if (diffMinutes > 0) {
+          totalTmaMinutes += diffMinutes;
+          ticketsWithTmaCount++;
+        }
+
+        if (userId && analistasStats[userId]) {
+          analistasStats[userId].total++;
+          if (diffMinutes > 0) {
+            analistasStats[userId].closed_count++;
+            analistasStats[userId].tma_minutes += diffMinutes;
+          }
         }
       });
       console.log(`[Digisac] Processed ${totalTickets} tickets. Tickets with valid TMA: ${ticketsWithTmaCount}.`);
