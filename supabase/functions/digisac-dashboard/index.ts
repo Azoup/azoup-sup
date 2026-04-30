@@ -34,6 +34,8 @@ serve(async (req) => {
     }
 
     const { action, payload } = await req.json();
+    const startDate = payload?.startDate;
+    const endDate = payload?.endDate;
 
     const digisacUrl = Deno.env.get('DIGISAC_API_URL');
     const digisacToken = Deno.env.get('DIGISAC_API_TOKEN');
@@ -61,7 +63,7 @@ serve(async (req) => {
 
     if (action === 'geral' || action === 'analistas') {
       // Check cache first
-      const cacheKey = 'tickets_data';
+      const cacheKey = `tickets_data_${startDate || 'all'}_${endDate || 'all'}`;
       let tickets = [];
       let users = [];
 
@@ -73,7 +75,15 @@ serve(async (req) => {
         console.log("Fetching fresh data from Digisac");
         // Digisac typically returns paginated data, assuming we fetch recent tickets.
         // For demonstration, we fetch the default first page of tickets. In a real scenario, you'd iterate pagination or filter by date.
-        const ticketsRes = await fetchDigisac('/tickets?where[isOpen]=false'); // Example query for closed tickets, adjust based on actual API
+        let ticketsEndpoint = '/tickets?where[isOpen]=false';
+        if (startDate) {
+          ticketsEndpoint += `&where[closedAt][gte]=${startDate}T00:00:00.000Z`;
+        }
+        if (endDate) {
+          ticketsEndpoint += `&where[closedAt][lte]=${endDate}T23:59:59.999Z`;
+        }
+        
+        const ticketsRes = await fetchDigisac(ticketsEndpoint);
         const usersRes = await fetchDigisac('/users');
         
         tickets = ticketsRes.data || [];

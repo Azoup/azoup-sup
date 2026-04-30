@@ -1,23 +1,34 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { DigisacMappingModal } from "@/components/DigisacMappingModal";
 import { digisacApi } from "@/integrations/digisac/api";
-import { Clock, Ticket, Users } from "lucide-react";
+import { Clock, Ticket, Users, Filter } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export default function DigisacDashboard() {
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [filters, setFilters] = useState({ start: "", end: "" });
+
   const { data: geral, isLoading: isLoadingGeral } = useQuery({
-    queryKey: ['digisac-geral'],
-    queryFn: digisacApi.getDashboardGeral,
-    refetchInterval: 5 * 60 * 1000 // Refetch every 5 minutes
+    queryKey: ['digisac-geral', filters.start, filters.end],
+    queryFn: () => digisacApi.getDashboardGeral(filters.start || undefined, filters.end || undefined),
+    refetchInterval: 5 * 60 * 1000
   });
 
   const { data: analistas, isLoading: isLoadingAnalistas } = useQuery({
-    queryKey: ['digisac-analistas'],
-    queryFn: digisacApi.getDashboardAnalistas,
+    queryKey: ['digisac-analistas', filters.start, filters.end],
+    queryFn: () => digisacApi.getDashboardAnalistas(filters.start || undefined, filters.end || undefined),
     refetchInterval: 5 * 60 * 1000
   });
+
+  const applyFilters = () => {
+    setFilters({ start: startDate, end: endDate });
+  };
 
   const formatTma = (minutes: number) => {
     if (!minutes) return "0h 0m";
@@ -41,7 +52,30 @@ export default function DigisacDashboard() {
             Métricas de atendimento integradas com o sistema de chamados.
           </p>
         </div>
-        <DigisacMappingModal />
+        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
+          <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-muted-foreground">Data Inicial</span>
+              <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-[140px] h-9" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-muted-foreground">Data Final</span>
+              <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-[140px] h-9" />
+            </div>
+            <div className="flex flex-col gap-1 justify-end h-full">
+              <span className="text-xs opacity-0">.</span>
+              <Button onClick={applyFilters} className="h-9 gap-2">
+                <Filter className="w-4 h-4" />
+                Aplicar
+              </Button>
+            </div>
+          </div>
+          <div className="hidden sm:block w-px h-10 bg-border mx-1"></div>
+          <div className="flex flex-col gap-1 justify-end h-full">
+            <span className="text-xs opacity-0">.</span>
+            <DigisacMappingModal />
+          </div>
+        </div>
       </div>
 
       {/* Indicadores Gerais */}

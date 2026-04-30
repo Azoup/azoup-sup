@@ -23,9 +23,9 @@ export const digisacApi = {
   /**
    * Obtém métricas gerais do Dashboard
    */
-  async getDashboardGeral(): Promise<DigisacGeralResponse> {
+  async getDashboardGeral(startDate?: string, endDate?: string): Promise<DigisacGeralResponse> {
     const { data, error } = await supabase.functions.invoke('digisac-dashboard', {
-      body: { action: 'geral' }
+      body: { action: 'geral', payload: { startDate, endDate } }
     });
 
     if (error) throw error;
@@ -35,9 +35,9 @@ export const digisacApi = {
   /**
    * Obtém métricas agrupadas por analistas do sistema interno (já mapeados)
    */
-  async getDashboardAnalistas(): Promise<DigisacAnalystStats[]> {
+  async getDashboardAnalistas(startDate?: string, endDate?: string): Promise<DigisacAnalystStats[]> {
     const { data, error } = await supabase.functions.invoke('digisac-dashboard', {
-      body: { action: 'analistas' }
+      body: { action: 'analistas', payload: { startDate, endDate } }
     });
 
     if (error) throw error;
