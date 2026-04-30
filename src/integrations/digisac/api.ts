@@ -50,14 +50,13 @@ export const digisacApi = {
    * Obtém os tickets do Digisac, com os devidos filtros
    */
   async getTickets(startDate?: string, endDate?: string) {
-    let endpoint = '/tickets?where[isOpen]=false';
-    if (startDate) {
-      endpoint += `&where[closedAt][gte]=${startDate}T00:00:00.000Z`;
-    }
-    if (endDate) {
-      endpoint += `&where[closedAt][lte]=${endDate}T23:59:59.999Z`;
-    }
-    return this.fetchDirect(endpoint);
+    // Digisac aceita apenas `createdAt` com operadores gte/lte (closedAt retorna 500)
+    const params = new URLSearchParams();
+    params.append('where[isOpen]', 'false');
+    if (startDate) params.append('where[createdAt][gte]', `${startDate}T00:00:00.000Z`);
+    if (endDate) params.append('where[createdAt][lte]', `${endDate}T23:59:59.999Z`);
+    params.append('limit', '500');
+    return this.fetchDirect(`/tickets?${params.toString()}`);
   },
 
   /**
