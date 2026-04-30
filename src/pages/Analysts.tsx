@@ -61,14 +61,18 @@ const Analysts = () => {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('analysts').delete().eq('id', id);
+      const { data, error } = await supabase.from('analysts').delete().eq('id', id).select();
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error('Sem permissão para excluir ou registro não encontrado.');
+      }
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analysts'] });
       toast.success('Analista excluído com sucesso!');
     },
-    onError: () => toast.error('Erro ao excluir analista. Ele pode ter dados vinculados.'),
+    onError: (err: any) => toast.error(err.message || 'Erro ao excluir analista. Ele pode ter dados vinculados.'),
   });
 
   const handlePhotoUpload = async (analystId: string, file: File) => {

@@ -61,14 +61,18 @@ const Developers = () => {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('developers').delete().eq('id', id);
+      const { data, error } = await supabase.from('developers').delete().eq('id', id).select();
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error('Sem permissão para excluir ou registro não encontrado.');
+      }
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['developers'] });
       toast.success('Desenvolvedor excluído com sucesso!');
     },
-    onError: () => toast.error('Erro ao excluir desenvolvedor. Ele pode ter dados vinculados.'),
+    onError: (err: any) => toast.error(err.message || 'Erro ao excluir desenvolvedor. Ele pode ter dados vinculados.'),
   });
 
   const handlePhotoUpload = async (devId: string, file: File) => {

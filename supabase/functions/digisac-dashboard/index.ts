@@ -48,6 +48,7 @@ serve(async (req) => {
     }
 
     const fetchDigisac = async (endpoint: string) => {
+      console.log(`[Digisac] Fetching endpoint: ${endpoint}`);
       const response = await fetch(`${digisacUrl}${endpoint}`, {
         headers: {
           'Authorization': `Bearer ${digisacToken}`,
@@ -55,10 +56,13 @@ serve(async (req) => {
         }
       });
       if (!response.ok) {
-        console.error(`Digisac API Error (${endpoint}):`, await response.text());
-        throw new Error(`Failed to fetch from Digisac: ${response.statusText}`);
+        const errorText = await response.text();
+        console.error(`[Digisac] API Error (${endpoint}): ${response.status} - ${errorText}`);
+        throw new Error(`Failed to fetch from Digisac API (${response.status}): ${errorText}`);
       }
-      return response.json();
+      const json = await response.json();
+      console.log(`[Digisac] Success: ${endpoint} - Items received: ${json?.data?.length || 0}`);
+      return json;
     };
 
     if (action === 'geral' || action === 'analistas') {
@@ -154,6 +158,7 @@ serve(async (req) => {
            }
         }
       });
+      console.log(`[Digisac] Processed ${totalTickets} tickets. Tickets with valid TMA: ${ticketsWithTmaCount}.`);
 
       const tmaGeral = ticketsWithTmaCount > 0 ? (totalTmaMinutes / ticketsWithTmaCount) : 0;
 

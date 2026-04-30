@@ -8,19 +8,20 @@ import { digisacApi } from "@/integrations/digisac/api";
 import { Clock, Ticket, Users, Filter } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { AlertCircle } from "lucide-react";
 
 export default function DigisacDashboard() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [filters, setFilters] = useState({ start: "", end: "" });
 
-  const { data: geral, isLoading: isLoadingGeral } = useQuery({
+  const { data: geral, isLoading: isLoadingGeral, isError: isErrorGeral, error: errorGeral } = useQuery({
     queryKey: ['digisac-geral', filters.start, filters.end],
     queryFn: () => digisacApi.getDashboardGeral(filters.start || undefined, filters.end || undefined),
     refetchInterval: 5 * 60 * 1000
   });
 
-  const { data: analistas, isLoading: isLoadingAnalistas } = useQuery({
+  const { data: analistas, isLoading: isLoadingAnalistas, isError: isErrorAnalistas, error: errorAnalistas } = useQuery({
     queryKey: ['digisac-analistas', filters.start, filters.end],
     queryFn: () => digisacApi.getDashboardAnalistas(filters.start || undefined, filters.end || undefined),
     refetchInterval: 5 * 60 * 1000
@@ -77,6 +78,16 @@ export default function DigisacDashboard() {
           </div>
         </div>
       </div>
+
+      {(isErrorGeral || isErrorAnalistas) && (
+        <div className="bg-destructive/15 text-destructive p-4 rounded-md flex items-center gap-3">
+          <AlertCircle className="h-5 w-5" />
+          <div>
+            <p className="font-semibold">Erro ao carregar dados do Digisac</p>
+            <p className="text-sm">Verifique se as credenciais estão corretas e se a Edge Function foi atualizada. Detalhe: {((errorGeral as any)?.message || (errorAnalistas as any)?.message || 'Erro desconhecido')}</p>
+          </div>
+        </div>
+      )}
 
       {/* Indicadores Gerais */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

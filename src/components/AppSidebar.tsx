@@ -47,6 +47,7 @@ const DEFAULT_MENU: MenuItem[] = [
   { id: 'dashboard-dev', type: 'leaf', title: 'Dashboard DEV', url: '/dashboard-dev', icon: BarChart3 },
   { id: 'dashboard', type: 'leaf', title: 'Dashboard Dúvidas', url: '/dashboard', icon: BarChart3 },
   { id: 'dashboard-bu', type: 'leaf', title: 'Dashboard B.U', url: '/dashboard-bu', icon: Building2 },
+  { id: 'digisac-dashboard', type: 'leaf', title: 'Dashboard Digisac', url: '/digisac-dashboard', icon: Headset },
   { id: 'entries', type: 'leaf', title: 'Lançamentos Dúvidas', url: '/entries', icon: PenLine },
   { id: 'entries-bu', type: 'leaf', title: 'Lançamentos B.U', url: '/entries-bu', icon: FileSpreadsheet },
   {
