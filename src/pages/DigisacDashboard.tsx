@@ -44,6 +44,10 @@ export default function DigisacDashboard() {
     'TMA (min)': Math.round(a.tma_minutos)
   })) || [];
 
+  const hasError = isErrorGeral || isErrorAnalistas;
+  const hasData = (geral?.total_chamados || 0) > 0 || chartData.length > 0;
+  const showEmptyState = !hasError && !isLoadingGeral && !isLoadingAnalistas && !hasData;
+
   return (
     <div className="container mx-auto py-8 space-y-8 fade-in">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -79,12 +83,22 @@ export default function DigisacDashboard() {
         </div>
       </div>
 
-      {(isErrorGeral || isErrorAnalistas) && (
+      {hasError && (
         <div className="bg-destructive/15 text-destructive p-4 rounded-md flex items-center gap-3">
           <AlertCircle className="h-5 w-5" />
           <div>
             <p className="font-semibold">Erro ao carregar dados do Digisac</p>
-            <p className="text-sm">Verifique se as credenciais estão corretas e se a Edge Function foi atualizada. Detalhe: {((errorGeral as any)?.message || (errorAnalistas as any)?.message || 'Erro desconhecido')}</p>
+            <p className="text-sm">A integração respondeu com erro tratado. Detalhe: {((errorGeral as any)?.message || (errorAnalistas as any)?.message || 'Erro desconhecido')}</p>
+          </div>
+        </div>
+      )}
+
+      {showEmptyState && (
+        <div className="bg-muted/50 text-muted-foreground p-4 rounded-md flex items-center gap-3">
+          <AlertCircle className="h-5 w-5" />
+          <div>
+            <p className="font-semibold text-foreground">Nenhum dado encontrado para o período selecionado</p>
+            <p className="text-sm">Ajuste os filtros ou confirme se existem chamados fechados e analistas mapeados.</p>
           </div>
         </div>
       )}
@@ -161,8 +175,8 @@ export default function DigisacDashboard() {
                   <Bar dataKey="Chamados" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} maxBarSize={50} />
                 </BarChart>
               </ResponsiveContainer>
-            ) : (
-               <div className="flex h-full items-center justify-center text-muted-foreground">Nenhum dado disponível. Realize o mapeamento.</div>
+             ) : (
+                <div className="flex h-full items-center justify-center text-muted-foreground">Nenhum dado encontrado para o período selecionado.</div>
             )}
           </CardContent>
         </Card>
@@ -195,7 +209,7 @@ export default function DigisacDashboard() {
                   )) : (
                     <TableRow>
                       <TableCell colSpan={3} className="text-center py-6 text-muted-foreground">
-                        Nenhum analista com dados. Verifique o mapeamento.
+                         Nenhum dado encontrado para o período selecionado.
                       </TableCell>
                     </TableRow>
                   )}
