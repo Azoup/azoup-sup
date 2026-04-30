@@ -8,7 +8,7 @@ interface CacheItem {
   timestamp: number;
 }
 const cache: Record<string, CacheItem> = {};
-const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const CACHE_TTL_MS = 60 * 1000; // 60s — economiza créditos sem atrasar filtros
 
 const jsonResponse = (payload: unknown, status = 200) => new Response(JSON.stringify(payload), {
   status,
