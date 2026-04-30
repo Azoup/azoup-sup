@@ -18,6 +18,20 @@ export interface DigisacUser {
   email?: string;
 }
 
+interface DigisacErrorPayload {
+  error?: boolean | string;
+  message?: string;
+  total?: number;
+  analistas?: unknown[];
+  total_chamados?: number;
+  tma_geral_minutos?: number;
+  users?: unknown[];
+}
+
+function isDigisacErrorPayload(value: unknown): value is DigisacErrorPayload {
+  return !!value && typeof value === 'object' && ('error' in (value as Record<string, unknown>) || 'message' in (value as Record<string, unknown>));
+}
+
 /**
  * Helper que invoca a edge function `digisac-dashboard`.
  * IMPORTANTE: chamamos via edge function (não direto na API Digisac)
@@ -28,13 +42,18 @@ async function invokeDigisac<T>(action: string, payload: Record<string, any> = {
   const { data, error } = await supabase.functions.invoke('digisac-dashboard', {
     body: { action, payload }
   });
+
   if (error) {
     console.error(`[digisacApi] Erro ao invocar action="${action}"`, error);
     throw new Error(error.message || 'Erro ao chamar Digisac');
   }
-  if (data && typeof data === 'object' && 'error' in data) {
-    throw new Error((data as any).error);
+
+  if (isDigisacErrorPayload(data) && data.error) {
+    const message = data.message || (typeof data.error === 'string' ? data.error : 'Erro ao chamar Digisac');
+    console.error(`[digisacApi] Resposta tratada com erro action="${action}"`, data);
+    throw new Error(message);
   }
+
   return data as T;
 }
 
@@ -49,6 +68,10 @@ export const digisacApi = {
 
   async getDigisacUsers(): Promise<DigisacUser[]> {
     return invokeDigisac<DigisacUser[]>('listar_digisac_users');
+  },
+
+  async testConnection(): Promise<{ ok: boolean; digisac_status: number | null; sample: DigisacUser | null }> {
+    return invokeDigisac<{ ok: boolean; digisac_status: number | null; sample: DigisacUser | null }>('test_digisac');
   },
 
   async getMappings() {
