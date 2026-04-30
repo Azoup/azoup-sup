@@ -24,14 +24,14 @@ export function DigisacMappingModal() {
   });
 
   // Fetch Digisac users
-  const { data: digisacUsers, isLoading: isLoadingUsers } = useQuery({
+  const { data: digisacUsers, isLoading: isLoadingUsers, isError: isUsersError, error: usersError } = useQuery({
     queryKey: ['digisac-users'],
     queryFn: digisacApi.getDigisacUsers,
     enabled: isOpen
   });
 
   // Fetch current mappings
-  const { data: mappings, isLoading: isLoadingMappings } = useQuery({
+  const { data: mappings, isLoading: isLoadingMappings, isError: isMappingsError, error: mappingsError } = useQuery({
     queryKey: ['digisac-mappings'],
     queryFn: digisacApi.getMappings,
     enabled: isOpen
@@ -43,7 +43,8 @@ export function DigisacMappingModal() {
       digisacApi.saveMapping(vars.digisacUserId, vars.digisacUserName, vars.analystId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['digisac-mappings'] });
-      queryClient.invalidateQueries({ queryKey: ['digisac-dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['digisac-geral'] });
+      queryClient.invalidateQueries({ queryKey: ['digisac-analistas'] });
       toast.success("Mapeamento salvo com sucesso!");
     },
     onError: (err: any) => {
@@ -56,7 +57,8 @@ export function DigisacMappingModal() {
     mutationFn: digisacApi.deleteMapping,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['digisac-mappings'] });
-      queryClient.invalidateQueries({ queryKey: ['digisac-dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['digisac-geral'] });
+      queryClient.invalidateQueries({ queryKey: ['digisac-analistas'] });
       toast.success("Mapeamento removido!");
     },
     onError: (err: any) => {
@@ -95,6 +97,11 @@ export function DigisacMappingModal() {
         <div className="mt-4">
           {(isLoadingUsers || isLoadingMappings) ? (
             <div className="text-center py-8 text-muted-foreground">Carregando dados...</div>
+          ) : (isUsersError || isMappingsError) ? (
+            <div className="text-center py-8 text-destructive space-y-2">
+              <p className="font-medium">Não foi possível carregar o mapeamento do Digisac.</p>
+              <p className="text-sm">{usersError?.message || mappingsError?.message}</p>
+            </div>
           ) : (
             <Table>
               <TableHeader>
