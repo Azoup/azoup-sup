@@ -1,5 +1,4 @@
 import "https://deno.land/x/xhr@0.3.0/mod.ts";
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 import { corsHeaders } from "../_shared/cors.ts";
 
@@ -11,7 +10,7 @@ interface CacheItem {
 const cache: Record<string, CacheItem> = {};
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -40,8 +39,11 @@ serve(async (req) => {
     const digisacUrl = Deno.env.get('DIGISAC_API_URL');
     const digisacToken = Deno.env.get('DIGISAC_API_TOKEN');
 
+    console.log(`[Digisac] Checking config. URL length: ${digisacUrl?.length || 0}, Token length: ${digisacToken?.length || 0}`);
+
     if (!digisacUrl || !digisacToken) {
-      return new Response(JSON.stringify({ error: 'Digisac configuration missing' }), {
+      console.error('[Digisac] Configuration missing: DIGISAC_API_URL or DIGISAC_API_TOKEN is not set in environment variables.');
+      return new Response(JSON.stringify({ error: 'Digisac configuration missing from backend environment (.env or Secrets).' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -198,8 +200,8 @@ serve(async (req) => {
     });
 
   } catch (error: any) {
-    console.error('Error processing request:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error('[Edge Function Error] Processing request failed:', error.message || error);
+    return new Response(JSON.stringify({ error: error.message || 'Internal Edge Function Error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
