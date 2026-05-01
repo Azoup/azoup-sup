@@ -2,13 +2,22 @@ import { supabase } from "@/integrations/supabase/client";
 
 export interface DigisacGeralResponse {
   total_chamados: number;
+  total_fechados: number;
+  total_abertos: number;
+  total_mensagens: number;
+  total_contatos: number;
   tma_geral_minutos: number;
+  tempo_espera_minutos: number;
+  primeira_resposta_minutos: number;
 }
 
 export interface DigisacAnalystStats {
   analyst_id: string;
   name: string;
+  mapped?: boolean;
   total_chamados: number;
+  chamados_fechados: number;
+  chamados_abertos: number;
   tma_minutos: number;
 }
 
