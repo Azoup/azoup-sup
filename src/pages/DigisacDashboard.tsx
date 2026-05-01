@@ -10,10 +10,19 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertCircle } from "lucide-react";
 
+const getTodayDateInputValue = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export default function DigisacDashboard() {
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [filters, setFilters] = useState({ start: "", end: "" });
+  const today = getTodayDateInputValue();
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
+  const [filters, setFilters] = useState({ start: today, end: today });
 
   const { data: geral, isLoading: isLoadingGeral, isError: isErrorGeral, error: errorGeral } = useQuery({
     queryKey: ['digisac-geral', filters.start, filters.end],

@@ -25,6 +25,22 @@ const safeParseJson = (value: string) => {
   try { return value ? JSON.parse(value) : null; } catch { return null; }
 };
 
+const parseIncomingDate = (value?: string, boundary: 'start' | 'end' = 'start'): string | undefined => {
+  if (!value || typeof value !== 'string') return undefined;
+
+  const dateOnlyMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    return boundary === 'start'
+      ? `${year}-${month}-${day}T00:00:00Z`
+      : `${year}-${month}-${day}T23:59:59Z`;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed.toISOString().replace('.000Z', 'Z');
+};
+
 const extractDigisacArray = (payload: any): any[] => {
   if (Array.isArray(payload?.data)) return payload.data;
   if (Array.isArray(payload)) return payload;
@@ -87,6 +103,7 @@ const fetchAllTickets = async (
   startDate?: string,
   endDate?: string,
   isOpen?: boolean,
+  dateField: 'startedAt' | 'endedAt' = 'startedAt',
 ): Promise<{ tickets: any[]; lastStatus: number; lastError?: string }> => {
   const PAGE_SIZE = 100;
   let offset = 0;
@@ -97,8 +114,8 @@ const fetchAllTickets = async (
   while (safety-- > 0) {
     const params = new URLSearchParams();
     if (typeof isOpen === 'boolean') params.append('where[isOpen]', String(isOpen));
-    if (startDate) params.append('where[startedAt][gte]', `${startDate}T00:00:00.000Z`);
-    if (endDate) params.append('where[startedAt][lte]', `${endDate}T23:59:59.999Z`);
+    if (startDate) params.append(`where[${dateField}][gte]`, startDate);
+    if (endDate) params.append(`where[${dateField}][lte]`, endDate);
     params.append('limit', String(PAGE_SIZE));
     params.append('offset', String(offset));
     // Pedimos os campos necessários (se a API ignorar, retorna tudo)
@@ -168,8 +185,21 @@ Deno.serve(async (req) => {
       }
     }
 
-    const startDate = typeof payload?.startDate === 'string' && payload.startDate ? payload.startDate : undefined;
-    const endDate = typeof payload?.endDate === 'string' && payload.endDate ? payload.endDate : undefined;
+    const now = new Date();
+    const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
+    const todayEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59));
+
+    const startDate = parseIncomingDate(
+      typeof payload?.startDate === 'string' && payload.startDate ? payload.startDate : undefined,
+      'start'
+    ) ?? todayStart.toISOString().replace('.000Z', 'Z');
+    const endDate = parseIncomingDate(
+      typeof payload?.endDate === 'string' && payload.endDate ? payload.endDate : undefined,
+      'end'
+    ) ?? todayEnd.toISOString().replace('.000Z', 'Z');
+
+    console.log('startDate:', startDate);
+    console.log('endDate:', endDate);
 
     const digisacUrl = Deno.env.get('DIGISAC_API_URL');
     const digisacToken = Deno.env.get('DIGISAC_API_TOKEN');
@@ -204,12 +234,13 @@ Deno.serve(async (req) => {
       } else {
         // Buscar fechados E abertos em paralelo
         const [closedResult, openResult] = await Promise.all([
-          fetchAllTickets(digisacUrl, digisacToken, startDate, endDate, false),
-          fetchAllTickets(digisacUrl, digisacToken, startDate, endDate, true),
+          fetchAllTickets(digisacUrl, digisacToken, startDate, endDate, false, 'endedAt'),
+          fetchAllTickets(digisacUrl, digisacToken, startDate, endDate, true, 'startedAt'),
         ]);
 
-        if (closedResult.lastError) {
-          return handledErrorResponse(action, `Erro API Digisac: ${closedResult.lastStatus}`, {
+        if (closedResult.lastError || openResult.lastError) {
+          const failed = closedResult.lastError ? closedResult : openResult;
+          return handledErrorResponse(action, `Erro API Digisac: ${failed.lastStatus}`, {
             code: 'DIGISAC_API_ERROR', digisac_status: closedResult.lastStatus,
           });
         }
@@ -217,6 +248,23 @@ Deno.serve(async (req) => {
         const closed = closedResult.tickets;
         const open = openResult.tickets;
         const all = [...closed, ...open];
+
+        console.log('[Digisac] returnedCounts', JSON.stringify({
+          filter: { startDate, endDate, closedField: 'endedAt', openField: 'startedAt' },
+          closed: closed.length,
+          open: open.length,
+          total: all.length,
+          sample: all[0] ? {
+            id: all[0].id,
+            startedAt: all[0].startedAt,
+            endedAt: all[0].endedAt,
+            createdAt: all[0].createdAt,
+            updatedAt: all[0].updatedAt,
+            isOpen: all[0].isOpen,
+            userId: all[0].userId,
+            ownerId: all[0].ownerId,
+          } : null,
+        }));
 
         // Mapeamentos
         const { data: mappings } = await supabaseClient
