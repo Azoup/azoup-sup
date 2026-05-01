@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { DigisacMappingModal } from "@/components/DigisacMappingModal";
 import { digisacApi } from "@/integrations/digisac/api";
-import { Clock, Ticket, Users, Filter } from "lucide-react";
+import { Clock, Ticket, Users, Filter, MessageSquare, Hourglass, Timer, CheckCircle2, CircleDot } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertCircle } from "lucide-react";
@@ -103,20 +103,49 @@ export default function DigisacDashboard() {
         </div>
       )}
 
-      {/* Indicadores Gerais */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {/* Indicadores Gerais — espelham a tela "Estatísticas de atendimento" do Digisac */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="glass-card border-none shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total de Chamados</CardTitle>
             <Ticket className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {isLoadingGeral ? "..." : geral?.total_chamados || 0}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Chamados totais no período (API)
-            </p>
+            <div className="text-2xl font-bold">{isLoadingGeral ? "..." : geral?.total_chamados || 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">Abertos + fechados no período</p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-card border-none shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Chamados Fechados</CardTitle>
+            <CheckCircle2 className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{isLoadingGeral ? "..." : geral?.total_fechados || 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">Status: finalizado</p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-card border-none shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Chamados Abertos</CardTitle>
+            <CircleDot className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{isLoadingGeral ? "..." : geral?.total_abertos || 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">Em andamento</p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-card border-none shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Contatos Únicos</CardTitle>
+            <Users className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{isLoadingGeral ? "..." : geral?.total_contatos || 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">Clientes distintos</p>
           </CardContent>
         </Card>
 
@@ -126,27 +155,41 @@ export default function DigisacDashboard() {
             <Clock className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {isLoadingGeral ? "..." : formatTma(geral?.tma_geral_minutos || 0)}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Tempo Médio de Atendimento
-            </p>
+            <div className="text-2xl font-bold">{isLoadingGeral ? "..." : formatTma(geral?.tma_geral_minutos || 0)}</div>
+            <p className="text-xs text-muted-foreground mt-1">Tempo médio de atendimento</p>
           </CardContent>
         </Card>
-        
+
         <Card className="glass-card border-none shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Analistas Mapeados</CardTitle>
-            <Users className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium">Tempo Médio de Espera</CardTitle>
+            <Hourglass className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {isLoadingAnalistas ? "..." : analistas?.length || 0}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Usuários ativos com tickets
-            </p>
+            <div className="text-2xl font-bold">{isLoadingGeral ? "..." : formatTma(geral?.tempo_espera_minutos || 0)}</div>
+            <p className="text-xs text-muted-foreground mt-1">Espera total do cliente</p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-card border-none shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">1ª Resposta</CardTitle>
+            <Timer className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{isLoadingGeral ? "..." : formatTma(geral?.primeira_resposta_minutos || 0)}</div>
+            <p className="text-xs text-muted-foreground mt-1">Tempo médio até 1ª resposta</p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-card border-none shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Mensagens</CardTitle>
+            <MessageSquare className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{isLoadingGeral ? "..." : geral?.total_mensagens || 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">Trocadas no período</p>
           </CardContent>
         </Card>
       </div>
