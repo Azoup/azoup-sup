@@ -238,20 +238,29 @@ export default function DigisacDashboard() {
                 <TableHeader className="bg-muted/50">
                   <TableRow>
                     <TableHead>Analista</TableHead>
-                    <TableHead className="text-right">Chamados</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Fechados</TableHead>
+                    <TableHead className="text-right">Abertos</TableHead>
                     <TableHead className="text-right">TMA</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {analistas?.length ? analistas.map((analyst) => (
                     <TableRow key={analyst.analyst_id}>
-                      <TableCell className="font-medium">{analyst.name}</TableCell>
+                      <TableCell className="font-medium">
+                        {analyst.name}
+                        {analyst.mapped === false && (
+                          <span className="ml-2 text-xs text-muted-foreground">(não mapeado)</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">{analyst.total_chamados}</TableCell>
+                      <TableCell className="text-right">{analyst.chamados_fechados ?? 0}</TableCell>
+                      <TableCell className="text-right">{analyst.chamados_abertos ?? 0}</TableCell>
                       <TableCell className="text-right">{formatTma(analyst.tma_minutos)}</TableCell>
                     </TableRow>
                   )) : (
                     <TableRow>
-                      <TableCell colSpan={3} className="text-center py-6 text-muted-foreground">
+                      <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
                          Nenhum dado encontrado para o período selecionado.
                       </TableCell>
                     </TableRow>
