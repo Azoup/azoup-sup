@@ -103,6 +103,7 @@ const fetchAllTickets = async (
   startDate?: string,
   endDate?: string,
   isOpen?: boolean,
+  dateField: 'startedAt' | 'endedAt' = 'startedAt',
 ): Promise<{ tickets: any[]; lastStatus: number; lastError?: string }> => {
   const PAGE_SIZE = 100;
   let offset = 0;
@@ -113,8 +114,8 @@ const fetchAllTickets = async (
   while (safety-- > 0) {
     const params = new URLSearchParams();
     if (typeof isOpen === 'boolean') params.append('where[isOpen]', String(isOpen));
-    if (startDate) params.append('where[startedAt][gte]', startDate);
-    if (endDate) params.append('where[startedAt][lte]', endDate);
+    if (startDate) params.append(`where[${dateField}][gte]`, startDate);
+    if (endDate) params.append(`where[${dateField}][lte]`, endDate);
     params.append('limit', String(PAGE_SIZE));
     params.append('offset', String(offset));
     // Pedimos os campos necessários (se a API ignorar, retorna tudo)
@@ -233,12 +234,13 @@ Deno.serve(async (req) => {
       } else {
         // Buscar fechados E abertos em paralelo
         const [closedResult, openResult] = await Promise.all([
-          fetchAllTickets(digisacUrl, digisacToken, startDate, endDate, false),
-          fetchAllTickets(digisacUrl, digisacToken, startDate, endDate, true),
+          fetchAllTickets(digisacUrl, digisacToken, startDate, endDate, false, 'endedAt'),
+          fetchAllTickets(digisacUrl, digisacToken, startDate, endDate, true, 'startedAt'),
         ]);
 
-        if (closedResult.lastError) {
-          return handledErrorResponse(action, `Erro API Digisac: ${closedResult.lastStatus}`, {
+        if (closedResult.lastError || openResult.lastError) {
+          const failed = closedResult.lastError ? closedResult : openResult;
+          return handledErrorResponse(action, `Erro API Digisac: ${failed.lastStatus}`, {
             code: 'DIGISAC_API_ERROR', digisac_status: closedResult.lastStatus,
           });
         }
@@ -248,6 +250,7 @@ Deno.serve(async (req) => {
         const all = [...closed, ...open];
 
         console.log('[Digisac] returnedCounts', JSON.stringify({
+          filter: { startDate, endDate, closedField: 'endedAt', openField: 'startedAt' },
           closed: closed.length,
           open: open.length,
           total: all.length,
