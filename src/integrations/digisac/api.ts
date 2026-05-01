@@ -41,6 +41,21 @@ function isDigisacErrorPayload(value: unknown): value is DigisacErrorPayload {
   return !!value && typeof value === 'object' && ('error' in (value as Record<string, unknown>) || 'message' in (value as Record<string, unknown>));
 }
 
+function toUtcBoundary(date: string | undefined, boundary: 'start' | 'end'): string | undefined {
+  if (!date) return undefined;
+
+  const isoDateOnly = /^\d{4}-\d{2}-\d{2}$/;
+  if (isoDateOnly.test(date)) {
+    return boundary === 'start'
+      ? `${date}T00:00:00Z`
+      : `${date}T23:59:59Z`;
+  }
+
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed.toISOString().replace('.000Z', 'Z');
+}
+
 /**
  * Helper que invoca a edge function `digisac-dashboard`.
  * IMPORTANTE: chamamos via edge function (não direto na API Digisac)
@@ -76,11 +91,17 @@ async function invokeDigisac<T>(action: string, payload: Record<string, any> = {
 
 export const digisacApi = {
   async getDashboardGeral(startDate?: string, endDate?: string): Promise<DigisacGeralResponse> {
-    return invokeDigisac<DigisacGeralResponse>('geral', { startDate, endDate });
+    return invokeDigisac<DigisacGeralResponse>('geral', {
+      startDate: toUtcBoundary(startDate, 'start'),
+      endDate: toUtcBoundary(endDate, 'end'),
+    });
   },
 
   async getDashboardAnalistas(startDate?: string, endDate?: string): Promise<DigisacAnalystStats[]> {
-    return invokeDigisac<DigisacAnalystStats[]>('analistas', { startDate, endDate });
+    return invokeDigisac<DigisacAnalystStats[]>('analistas', {
+      startDate: toUtcBoundary(startDate, 'start'),
+      endDate: toUtcBoundary(endDate, 'end'),
+    });
   },
 
   async getDigisacUsers(): Promise<DigisacUser[]> {
