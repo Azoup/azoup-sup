@@ -2,123 +2,129 @@ import "https://deno.land/x/xhr@0.3.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 import { corsHeaders } from "../_shared/cors.ts";
 
-// Simple in-memory cache
-interface CacheItem {
-  data: any;
-  timestamp: number;
-}
+// ============================================================================
+// CACHE
+// ============================================================================
+interface CacheItem { data: any; timestamp: number; }
 const cache: Record<string, CacheItem> = {};
-const CACHE_TTL_MS = 60 * 1000; // 60s — economiza créditos sem atrasar filtros
+const CACHE_TTL_MS = 60 * 1000; // 60s
 
+// ============================================================================
+// HELPERS
+// ============================================================================
 const jsonResponse = (payload: unknown, status = 200) => new Response(JSON.stringify(payload), {
   status,
   headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 });
 
-const trimForLogs = (value: string, maxLength = 2000) => (
+const trimForLogs = (value: string, maxLength = 500) => (
   value.length > maxLength ? `${value.slice(0, maxLength)}…` : value
 );
 
 const safeParseJson = (value: string) => {
-  try {
-    return value ? JSON.parse(value) : null;
-  } catch {
-    return null;
-  }
+  try { return value ? JSON.parse(value) : null; } catch { return null; }
 };
 
-const extractDigisacArray = (payload: any) => {
+const extractDigisacArray = (payload: any): any[] => {
   if (Array.isArray(payload?.data)) return payload.data;
   if (Array.isArray(payload)) return payload;
   return [];
 };
 
+const extractDigisacTotal = (payload: any): number | null => {
+  // Digisac normalmente retorna { data, total, page, ... }
+  if (typeof payload?.total === 'number') return payload.total;
+  if (typeof payload?.count === 'number') return payload.count;
+  return null;
+};
+
 const buildDigisacUrl = (baseUrl: string, endpoint: string, params?: URLSearchParams) => {
-  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
-  const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const queryString = params?.toString();
-  return `${normalizedBaseUrl}${normalizedEndpoint}${queryString ? `?${queryString}` : ''}`;
+  const normalizedBase = baseUrl.replace(/\/+$/, '');
+  const normalizedEp = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const qs = params?.toString();
+  return `${normalizedBase}${normalizedEp}${qs ? `?${qs}` : ''}`;
 };
 
 const buildErrorPayload = (action: string | undefined, message: string, extra: Record<string, unknown> = {}) => {
-  const basePayload = {
-    error: true,
-    message,
-    total: 0,
-    analistas: [],
+  const base: Record<string, unknown> = {
+    error: true, message, total: 0, analistas: [],
+    total_chamados: 0, total_fechados: 0, total_abertos: 0,
+    total_mensagens: 0, total_contatos: 0,
+    tma_geral_minutos: 0, tempo_espera_minutos: 0, primeira_resposta_minutos: 0,
   };
-
-  if (action === 'geral') {
-    return {
-      ...basePayload,
-      total_chamados: 0,
-      tma_geral_minutos: 0,
-      ...extra,
-    };
-  }
-
-  if (action === 'listar_digisac_users') {
-    return {
-      ...basePayload,
-      users: [],
-      ...extra,
-    };
-  }
-
-  if (action === 'test_digisac') {
-    return {
-      ...basePayload,
-      digisac_status: null,
-      sample: null,
-      ...extra,
-    };
-  }
-
-  return {
-    ...basePayload,
-    ...extra,
-  };
+  if (action === 'listar_digisac_users') return { ...base, users: [], ...extra };
+  if (action === 'test_digisac') return { ...base, digisac_status: null, sample: null, ...extra };
+  return { ...base, ...extra };
 };
 
-const handledErrorResponse = (action: string | undefined, message: string, extra: Record<string, unknown> = {}) => (
-  jsonResponse(buildErrorPayload(action, message, extra), 200)
-);
+const handledErrorResponse = (action: string | undefined, message: string, extra: Record<string, unknown> = {}) =>
+  jsonResponse(buildErrorPayload(action, message, extra), 200);
 
+// ============================================================================
+// FETCH WITH PAGINATION
+// ============================================================================
 const fetchDigisac = async (baseUrl: string, token: string, endpoint: string, params?: URLSearchParams) => {
   const finalUrl = buildDigisacUrl(baseUrl, endpoint, params);
-  const loggedParams = params ? Object.fromEntries(params.entries()) : {};
-
-  console.log('[Digisac] URL:', finalUrl);
-  console.log('[Digisac] Params:', JSON.stringify(loggedParams));
-
+  console.log('[Digisac] GET', finalUrl);
   const response = await fetch(finalUrl, {
     method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
   });
-
-  const responseBody = await response.text();
-  console.log('[Digisac] Response status:', response.status);
-  console.log('[Digisac] Response body:', trimForLogs(responseBody));
-
-  return {
-    ok: response.ok,
-    status: response.status,
-    bodyText: responseBody,
-    data: safeParseJson(responseBody),
-  };
+  const bodyText = await response.text();
+  if (!response.ok) {
+    console.error('[Digisac] Error', response.status, trimForLogs(bodyText));
+  }
+  return { ok: response.ok, status: response.status, bodyText, data: safeParseJson(bodyText) };
 };
 
-Deno.serve(async (req) => {
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+/**
+ * Busca todos os tickets paginando (Digisac usa offset/limit).
+ * Aplica filtro de período em `startedAt` (data de abertura).
+ */
+const fetchAllTickets = async (
+  baseUrl: string,
+  token: string,
+  startDate?: string,
+  endDate?: string,
+  isOpen?: boolean,
+): Promise<{ tickets: any[]; lastStatus: number; lastError?: string }> => {
+  const PAGE_SIZE = 100;
+  let offset = 0;
+  let all: any[] = [];
+  let lastStatus = 200;
+  let safety = 50; // máximo 5000 tickets
+
+  while (safety-- > 0) {
+    const params = new URLSearchParams();
+    if (typeof isOpen === 'boolean') params.append('where[isOpen]', String(isOpen));
+    if (startDate) params.append('where[startedAt][gte]', `${startDate}T00:00:00.000Z`);
+    if (endDate) params.append('where[startedAt][lte]', `${endDate}T23:59:59.999Z`);
+    params.append('limit', String(PAGE_SIZE));
+    params.append('offset', String(offset));
+    // Pedimos os campos necessários (se a API ignorar, retorna tudo)
+    params.append('include[]', 'metrics');
+
+    const res = await fetchDigisac(baseUrl, token, '/tickets', params);
+    lastStatus = res.status;
+    if (!res.ok) {
+      return { tickets: all, lastStatus, lastError: res.bodyText };
+    }
+    const batch = extractDigisacArray(res.data);
+    all = all.concat(batch);
+    console.log(`[Digisac] Page offset=${offset} got=${batch.length} total_so_far=${all.length}`);
+    if (batch.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
   }
+  return { tickets: all, lastStatus };
+};
+
+// ============================================================================
+// MAIN HANDLER
+// ============================================================================
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   let action: string | undefined;
-
   try {
     const url = new URL(req.url);
     const isTestRoute = req.method === 'GET' && url.pathname.replace(/\/+$/, '').endsWith('/test-digisac');
@@ -142,8 +148,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log('[Digisac] Action:', action);
-    console.log('[Digisac] Payload:', JSON.stringify(payload));
+    console.log('[Digisac] Action:', action, 'Payload:', JSON.stringify(payload));
 
     const authHeader = req.headers.get('Authorization');
     const supabaseClient = createClient(
@@ -152,7 +157,6 @@ Deno.serve(async (req) => {
       { global: { headers: authHeader ? { Authorization: authHeader } : {} } }
     );
 
-    // Verify authentication via JWT claims (lightweight, no DB call)
     if (action !== 'test_digisac') {
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return handledErrorResponse(action, 'Usuário não autenticado. Faça login para acessar a integração.', { code: 'UNAUTHORIZED' });
@@ -160,201 +164,206 @@ Deno.serve(async (req) => {
       const token = authHeader.replace('Bearer ', '');
       const { data: claimsData, error: claimsError } = await supabaseClient.auth.getClaims(token);
       if (claimsError || !claimsData?.claims?.sub) {
-        console.error('[Digisac] Auth error:', claimsError?.message || 'Claims inválidos');
-        return handledErrorResponse(action, 'Usuário não autenticado. Faça login para acessar a integração.', { code: 'UNAUTHORIZED' });
+        return handledErrorResponse(action, 'Usuário não autenticado.', { code: 'UNAUTHORIZED' });
       }
-      console.log('[Digisac] Authenticated user:', claimsData.claims.sub);
     }
 
-    const startDate = typeof payload?.startDate === 'string' ? payload.startDate : undefined;
-    const endDate = typeof payload?.endDate === 'string' ? payload.endDate : undefined;
+    const startDate = typeof payload?.startDate === 'string' && payload.startDate ? payload.startDate : undefined;
+    const endDate = typeof payload?.endDate === 'string' && payload.endDate ? payload.endDate : undefined;
 
     const digisacUrl = Deno.env.get('DIGISAC_API_URL');
     const digisacToken = Deno.env.get('DIGISAC_API_TOKEN');
-
-    console.log(`[Digisac] Checking config. URL length: ${digisacUrl?.length || 0}, Token length: ${digisacToken?.length || 0}`);
-
     if (!digisacUrl || !digisacToken) {
-      console.error('[Digisac] Configuration missing: DIGISAC_API_URL or DIGISAC_API_TOKEN is not set in environment variables.');
       return handledErrorResponse(action, 'Configuração do Digisac ausente no backend.', { code: 'CONFIG_MISSING' });
     }
 
+    // ---------- TEST ----------
     if (action === 'test_digisac') {
-      const testParams = new URLSearchParams({ limit: '1' });
-      const testResult = await fetchDigisac(digisacUrl, digisacToken, '/users', testParams);
-
-      if (!testResult.ok) {
-        return handledErrorResponse(action, `Erro API Digisac: ${testResult.status}`, {
-          code: 'DIGISAC_API_ERROR',
-          digisac_status: testResult.status,
-          sample: null,
+      const params = new URLSearchParams({ limit: '1' });
+      const r = await fetchDigisac(digisacUrl, digisacToken, '/users', params);
+      if (!r.ok) {
+        return handledErrorResponse(action, `Erro API Digisac: ${r.status}`, {
+          code: 'DIGISAC_API_ERROR', digisac_status: r.status, sample: null,
         });
       }
-
-      const sample = extractDigisacArray(testResult.data)[0] ?? null;
+      const sample = extractDigisacArray(r.data)[0] ?? null;
       return jsonResponse({
-        ok: true,
-        digisac_status: testResult.status,
-        sample: sample ? {
-          id: sample.id ?? null,
-          name: sample.name ?? null,
-          email: sample.email ?? null,
-        } : null,
+        ok: true, digisac_status: r.status,
+        sample: sample ? { id: sample.id, name: sample.name, email: sample.email } : null,
       });
     }
 
+    // ---------- DASHBOARD (geral + analistas em uma única busca) ----------
     if (action === 'geral' || action === 'analistas') {
-      // Check cache first
-      const cacheKey = `tickets_data_${startDate || 'all'}_${endDate || 'all'}`;
-      let tickets = [];
+      const cacheKey = `dash_${startDate || 'all'}_${endDate || 'all'}`;
+      let snapshot: any = null;
 
       if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < CACHE_TTL_MS) {
-        console.log('[Digisac] Serving tickets from cache');
-        tickets = cache[cacheKey].data;
+        console.log('[Digisac] Cache hit:', cacheKey);
+        snapshot = cache[cacheKey].data;
       } else {
-        console.log('[Digisac] Fetching fresh ticket data from Digisac');
-        // Digisac API: usa bracket notation simples. Apenas `createdAt` aceita gte/lte.
-        // `closedAt` com operadores retorna 500. `where` como JSON string também falha.
-        const params = new URLSearchParams();
-        params.append('where[isOpen]', 'false');
-        // Digisac usa `startedAt` / `endedAt` (não createdAt/closedAt)
-        if (startDate) params.append('where[startedAt][gte]', `${startDate}T00:00:00.000Z`);
-        if (endDate) params.append('where[startedAt][lte]', `${endDate}T23:59:59.999Z`);
-        params.append('limit', '500');
+        // Buscar fechados E abertos em paralelo
+        const [closedResult, openResult] = await Promise.all([
+          fetchAllTickets(digisacUrl, digisacToken, startDate, endDate, false),
+          fetchAllTickets(digisacUrl, digisacToken, startDate, endDate, true),
+        ]);
 
-        const ticketsRes = await fetchDigisac(digisacUrl, digisacToken, '/tickets', params);
-        if (!ticketsRes.ok) {
-          return handledErrorResponse(action, `Erro API Digisac: ${ticketsRes.status}`, {
-            code: 'DIGISAC_API_ERROR',
-            digisac_status: ticketsRes.status,
+        if (closedResult.lastError) {
+          return handledErrorResponse(action, `Erro API Digisac: ${closedResult.lastStatus}`, {
+            code: 'DIGISAC_API_ERROR', digisac_status: closedResult.lastStatus,
           });
         }
 
-        tickets = extractDigisacArray(ticketsRes.data);
+        const closed = closedResult.tickets;
+        const open = openResult.tickets;
+        const all = [...closed, ...open];
 
-        cache[cacheKey] = {
-          data: tickets,
-          timestamp: Date.now()
-        };
-      }
+        // Mapeamentos
+        const { data: mappings } = await supabaseClient
+          .from('digisac_analyst_mapping')
+          .select('digisac_user_id, digisac_user_name, analysts(id, name)');
 
-      // Fetch mappings from DB
-      const { data: mappings, error: mappingError } = await supabaseClient
-        .from('digisac_analyst_mapping')
-        .select(`
-          digisac_user_id,
-          analysts(id, name)
-        `);
-
-      if (mappingError) {
-        console.error('[Digisac] Mapping error:', mappingError.message);
-        return handledErrorResponse(action, 'Falha ao carregar o mapeamento de analistas.', { code: 'MAPPING_ERROR' });
-      }
-
-      // Process Data
-      let totalTickets = 0;
-      let totalTmaMinutes = 0;
-      let ticketsWithTmaCount = 0;
-
-      const analistasStats: Record<string, { id: string, name: string, total: number, tma_minutes: number, closed_count: number }> = {};
-
-      // Initialize mapped analysts
-      mappings?.forEach((m: any) => {
-        if (m.analysts) {
-           analistasStats[m.digisac_user_id] = {
-             id: m.analysts.id,
-             name: m.analysts.name,
-             total: 0,
-             tma_minutes: 0,
-             closed_count: 0
-           };
-        }
-      });
-
-      tickets.forEach((ticket: any) => {
-        totalTickets++;
-
-        const userId = ticket.userId || ticket.ownerId;
-        const startISO = ticket.startedAt || ticket.createdAt;
-        const endISO = ticket.endedAt || ticket.closedAt || ticket.updatedAt;
-
-        // Preferir métrica oficial do Digisac (em segundos), senão calcular
-        let diffMinutes = 0;
-        if (typeof ticket?.metrics?.ticketTime === 'number' && ticket.metrics.ticketTime > 0) {
-          diffMinutes = ticket.metrics.ticketTime / 60;
-        } else if (startISO && endISO) {
-          const opened = new Date(startISO).getTime();
-          const closed = new Date(endISO).getTime();
-          const d = (closed - opened) / 60000;
-          if (d > 0) diffMinutes = d;
-        }
-
-        if (diffMinutes > 0) {
-          totalTmaMinutes += diffMinutes;
-          ticketsWithTmaCount++;
-        }
-
-        if (userId && analistasStats[userId]) {
-          analistasStats[userId].total++;
-          if (diffMinutes > 0) {
-            analistasStats[userId].closed_count++;
-            analistasStats[userId].tma_minutes += diffMinutes;
+        const analistaInfo: Record<string, { id: string; name: string; mapped: boolean }> = {};
+        mappings?.forEach((m: any) => {
+          if (m.analysts) {
+            analistaInfo[m.digisac_user_id] = { id: m.analysts.id, name: m.analysts.name, mapped: true };
           }
-        }
-      });
-      console.log(`[Digisac] Processed ${totalTickets} tickets. Tickets with valid TMA: ${ticketsWithTmaCount}.`);
+        });
 
-      const tmaGeral = ticketsWithTmaCount > 0 ? (totalTmaMinutes / ticketsWithTmaCount) : 0;
+        // Cálculo de métricas
+        let sumTicketTime = 0, countTicketTime = 0;
+        let sumWaitingTime = 0, countWaitingTime = 0;
+        let sumFirstWaiting = 0, countFirstWaiting = 0;
+        let sumMessages = 0;
+        const contatosSet = new Set<string>();
+
+        const perAnalyst: Record<string, {
+          id: string; name: string; mapped: boolean;
+          fechados: number; abertos: number; total: number;
+          tma_sum: number; tma_count: number;
+        }> = {};
+
+        const ensureAnalyst = (userId: string): typeof perAnalyst[string] => {
+          if (!perAnalyst[userId]) {
+            const info = analistaInfo[userId];
+            perAnalyst[userId] = {
+              id: info?.id || userId,
+              name: info?.name || 'Não mapeado',
+              mapped: !!info,
+              fechados: 0, abertos: 0, total: 0,
+              tma_sum: 0, tma_count: 0,
+            };
+          }
+          return perAnalyst[userId];
+        };
+
+        all.forEach((t: any) => {
+          const userId = t.userId || t.ownerId;
+          const isOpen = !!t.isOpen;
+          const m = t.metrics || {};
+
+          if (t.contactId) contatosSet.add(t.contactId);
+          if (typeof m.messagingTime === 'number') {
+            // não somamos messagingTime; mensagens = via outra contagem se disponível
+          }
+          // Contagem de mensagens (se a API expuser)
+          if (typeof t.messagesCount === 'number') sumMessages += t.messagesCount;
+
+          // TMA — apenas em chamados fechados, usando metrics.ticketTime (segundos)
+          let ticketTimeMin = 0;
+          if (!isOpen) {
+            if (typeof m.ticketTime === 'number' && m.ticketTime > 0) {
+              ticketTimeMin = m.ticketTime / 60;
+            } else if (t.startedAt && t.endedAt) {
+              const d = (new Date(t.endedAt).getTime() - new Date(t.startedAt).getTime()) / 60000;
+              if (d > 0) ticketTimeMin = d;
+            }
+            if (ticketTimeMin > 0) {
+              sumTicketTime += ticketTimeMin;
+              countTicketTime++;
+            }
+          }
+
+          // Tempo médio de espera total
+          if (typeof m.waitingTime === 'number' && m.waitingTime > 0) {
+            sumWaitingTime += m.waitingTime / 60;
+            countWaitingTime++;
+          }
+          // 1º tempo de espera
+          const firstWait = m.firstWaitingTime ?? m.waitingTimeFirst ?? null;
+          if (typeof firstWait === 'number' && firstWait > 0) {
+            sumFirstWaiting += firstWait / 60;
+            countFirstWaiting++;
+          }
+
+          if (userId) {
+            const a = ensureAnalyst(userId);
+            a.total++;
+            if (isOpen) a.abertos++; else a.fechados++;
+            if (!isOpen && ticketTimeMin > 0) {
+              a.tma_sum += ticketTimeMin;
+              a.tma_count++;
+            }
+          }
+        });
+
+        snapshot = {
+          totals: {
+            total_chamados: all.length,
+            total_fechados: closed.length,
+            total_abertos: open.length,
+            total_mensagens: sumMessages,
+            total_contatos: contatosSet.size,
+            tma_geral_minutos: countTicketTime > 0 ? sumTicketTime / countTicketTime : 0,
+            tempo_espera_minutos: countWaitingTime > 0 ? sumWaitingTime / countWaitingTime : 0,
+            primeira_resposta_minutos: countFirstWaiting > 0 ? sumFirstWaiting / countFirstWaiting : 0,
+          },
+          analistas: Object.values(perAnalyst).map(a => ({
+            analyst_id: a.id,
+            name: a.name,
+            mapped: a.mapped,
+            total_chamados: a.total,
+            chamados_fechados: a.fechados,
+            chamados_abertos: a.abertos,
+            tma_minutos: a.tma_count > 0 ? a.tma_sum / a.tma_count : 0,
+          })),
+        };
+
+        cache[cacheKey] = { data: snapshot, timestamp: Date.now() };
+        console.log('[Digisac] Snapshot:', JSON.stringify(snapshot.totals));
+      }
 
       if (action === 'geral') {
         return jsonResponse({
-          total_chamados: totalTickets,
-          tma_geral_minutos: tmaGeral,
-          total: totalTickets,
-          analistas: Object.values(analistasStats),
+          ...snapshot.totals,
+          total: snapshot.totals.total_chamados,
+          analistas: snapshot.analistas,
         });
       }
-
-      if (action === 'analistas') {
-        const result = Object.values(analistasStats).map(stat => ({
-          analyst_id: stat.id,
-          name: stat.name,
-          total_chamados: stat.total,
-          tma_minutos: stat.closed_count > 0 ? (stat.tma_minutes / stat.closed_count) : 0
-        }));
-
-        return jsonResponse(result);
-      }
+      // analistas
+      return jsonResponse(snapshot.analistas);
     }
 
+    // ---------- LISTAR USUÁRIOS DIGISAC ----------
     if (action === 'listar_digisac_users') {
       const cacheKey = 'digisac_users';
       if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < CACHE_TTL_MS) {
-        console.log('[Digisac] Serving users from cache');
         return jsonResponse(cache[cacheKey].data);
       }
-
-      const usersRes = await fetchDigisac(digisacUrl, digisacToken, '/users');
-      if (!usersRes.ok) {
-        return handledErrorResponse(action, `Erro API Digisac: ${usersRes.status}`, {
-          code: 'DIGISAC_API_ERROR',
-          digisac_status: usersRes.status,
+      const r = await fetchDigisac(digisacUrl, digisacToken, '/users');
+      if (!r.ok) {
+        return handledErrorResponse(action, `Erro API Digisac: ${r.status}`, {
+          code: 'DIGISAC_API_ERROR', digisac_status: r.status,
         });
       }
-
-      const users = extractDigisacArray(usersRes.data);
-      cache[cacheKey] = {
-        data: users,
-        timestamp: Date.now(),
-      };
-
+      const users = extractDigisacArray(r.data);
+      cache[cacheKey] = { data: users, timestamp: Date.now() };
       return jsonResponse(users);
     }
 
     return handledErrorResponse(action, 'Ação inválida.', { code: 'INVALID_ACTION' });
-
   } catch (error: any) {
-    console.error('[Edge Function Error] Processing request failed:', error.message || error);
-    return handledErrorResponse(action, error.message || 'Internal Edge Function Error', { code: 'UNEXPECTED_ERROR' });
+    console.error('[Edge Function Error]', error?.message || error);
+    return handledErrorResponse(action, error?.message || 'Internal Edge Function Error', { code: 'UNEXPECTED_ERROR' });
   }
 });
