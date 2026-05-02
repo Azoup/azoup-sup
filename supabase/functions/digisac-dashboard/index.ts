@@ -82,7 +82,10 @@ const getTodayBrazilDate = () => {
 };
 
 const buildDigisacUrl = (baseUrl: string, endpoint: string, params?: URLSearchParams) => {
-  const normalizedBase = baseUrl.replace(/\/+$/, "");
+  const endpointHasApiPrefix = endpoint.startsWith("/api/v1/");
+  const normalizedBase = endpointHasApiPrefix
+    ? baseUrl.replace(/\/api\/v1\/?$/i, "").replace(/\/+$/, "")
+    : baseUrl.replace(/\/+$/, "");
   const normalizedEp = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
   const qs = params?.toString();
   return `${normalizedBase}${normalizedEp}${qs ? `?${qs}` : ""}`;
