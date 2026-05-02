@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { DigisacMappingModal } from "@/components/DigisacMappingModal";
 import { digisacApi } from "@/integrations/digisac/api";
 import { Clock, Ticket, Users, Filter, MessageSquare, Hourglass, Timer, CheckCircle2, CircleDot } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, LabelList } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertCircle } from "lucide-react";
 
@@ -41,20 +41,48 @@ export default function DigisacDashboard() {
   };
 
   const formatTma = (minutes: number) => {
-    if (!minutes) return "0h 0m";
-    const h = Math.floor(minutes / 60);
-    const m = Math.floor(minutes % 60);
-    return `${h}h ${m}m`;
+    if (!minutes || minutes <= 0) return "0m";
+    const totalSeconds = Math.round(minutes * 60);
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
   };
 
-  const chartData = analistas?.map(a => ({
-    name: a.name,
-    'Chamados': a.total_chamados,
-    'TMA (min)': Math.round(a.tma_minutos)
-  })) || [];
+  // Logs de debug solicitados
+  console.log('[DigisacDashboard] geral recebido:', geral);
+  console.log('[DigisacDashboard] analistas recebidos:', analistas);
+
+  const analistasList = analistas ?? [];
+
+  // Gráfico TMA por analista (ordenado do MAIOR para o MENOR)
+  const tmaChartData = [...analistasList]
+    .sort((a, b) => b.tma_minutos - a.tma_minutos)
+    .map(a => ({
+      name: a.name,
+      tma: Math.round(a.tma_minutos * 60), // segundos para tooltip preciso
+      tmaMin: a.tma_minutos,
+      label: formatTma(a.tma_minutos),
+    }));
+
+  // Gráfico Chamados por analista (ordenado do MAIOR para o MENOR de fechados)
+  const chamadosChartData = [...analistasList]
+    .sort((a, b) => (b.chamados_fechados ?? 0) - (a.chamados_fechados ?? 0))
+    .map(a => ({
+      name: a.name,
+      Fechados: a.chamados_fechados ?? 0,
+      Abertos: a.chamados_abertos ?? 0,
+    }));
+
+  const totalChamadosFechados = chamadosChartData.reduce((acc, a) => acc + a.Fechados, 0);
+  const mediaTmaMinutos = analistasList.length
+    ? analistasList.reduce((acc, a) => acc + (a.tma_minutos || 0), 0) / analistasList.length
+    : 0;
 
   const hasError = isErrorGeral || isErrorAnalistas;
-  const hasData = (geral?.total_chamados || 0) > 0 || chartData.length > 0;
+  const hasData = (geral?.total_chamados || 0) > 0 || analistasList.length > 0;
   const showEmptyState = !hasError && !isLoadingGeral && !isLoadingAnalistas && !hasData;
 
   return (
@@ -204,31 +232,79 @@ export default function DigisacDashboard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        {/* Gráfico */}
+        {/* Gráfico TMA por Analista */}
         <Card className="glass-card border-none shadow-sm col-span-1">
           <CardHeader>
-            <CardTitle>Chamados por Analista</CardTitle>
-            <CardDescription>Distribuição de chamados finalizados</CardDescription>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <CardTitle>Tempo médio por analista</CardTitle>
+                <CardDescription>Ordenado do maior para o menor (TMA)</CardDescription>
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-muted-foreground">Média geral</div>
+                <div className="text-sm font-semibold">{formatTma(mediaTmaMinutos)}</div>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="h-[350px]">
             {isLoadingAnalistas ? (
               <div className="flex h-full items-center justify-center text-muted-foreground">Carregando gráfico...</div>
-            ) : chartData.length > 0 ? (
+            ) : tmaChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--muted-foreground)/0.2)" />
-                  <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis fontSize={12} tickLine={false} axisLine={false} />
-                  <RechartsTooltip 
+                <BarChart data={tmaChartData} layout="vertical" margin={{ top: 10, right: 60, left: 10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--muted-foreground)/0.2)" />
+                  <XAxis type="number" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => formatTma(v / 60)} />
+                  <YAxis type="category" dataKey="name" fontSize={11} tickLine={false} axisLine={false} width={120} />
+                  <RechartsTooltip
+                    cursor={{ fill: 'hsl(var(--muted)/0.5)' }}
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    formatter={(_v: any, _n: any, item: any) => [formatTma(item?.payload?.tmaMin ?? 0), 'TMA']}
+                  />
+                  <Bar dataKey="tma" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} maxBarSize={22}>
+                    <LabelList dataKey="label" position="right" fontSize={11} fill="hsl(var(--foreground))" />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center text-muted-foreground">Nenhum dado encontrado para o período selecionado.</div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Gráfico Chamados por Analista */}
+        <Card className="glass-card border-none shadow-sm col-span-1">
+          <CardHeader>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <CardTitle>Chamados por analista</CardTitle>
+                <CardDescription>Distribuição de chamados fechados x abertos</CardDescription>
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-muted-foreground">Total fechados</div>
+                <div className="text-sm font-semibold">{totalChamadosFechados}</div>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="h-[350px]">
+            {isLoadingAnalistas ? (
+              <div className="flex h-full items-center justify-center text-muted-foreground">Carregando gráfico...</div>
+            ) : chamadosChartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chamadosChartData} layout="vertical" margin={{ top: 10, right: 30, left: 10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--muted-foreground)/0.2)" />
+                  <XAxis type="number" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                  <YAxis type="category" dataKey="name" fontSize={11} tickLine={false} axisLine={false} width={120} />
+                  <RechartsTooltip
                     cursor={{ fill: 'hsl(var(--muted)/0.5)' }}
                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                   />
                   <Legend />
-                  <Bar dataKey="Chamados" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                  <Bar dataKey="Fechados" stackId="a" fill="hsl(var(--primary))" radius={[0, 0, 0, 0]} maxBarSize={22} />
+                  <Bar dataKey="Abertos" stackId="a" fill="hsl(var(--muted-foreground)/0.5)" radius={[0, 4, 4, 0]} maxBarSize={22} />
                 </BarChart>
               </ResponsiveContainer>
-             ) : (
-                <div className="flex h-full items-center justify-center text-muted-foreground">Nenhum dado encontrado para o período selecionado.</div>
+            ) : (
+              <div className="flex h-full items-center justify-center text-muted-foreground">Nenhum dado encontrado para o período selecionado.</div>
             )}
           </CardContent>
         </Card>
