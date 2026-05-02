@@ -41,19 +41,19 @@ function isDigisacErrorPayload(value: unknown): value is DigisacErrorPayload {
   return !!value && typeof value === 'object' && ('error' in (value as Record<string, unknown>) || 'message' in (value as Record<string, unknown>));
 }
 
-function toUtcBoundary(date: string | undefined, boundary: 'start' | 'end'): string | undefined {
+function normalizeDateOnly(date: string | undefined): string | undefined {
   if (!date) return undefined;
 
   const isoDateOnly = /^\d{4}-\d{2}-\d{2}$/;
-  if (isoDateOnly.test(date)) {
-    return boundary === 'start'
-      ? `${date}T00:00:00Z`
-      : `${date}T23:59:59Z`;
-  }
+  if (isoDateOnly.test(date)) return date;
 
   const parsed = new Date(date);
   if (Number.isNaN(parsed.getTime())) return undefined;
-  return parsed.toISOString().replace('.000Z', 'Z');
+
+  const year = parsed.getUTCFullYear();
+  const month = String(parsed.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /**
@@ -92,15 +92,15 @@ async function invokeDigisac<T>(action: string, payload: Record<string, any> = {
 export const digisacApi = {
   async getDashboardGeral(startDate?: string, endDate?: string): Promise<DigisacGeralResponse> {
     return invokeDigisac<DigisacGeralResponse>('geral', {
-      startDate: toUtcBoundary(startDate, 'start'),
-      endDate: toUtcBoundary(endDate, 'end'),
+      startDate: normalizeDateOnly(startDate),
+      endDate: normalizeDateOnly(endDate),
     });
   },
 
   async getDashboardAnalistas(startDate?: string, endDate?: string): Promise<DigisacAnalystStats[]> {
     return invokeDigisac<DigisacAnalystStats[]>('analistas', {
-      startDate: toUtcBoundary(startDate, 'start'),
-      endDate: toUtcBoundary(endDate, 'end'),
+      startDate: normalizeDateOnly(startDate),
+      endDate: normalizeDateOnly(endDate),
     });
   },
 
