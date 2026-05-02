@@ -316,18 +316,39 @@ Deno.serve(async (req) => {
           });
         }
 
+        // Buscar lista de usuários (cache separado) e em seguida métricas por usuário
+        const usersCacheKey = "digisac_users_raw";
+        let users: Array<{ id: string; name: string }> = cache[usersCacheKey]?.data;
+        if (!users || Date.now() - cache[usersCacheKey].timestamp >= CACHE_TTL_MS) {
+          const ru = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/users");
+          const list = Array.isArray(ru.data?.data) ? ru.data.data : Array.isArray(ru.data) ? ru.data : [];
+          users = list
+            .filter((u: any) => u && u.id && !u.deletedAt && u.isClientUser !== true)
+            .map((u: any) => ({ id: String(u.id), name: u.name || u.email || "Sem nome" }));
+          cache[usersCacheKey] = { data: users, timestamp: Date.now() };
+        }
+
+        console.log("[Digisac] Buscando stats por analista para", users.length, "usuários");
+        const analystResults = await Promise.all(
+          users.map((u) => fetchAnalystStats(digisacUrl, digisacToken, u, startPeriod, endPeriod))
+        );
+
+        // Ordenar por TMA desc (padrão Digisac) — frontend pode reordenar
+        const analistas = analystResults.sort((a, b) => b.tma_minutos - a.tma_minutos);
+
         snapshot = {
           totals: mapGeneralPayload(response.data),
-          analistas: mapAnalystsPayload(response.data),
+          analistas,
           rawMeta: {
             startPeriod,
             endPeriod,
             responseKeys: Object.keys(response.data || {}),
+            totalAnalysts: analistas.length,
           },
         };
 
         cache[cacheKey] = { data: snapshot, timestamp: Date.now() };
-        console.log("[Digisac] Resultado final enviado ao frontend:", JSON.stringify(snapshot));
+        console.log("[Digisac] Resultado final enviado ao frontend:", JSON.stringify(snapshot.totals), "analistas:", analistas.length);
       }
 
       if (action === "geral") {
@@ -346,7 +367,7 @@ Deno.serve(async (req) => {
       if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < CACHE_TTL_MS) {
         return jsonResponse(cache[cacheKey].data);
       }
-      const r = await fetchDigisac(digisacUrl, digisacToken, "/users");
+      const r = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/users");
       if (!r.ok) {
         return handledErrorResponse(action, `Erro API Digisac: ${r.status}`, {
           code: "DIGISAC_API_ERROR",
