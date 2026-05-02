@@ -41,20 +41,48 @@ export default function DigisacDashboard() {
   };
 
   const formatTma = (minutes: number) => {
-    if (!minutes) return "0h 0m";
-    const h = Math.floor(minutes / 60);
-    const m = Math.floor(minutes % 60);
-    return `${h}h ${m}m`;
+    if (!minutes || minutes <= 0) return "0m";
+    const totalSeconds = Math.round(minutes * 60);
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
   };
 
-  const chartData = analistas?.map(a => ({
-    name: a.name,
-    'Chamados': a.total_chamados,
-    'TMA (min)': Math.round(a.tma_minutos)
-  })) || [];
+  // Logs de debug solicitados
+  console.log('[DigisacDashboard] geral recebido:', geral);
+  console.log('[DigisacDashboard] analistas recebidos:', analistas);
+
+  const analistasList = analistas ?? [];
+
+  // Gráfico TMA por analista (ordenado do MAIOR para o MENOR)
+  const tmaChartData = [...analistasList]
+    .sort((a, b) => b.tma_minutos - a.tma_minutos)
+    .map(a => ({
+      name: a.name,
+      tma: Math.round(a.tma_minutos * 60), // segundos para tooltip preciso
+      tmaMin: a.tma_minutos,
+      label: formatTma(a.tma_minutos),
+    }));
+
+  // Gráfico Chamados por analista (ordenado do MAIOR para o MENOR de fechados)
+  const chamadosChartData = [...analistasList]
+    .sort((a, b) => (b.chamados_fechados ?? 0) - (a.chamados_fechados ?? 0))
+    .map(a => ({
+      name: a.name,
+      Fechados: a.chamados_fechados ?? 0,
+      Abertos: a.chamados_abertos ?? 0,
+    }));
+
+  const totalChamadosFechados = chamadosChartData.reduce((acc, a) => acc + a.Fechados, 0);
+  const mediaTmaMinutos = analistasList.length
+    ? analistasList.reduce((acc, a) => acc + (a.tma_minutos || 0), 0) / analistasList.length
+    : 0;
 
   const hasError = isErrorGeral || isErrorAnalistas;
-  const hasData = (geral?.total_chamados || 0) > 0 || chartData.length > 0;
+  const hasData = (geral?.total_chamados || 0) > 0 || analistasList.length > 0;
   const showEmptyState = !hasError && !isLoadingGeral && !isLoadingAnalistas && !hasData;
 
   return (
