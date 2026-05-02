@@ -153,16 +153,16 @@ const firstArray = (payload: any, keys: string[]) => {
 };
 
 const mapGeneralPayload = (payload: any) => {
-  const totals = payload?.totals ?? payload?.data?.totals ?? payload?.data ?? payload;
-  const totalChamados = pickByKeys(totals, ["totalTickets", "total_chamados", "ticketsTotal", "total", "attendanceCount"]);
-  const totalFechados = pickByKeys(totals, ["closedTickets", "total_fechados", "finishedTickets", "closed"]);
-  const totalAbertos = pickByKeys(totals, ["openTickets", "total_abertos", "openedTickets", "open"]);
-  const totalMensagens = pickByKeys(totals, ["totalMessages", "total_mensagens", "messagesTotal", "messages"]);
-  const totalContatos = pickByKeys(totals, ["totalContacts", "total_contatos", "contactsTotal", "contacts"]);
+  const totals = payload?.totals ?? payload?.data?.totals ?? payload?.data ?? payload ?? {};
+  const totalChamados = pickByKeys(totals, ["totalTicketsCount", "totalTickets", "total_chamados", "ticketsTotal", "total", "attendanceCount"]);
+  const totalFechados = pickByKeys(totals, ["closedTicketsCount", "closedTickets", "total_fechados", "finishedTickets", "closed"]);
+  const totalAbertos = pickByKeys(totals, ["openedTicketsCount", "openTickets", "total_abertos", "openedTickets", "open"]);
+  const totalMensagens = pickByKeys(totals, ["totalMessagesCount", "totalMessages", "total_mensagens", "messagesTotal", "messages"]);
+  const totalContatos = pickByKeys(totals, ["contactsCount", "totalContacts", "total_contatos", "contactsTotal", "contacts"]);
 
   const ticketTimeMinutes = minutesFromSeconds(pickByKeys(totals, ["ticketTime", "avgTicketTime", "averageTicketTime", "tma"]));
-  const waitingTimeMinutes = minutesFromSeconds(pickByKeys(totals, ["waitingTime", "avgWaitingTime", "averageWaitingTime"]));
-  const firstWaitingMinutes = minutesFromSeconds(pickByKeys(totals, ["firstWaitingTime", "avgFirstWaitingTime", "averageFirstWaitingTime", "firstResponseTime"]));
+  const waitingTimeMinutes = minutesFromSeconds(pickByKeys(totals, ["waitingTimeAvg", "waitingTime", "avgWaitingTime", "averageWaitingTime"]));
+  const firstWaitingMinutes = minutesFromSeconds(pickByKeys(totals, ["firstWaitingTime", "avgFirstWaitingTime", "averageFirstWaitingTime", "firstResponseTime", "waitingTimeAfterBot"]));
 
   return {
     total_chamados: totalChamados,
@@ -176,24 +176,45 @@ const mapGeneralPayload = (payload: any) => {
   };
 };
 
-const mapAnalystsPayload = (payload: any) => {
-  const analystRows = firstArray(payload?.data ?? payload, ["users", "attendants", "analysts", "byUser", "rows"]);
-
-  return analystRows.map((item: any, index: number) => {
-    const metrics = item?.totals ?? item?.metrics ?? item;
-    const id = String(item?.userId ?? item?.id ?? item?.user?.id ?? `row-${index}`);
-    const name = item?.name ?? item?.user?.name ?? item?.attendantName ?? item?.label ?? "Não mapeado";
-
-    return {
-      analyst_id: id,
-      name,
-      mapped: true,
-      total_chamados: pickByKeys(metrics, ["totalTickets", "total_chamados", "ticketsTotal", "total"]),
-      chamados_fechados: pickByKeys(metrics, ["closedTickets", "total_fechados", "finishedTickets", "closed"]),
-      chamados_abertos: pickByKeys(metrics, ["openTickets", "total_abertos", "openedTickets", "open"]),
-      tma_minutos: minutesFromSeconds(pickByKeys(metrics, ["ticketTime", "avgTicketTime", "averageTicketTime", "tma"])),
-    };
+const fetchAnalystStats = async (
+  baseUrl: string,
+  token: string,
+  user: { id: string; name: string },
+  startPeriod: string,
+  endPeriod: string,
+) => {
+  const params = new URLSearchParams({
+    startPeriod,
+    endPeriod,
+    periodType: "openDate",
+    userId: user.id,
+    status: "all",
+    withTotals: "true",
   });
+  try {
+    const r = await fetchDigisac(baseUrl, token, "/api/v1/dashboard/general", params);
+    const totals = r.ok ? mapGeneralPayload(r.data) : null;
+    return {
+      analyst_id: user.id,
+      name: user.name,
+      mapped: true,
+      total_chamados: totals?.total_chamados ?? 0,
+      chamados_fechados: totals?.total_fechados ?? 0,
+      chamados_abertos: totals?.total_abertos ?? 0,
+      tma_minutos: totals?.tma_geral_minutos ?? 0,
+    };
+  } catch (e) {
+    console.error("[Digisac] Erro buscando stats do analista", user.id, e);
+    return {
+      analyst_id: user.id,
+      name: user.name,
+      mapped: true,
+      total_chamados: 0,
+      chamados_fechados: 0,
+      chamados_abertos: 0,
+      tma_minutos: 0,
+    };
+  }
 };
 
 Deno.serve(async (req) => {
