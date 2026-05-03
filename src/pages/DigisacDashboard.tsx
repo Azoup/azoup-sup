@@ -23,22 +23,29 @@ export default function DigisacDashboard() {
   const today = getTodayDateInputValue();
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
-  const [filters, setFilters] = useState({ start: today, end: today });
+  const [departmentId, setDepartmentId] = useState<string>("all");
+  const [filters, setFilters] = useState({ start: today, end: today, departmentId: "all" });
+
+  const { data: departments } = useQuery({
+    queryKey: ['digisac-departments'],
+    queryFn: () => digisacApi.getDepartments(),
+    staleTime: 10 * 60 * 1000,
+  });
 
   const { data: geral, isLoading: isLoadingGeral, isError: isErrorGeral, error: errorGeral } = useQuery({
-    queryKey: ['digisac-geral', filters.start, filters.end],
-    queryFn: () => digisacApi.getDashboardGeral(filters.start || undefined, filters.end || undefined),
+    queryKey: ['digisac-geral', filters.start, filters.end, filters.departmentId],
+    queryFn: () => digisacApi.getDashboardGeral(filters.start || undefined, filters.end || undefined, filters.departmentId),
     refetchInterval: 5 * 60 * 1000
   });
 
   const { data: analistas, isLoading: isLoadingAnalistas, isError: isErrorAnalistas, error: errorAnalistas } = useQuery({
-    queryKey: ['digisac-analistas', filters.start, filters.end],
-    queryFn: () => digisacApi.getDashboardAnalistas(filters.start || undefined, filters.end || undefined),
+    queryKey: ['digisac-analistas', filters.start, filters.end, filters.departmentId],
+    queryFn: () => digisacApi.getDashboardAnalistas(filters.start || undefined, filters.end || undefined, filters.departmentId),
     refetchInterval: 5 * 60 * 1000
   });
 
   const applyFilters = () => {
-    setFilters({ start: startDate, end: endDate });
+    setFilters({ start: startDate, end: endDate, departmentId });
   };
 
   const formatTma = (minutes: number) => {
