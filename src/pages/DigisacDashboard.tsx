@@ -103,7 +103,7 @@ export default function DigisacDashboard() {
           </p>
         </div>
         <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-end gap-2 flex-wrap">
             <div className="flex flex-col gap-1">
               <span className="text-xs text-muted-foreground">Data Inicial</span>
               <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-[140px] h-9" />
@@ -112,19 +112,27 @@ export default function DigisacDashboard() {
               <span className="text-xs text-muted-foreground">Data Final</span>
               <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-[140px] h-9" />
             </div>
-            <div className="flex flex-col gap-1 justify-end h-full">
-              <span className="text-xs opacity-0">.</span>
-              <Button onClick={applyFilters} className="h-9 gap-2">
-                <Filter className="w-4 h-4" />
-                Aplicar
-              </Button>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-muted-foreground">Departamento</span>
+              <Select value={departmentId} onValueChange={setDepartmentId}>
+                <SelectTrigger className="w-[200px] h-9">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os departamentos</SelectItem>
+                  {departments?.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+            <Button onClick={applyFilters} className="h-9 gap-2">
+              <Filter className="w-4 h-4" />
+              Aplicar
+            </Button>
           </div>
           <div className="hidden sm:block w-px h-10 bg-border mx-1"></div>
-          <div className="flex flex-col gap-1 justify-end h-full">
-            <span className="text-xs opacity-0">.</span>
-            <DigisacMappingModal />
-          </div>
+          <DigisacMappingModal />
         </div>
       </div>
 
