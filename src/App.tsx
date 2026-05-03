@@ -84,7 +84,7 @@ const App = () => (
             <Route path="/kanban-dev" element={<ProtectedRoute screen="kanban_dev"><KanbanDev /></ProtectedRoute>} />
             <Route path="/dashboard-dev" element={<ProtectedRoute screen="dashboard_dev"><DashboardDev /></ProtectedRoute>} />
             <Route path="/developers" element={<ProtectedRoute screen="developers"><Developers /></ProtectedRoute>} />
-            <Route path="/digisac-dashboard" element={<ProtectedRoute><DigisacDashboard /></ProtectedRoute>} />
+            <Route path="/digisac-dashboard" element={<ProtectedRoute screen="digisac_dashboard"><DigisacDashboard /></ProtectedRoute>} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
