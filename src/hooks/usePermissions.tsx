@@ -20,6 +20,7 @@ const DEFAULT_USER_PERMISSIONS: Record<string, boolean> = {
   analysts_edit: false,
   analysts_delete: false,
   dashboard_view: false,
+  digisac_dashboard_view: false,
   dashboard_bu_view: false,
   entries_view: false,
   entries_bu_view: false,
