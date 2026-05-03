@@ -154,6 +154,7 @@ const firstArray = (payload: any, keys: string[]) => {
 
 const mapGeneralPayload = (payload: any) => {
   const totals = payload?.totals ?? payload?.data?.totals ?? payload?.data ?? payload ?? {};
+  console.log("[Digisac] mapGeneralPayload keys:", Object.keys(totals || {}));
   const totalChamados = pickByKeys(totals, ["totalTicketsCount", "totalTickets", "total_chamados", "ticketsTotal", "total", "attendanceCount"]);
   const totalFechados = pickByKeys(totals, ["closedTicketsCount", "closedTickets", "total_fechados", "finishedTickets", "closed"]);
   const totalAbertos = pickByKeys(totals, ["openedTicketsCount", "openTickets", "total_abertos", "openedTickets", "open"]);
