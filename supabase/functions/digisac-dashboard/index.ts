@@ -183,6 +183,7 @@ const fetchAnalystStats = async (
   user: { id: string; name: string },
   startPeriod: string,
   endPeriod: string,
+  departmentId?: string,
 ) => {
   const params = new URLSearchParams({
     startPeriod,
@@ -192,6 +193,7 @@ const fetchAnalystStats = async (
     status: "all",
     withTotals: "true",
   });
+  if (departmentId && departmentId !== "all") params.set("departmentId", departmentId);
   try {
     const r = await fetchDigisac(baseUrl, token, "/api/v1/dashboard/general", params);
     const totals = r.ok ? mapGeneralPayload(r.data) : null;
@@ -202,6 +204,8 @@ const fetchAnalystStats = async (
       total_chamados: totals?.total_chamados ?? 0,
       chamados_fechados: totals?.total_fechados ?? 0,
       chamados_abertos: totals?.total_abertos ?? 0,
+      total_contatos: totals?.total_contatos ?? 0,
+      total_mensagens: totals?.total_mensagens ?? 0,
       tma_minutos: totals?.tma_geral_minutos ?? 0,
     };
   } catch (e) {
@@ -213,8 +217,12 @@ const fetchAnalystStats = async (
       total_chamados: 0,
       chamados_fechados: 0,
       chamados_abertos: 0,
+      total_contatos: 0,
+      total_mensagens: 0,
       tma_minutos: 0,
     };
+  }
+};
   }
 };
 
