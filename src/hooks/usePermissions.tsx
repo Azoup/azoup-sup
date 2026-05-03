@@ -84,4 +84,5 @@ export const ROUTE_SCREEN_MAP: Record<string, string> = {
   '/kanban-dev': 'kanban_dev',
   '/dashboard-dev': 'dashboard_dev',
   '/developers': 'developers',
+  '/digisac-dashboard': 'digisac_dashboard',
 };
