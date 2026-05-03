@@ -94,8 +94,8 @@ export default function DigisacDashboard() {
   const showEmptyState = !hasError && !isLoadingGeral && !isLoadingAnalistas && !hasData;
 
   return (
-    <div className="container mx-auto py-8 space-y-8 fade-in">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="container mx-auto py-8 space-y-8 fade-in max-w-full overflow-x-hidden">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 w-full">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Dashboard Digisac</h1>
           <p className="text-muted-foreground mt-1">
