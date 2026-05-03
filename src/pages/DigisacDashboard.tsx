@@ -94,45 +94,43 @@ export default function DigisacDashboard() {
   const showEmptyState = !hasError && !isLoadingGeral && !isLoadingAnalistas && !hasData;
 
   return (
-    <div className="container mx-auto py-8 space-y-8 fade-in">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="container mx-auto py-8 space-y-8 fade-in max-w-full overflow-x-hidden">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 w-full">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Dashboard Digisac</h1>
           <p className="text-muted-foreground mt-1">
             Métricas de atendimento integradas com o sistema de chamados.
           </p>
         </div>
-        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
-          <div className="flex items-end gap-2 flex-wrap">
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">Data Inicial</span>
-              <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-[140px] h-9" />
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">Data Final</span>
-              <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-[140px] h-9" />
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">Departamento</span>
-              <Select value={departmentId} onValueChange={setDepartmentId}>
-                <SelectTrigger className="w-[200px] h-9">
-                  <SelectValue placeholder="Todos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os departamentos</SelectItem>
-                  {departments?.map((d) => (
-                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button onClick={applyFilters} className="h-9 gap-2">
-              <Filter className="w-4 h-4" />
-              Aplicar
-            </Button>
+        <div className="flex flex-wrap items-end gap-3 w-full sm:w-auto">
+          <div className="flex flex-col gap-1 min-w-[130px] flex-1 sm:flex-none">
+            <span className="text-xs text-muted-foreground">Data Inicial</span>
+            <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full sm:w-[140px] h-9" />
           </div>
-          <div className="hidden sm:block w-px h-10 bg-border mx-1"></div>
-          <DigisacMappingModal />
+          <div className="flex flex-col gap-1 min-w-[130px] flex-1 sm:flex-none">
+            <span className="text-xs text-muted-foreground">Data Final</span>
+            <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full sm:w-[140px] h-9" />
+          </div>
+          <div className="flex flex-col gap-1 min-w-[160px] flex-1 basis-full sm:basis-auto sm:flex-none">
+            <span className="text-xs text-muted-foreground">Departamento</span>
+            <Select value={departmentId} onValueChange={setDepartmentId}>
+              <SelectTrigger className="w-full sm:w-[200px] max-w-full h-9 truncate">
+                <SelectValue placeholder="Todos" />
+              </SelectTrigger>
+              <SelectContent className="max-w-[90vw]">
+                <SelectItem value="all">Todos os departamentos</SelectItem>
+                {departments?.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={applyFilters} className="h-9 gap-2 shrink-0">
+            <Filter className="w-4 h-4" />
+            Aplicar
+          </Button>
+          <div className="hidden lg:block w-px h-10 bg-border mx-1"></div>
+          <div className="shrink-0"><DigisacMappingModal /></div>
         </div>
       </div>
 

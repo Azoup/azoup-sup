@@ -20,6 +20,7 @@ const DEFAULT_USER_PERMISSIONS: Record<string, boolean> = {
   analysts_edit: false,
   analysts_delete: false,
   dashboard_view: false,
+  digisac_dashboard_view: false,
   dashboard_bu_view: false,
   entries_view: false,
   entries_bu_view: false,
@@ -83,4 +84,5 @@ export const ROUTE_SCREEN_MAP: Record<string, string> = {
   '/kanban-dev': 'kanban_dev',
   '/dashboard-dev': 'dashboard_dev',
   '/developers': 'developers',
+  '/digisac-dashboard': 'digisac_dashboard',
 };
