@@ -18,7 +18,14 @@ export interface DigisacAnalystStats {
   total_chamados: number;
   chamados_fechados: number;
   chamados_abertos: number;
+  total_contatos?: number;
+  total_mensagens?: number;
   tma_minutos: number;
+}
+
+export interface DigisacDepartment {
+  id: string;
+  name: string;
 }
 
 export interface DigisacUser {
