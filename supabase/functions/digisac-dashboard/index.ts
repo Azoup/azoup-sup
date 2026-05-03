@@ -271,6 +271,25 @@ Deno.serve(async (req) => {
       if (claimsError || !claimsData?.claims?.sub) {
         return handledErrorResponse(action, "Usuário não autenticado.", { code: "UNAUTHORIZED" });
       }
+
+      // Permission check (digisac_dashboard) — admins always allowed
+      const userId = claimsData.claims.sub as string;
+      const protectedActions = new Set(["geral", "analistas", "listar_departments", "listar_digisac_users"]);
+      if (protectedActions.has(action ?? "")) {
+        const adminClient = createClient(
+          Deno.env.get("SUPABASE_URL") ?? "",
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+        );
+        const [{ data: roleRow }, { data: permRow }] = await Promise.all([
+          adminClient.from("user_roles").select("role").eq("user_id", userId).eq("role", "admin").maybeSingle(),
+          adminClient.from("user_permissions").select("allowed").eq("user_id", userId).eq("permission_key", "digisac_dashboard_view").maybeSingle(),
+        ]);
+        const isAdmin = !!roleRow;
+        const allowed = isAdmin || permRow?.allowed === true;
+        if (!allowed) {
+          return handledErrorResponse(action, "Sem permissão para acessar o Dashboard Digisac.", { code: "FORBIDDEN" });
+        }
+      }
     }
 
     const digisacUrl = Deno.env.get("DIGISAC_API_URL");
