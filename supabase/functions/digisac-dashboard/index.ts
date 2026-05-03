@@ -362,7 +362,7 @@ Deno.serve(async (req) => {
         );
 
         const analistas = analystResults
-          .filter((a) => a.total_chamados > 0 || a.tma_minutos > 0)
+          .filter((a) => (a.total_chamados ?? 0) > 0)
           .sort((a, b) => b.tma_minutos - a.tma_minutos);
 
         snapshot = {
