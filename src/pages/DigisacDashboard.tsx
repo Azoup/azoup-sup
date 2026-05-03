@@ -342,6 +342,8 @@ export default function DigisacDashboard() {
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead className="text-right">Fechados</TableHead>
                     <TableHead className="text-right">Abertos</TableHead>
+                    <TableHead className="text-right">Contatos</TableHead>
+                    <TableHead className="text-right">Mensagens</TableHead>
                     <TableHead className="text-right">TMA</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -357,11 +359,13 @@ export default function DigisacDashboard() {
                       <TableCell className="text-right">{analyst.total_chamados}</TableCell>
                       <TableCell className="text-right">{analyst.chamados_fechados ?? 0}</TableCell>
                       <TableCell className="text-right">{analyst.chamados_abertos ?? 0}</TableCell>
+                      <TableCell className="text-right">{analyst.total_contatos ?? 0}</TableCell>
+                      <TableCell className="text-right">{analyst.total_mensagens ?? 0}</TableCell>
                       <TableCell className="text-right">{formatTma(analyst.tma_minutos)}</TableCell>
                     </TableRow>
                   )) : (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
+                      <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
                          Nenhum dado encontrado para o período selecionado.
                       </TableCell>
                     </TableRow>
