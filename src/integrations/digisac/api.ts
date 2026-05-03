@@ -18,7 +18,14 @@ export interface DigisacAnalystStats {
   total_chamados: number;
   chamados_fechados: number;
   chamados_abertos: number;
+  total_contatos?: number;
+  total_mensagens?: number;
   tma_minutos: number;
+}
+
+export interface DigisacDepartment {
+  id: string;
+  name: string;
 }
 
 export interface DigisacUser {
@@ -90,18 +97,24 @@ async function invokeDigisac<T>(action: string, payload: Record<string, any> = {
 }
 
 export const digisacApi = {
-  async getDashboardGeral(startDate?: string, endDate?: string): Promise<DigisacGeralResponse> {
+  async getDashboardGeral(startDate?: string, endDate?: string, departmentId?: string): Promise<DigisacGeralResponse> {
     return invokeDigisac<DigisacGeralResponse>('geral', {
       startDate: normalizeDateOnly(startDate),
       endDate: normalizeDateOnly(endDate),
+      departmentId: departmentId || 'all',
     });
   },
 
-  async getDashboardAnalistas(startDate?: string, endDate?: string): Promise<DigisacAnalystStats[]> {
+  async getDashboardAnalistas(startDate?: string, endDate?: string, departmentId?: string): Promise<DigisacAnalystStats[]> {
     return invokeDigisac<DigisacAnalystStats[]>('analistas', {
       startDate: normalizeDateOnly(startDate),
       endDate: normalizeDateOnly(endDate),
+      departmentId: departmentId || 'all',
     });
+  },
+
+  async getDepartments(): Promise<DigisacDepartment[]> {
+    return invokeDigisac<DigisacDepartment[]>('listar_departments');
   },
 
   async getDigisacUsers(): Promise<DigisacUser[]> {

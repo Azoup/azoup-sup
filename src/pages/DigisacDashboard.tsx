@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DigisacMappingModal } from "@/components/DigisacMappingModal";
 import { digisacApi } from "@/integrations/digisac/api";
 import { Clock, Ticket, Users, Filter, MessageSquare, Hourglass, Timer, CheckCircle2, CircleDot } from "lucide-react";
@@ -22,22 +23,29 @@ export default function DigisacDashboard() {
   const today = getTodayDateInputValue();
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
-  const [filters, setFilters] = useState({ start: today, end: today });
+  const [departmentId, setDepartmentId] = useState<string>("all");
+  const [filters, setFilters] = useState({ start: today, end: today, departmentId: "all" });
+
+  const { data: departments } = useQuery({
+    queryKey: ['digisac-departments'],
+    queryFn: () => digisacApi.getDepartments(),
+    staleTime: 10 * 60 * 1000,
+  });
 
   const { data: geral, isLoading: isLoadingGeral, isError: isErrorGeral, error: errorGeral } = useQuery({
-    queryKey: ['digisac-geral', filters.start, filters.end],
-    queryFn: () => digisacApi.getDashboardGeral(filters.start || undefined, filters.end || undefined),
+    queryKey: ['digisac-geral', filters.start, filters.end, filters.departmentId],
+    queryFn: () => digisacApi.getDashboardGeral(filters.start || undefined, filters.end || undefined, filters.departmentId),
     refetchInterval: 5 * 60 * 1000
   });
 
   const { data: analistas, isLoading: isLoadingAnalistas, isError: isErrorAnalistas, error: errorAnalistas } = useQuery({
-    queryKey: ['digisac-analistas', filters.start, filters.end],
-    queryFn: () => digisacApi.getDashboardAnalistas(filters.start || undefined, filters.end || undefined),
+    queryKey: ['digisac-analistas', filters.start, filters.end, filters.departmentId],
+    queryFn: () => digisacApi.getDashboardAnalistas(filters.start || undefined, filters.end || undefined, filters.departmentId),
     refetchInterval: 5 * 60 * 1000
   });
 
   const applyFilters = () => {
-    setFilters({ start: startDate, end: endDate });
+    setFilters({ start: startDate, end: endDate, departmentId });
   };
 
   const formatTma = (minutes: number) => {
@@ -95,7 +103,7 @@ export default function DigisacDashboard() {
           </p>
         </div>
         <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-end gap-2 flex-wrap">
             <div className="flex flex-col gap-1">
               <span className="text-xs text-muted-foreground">Data Inicial</span>
               <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-[140px] h-9" />
@@ -104,19 +112,27 @@ export default function DigisacDashboard() {
               <span className="text-xs text-muted-foreground">Data Final</span>
               <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-[140px] h-9" />
             </div>
-            <div className="flex flex-col gap-1 justify-end h-full">
-              <span className="text-xs opacity-0">.</span>
-              <Button onClick={applyFilters} className="h-9 gap-2">
-                <Filter className="w-4 h-4" />
-                Aplicar
-              </Button>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-muted-foreground">Departamento</span>
+              <Select value={departmentId} onValueChange={setDepartmentId}>
+                <SelectTrigger className="w-[200px] h-9">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os departamentos</SelectItem>
+                  {departments?.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+            <Button onClick={applyFilters} className="h-9 gap-2">
+              <Filter className="w-4 h-4" />
+              Aplicar
+            </Button>
           </div>
           <div className="hidden sm:block w-px h-10 bg-border mx-1"></div>
-          <div className="flex flex-col gap-1 justify-end h-full">
-            <span className="text-xs opacity-0">.</span>
-            <DigisacMappingModal />
-          </div>
+          <DigisacMappingModal />
         </div>
       </div>
 
@@ -326,6 +342,8 @@ export default function DigisacDashboard() {
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead className="text-right">Fechados</TableHead>
                     <TableHead className="text-right">Abertos</TableHead>
+                    <TableHead className="text-right">Contatos</TableHead>
+                    <TableHead className="text-right">Mensagens</TableHead>
                     <TableHead className="text-right">TMA</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -341,11 +359,13 @@ export default function DigisacDashboard() {
                       <TableCell className="text-right">{analyst.total_chamados}</TableCell>
                       <TableCell className="text-right">{analyst.chamados_fechados ?? 0}</TableCell>
                       <TableCell className="text-right">{analyst.chamados_abertos ?? 0}</TableCell>
+                      <TableCell className="text-right">{analyst.total_contatos ?? 0}</TableCell>
+                      <TableCell className="text-right">{analyst.total_mensagens ?? 0}</TableCell>
                       <TableCell className="text-right">{formatTma(analyst.tma_minutos)}</TableCell>
                     </TableRow>
                   )) : (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
+                      <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
                          Nenhum dado encontrado para o período selecionado.
                       </TableCell>
                     </TableRow>

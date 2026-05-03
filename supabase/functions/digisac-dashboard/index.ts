@@ -154,6 +154,7 @@ const firstArray = (payload: any, keys: string[]) => {
 
 const mapGeneralPayload = (payload: any) => {
   const totals = payload?.totals ?? payload?.data?.totals ?? payload?.data ?? payload ?? {};
+  console.log("[Digisac] mapGeneralPayload keys:", Object.keys(totals || {}));
   const totalChamados = pickByKeys(totals, ["totalTicketsCount", "totalTickets", "total_chamados", "ticketsTotal", "total", "attendanceCount"]);
   const totalFechados = pickByKeys(totals, ["closedTicketsCount", "closedTickets", "total_fechados", "finishedTickets", "closed"]);
   const totalAbertos = pickByKeys(totals, ["openedTicketsCount", "openTickets", "total_abertos", "openedTickets", "open"]);
@@ -182,6 +183,7 @@ const fetchAnalystStats = async (
   user: { id: string; name: string },
   startPeriod: string,
   endPeriod: string,
+  departmentId?: string,
 ) => {
   const params = new URLSearchParams({
     startPeriod,
@@ -191,6 +193,7 @@ const fetchAnalystStats = async (
     status: "all",
     withTotals: "true",
   });
+  if (departmentId && departmentId !== "all") params.set("departmentId", departmentId);
   try {
     const r = await fetchDigisac(baseUrl, token, "/api/v1/dashboard/general", params);
     const totals = r.ok ? mapGeneralPayload(r.data) : null;
@@ -201,6 +204,8 @@ const fetchAnalystStats = async (
       total_chamados: totals?.total_chamados ?? 0,
       chamados_fechados: totals?.total_fechados ?? 0,
       chamados_abertos: totals?.total_abertos ?? 0,
+      total_contatos: totals?.total_contatos ?? 0,
+      total_mensagens: totals?.total_mensagens ?? 0,
       tma_minutos: totals?.tma_geral_minutos ?? 0,
     };
   } catch (e) {
@@ -212,10 +217,13 @@ const fetchAnalystStats = async (
       total_chamados: 0,
       chamados_fechados: 0,
       chamados_abertos: 0,
+      total_contatos: 0,
+      total_mensagens: 0,
       tma_minutos: 0,
     };
   }
 };
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -293,9 +301,10 @@ Deno.serve(async (req) => {
       const today = getTodayBrazilDate();
       const startDate = formatDateOnly(typeof payload?.startDate === "string" ? payload.startDate : undefined) ?? today;
       const endDate = formatDateOnly(typeof payload?.endDate === "string" ? payload.endDate : undefined) ?? startDate;
+      const departmentId = typeof payload?.departmentId === "string" && payload.departmentId ? payload.departmentId : "all";
       const startPeriod = toDigisacPeriod(startDate, "start")!;
       const endPeriod = toDigisacPeriod(endDate, "end")!;
-      const cacheKey = `dashboard_general_${startPeriod}_${endPeriod}`;
+      const cacheKey = `dashboard_general_${startPeriod}_${endPeriod}_${departmentId}`;
 
       let snapshot = cache[cacheKey]?.data;
       if (!snapshot || Date.now() - cache[cacheKey].timestamp >= CACHE_TTL_MS) {
@@ -307,6 +316,7 @@ Deno.serve(async (req) => {
           status: "all",
           withTotals: "true",
         });
+        if (departmentId !== "all") params.set("departmentId", departmentId);
 
         const response = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/dashboard/general", params);
         if (!response.ok) {
@@ -316,7 +326,6 @@ Deno.serve(async (req) => {
           });
         }
 
-        // Buscar lista de usuários (cache separado) e em seguida métricas por usuário
         const usersCacheKey = "digisac_users_raw";
         let users: Array<{ id: string; name: string }> = cache[usersCacheKey]?.data;
         if (!users || Date.now() - cache[usersCacheKey].timestamp >= CACHE_TTL_MS) {
@@ -328,27 +337,23 @@ Deno.serve(async (req) => {
           cache[usersCacheKey] = { data: users, timestamp: Date.now() };
         }
 
-        console.log("[Digisac] Buscando stats por analista para", users.length, "usuários");
+        console.log("[Digisac] Buscando stats por analista para", users.length, "usuários (departmentId=" + departmentId + ")");
         const analystResults = await Promise.all(
-          users.map((u) => fetchAnalystStats(digisacUrl, digisacToken, u, startPeriod, endPeriod))
+          users.map((u) => fetchAnalystStats(digisacUrl, digisacToken, u, startPeriod, endPeriod, departmentId))
         );
 
-        // Ordenar por TMA desc (padrão Digisac) — frontend pode reordenar
-        const analistas = analystResults.sort((a, b) => b.tma_minutos - a.tma_minutos);
+        const analistas = analystResults
+          .filter((a) => a.total_chamados > 0 || a.tma_minutos > 0)
+          .sort((a, b) => b.tma_minutos - a.tma_minutos);
 
         snapshot = {
           totals: mapGeneralPayload(response.data),
           analistas,
-          rawMeta: {
-            startPeriod,
-            endPeriod,
-            responseKeys: Object.keys(response.data || {}),
-            totalAnalysts: analistas.length,
-          },
+          rawMeta: { startPeriod, endPeriod, departmentId, totalAnalysts: analistas.length },
         };
 
         cache[cacheKey] = { data: snapshot, timestamp: Date.now() };
-        console.log("[Digisac] Resultado final enviado ao frontend:", JSON.stringify(snapshot.totals), "analistas:", analistas.length);
+        console.log("[Digisac] Resultado final:", JSON.stringify(snapshot.totals), "analistas:", analistas.length);
       }
 
       if (action === "geral") {
@@ -379,6 +384,25 @@ Deno.serve(async (req) => {
       return jsonResponse(users);
     }
 
+    if (action === "listar_departments") {
+      const cacheKey = "digisac_departments";
+      if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < CACHE_TTL_MS) {
+        return jsonResponse(cache[cacheKey].data);
+      }
+      const r = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/departments");
+      if (!r.ok) {
+        return handledErrorResponse(action, `Erro API Digisac: ${r.status}`, {
+          code: "DIGISAC_API_ERROR",
+          digisac_status: r.status,
+        });
+      }
+      const list = Array.isArray(r.data?.data) ? r.data.data : Array.isArray(r.data) ? r.data : [];
+      const departments = list
+        .filter((d: any) => d && d.id && !d.deletedAt)
+        .map((d: any) => ({ id: String(d.id), name: d.name || "Sem nome" }));
+      cache[cacheKey] = { data: departments, timestamp: Date.now() };
+      return jsonResponse(departments);
+    }
     return handledErrorResponse(action, "Ação inválida.", { code: "INVALID_ACTION" });
   } catch (error: any) {
     console.error("[Edge Function Error]", error?.message || error);
