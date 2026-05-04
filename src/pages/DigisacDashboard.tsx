@@ -24,7 +24,8 @@ export default function DigisacDashboard() {
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
   const [departmentId, setDepartmentId] = useState<string>("all");
-  const [filters, setFilters] = useState({ start: today, end: today, departmentId: "all" });
+  const [analystId, setAnalystId] = useState<string>("all");
+  const [filters, setFilters] = useState({ start: today, end: today, departmentId: "all", analystId: "all" });
 
   const { data: departments } = useQuery({
     queryKey: ['digisac-departments'],
@@ -32,20 +33,26 @@ export default function DigisacDashboard() {
     staleTime: 10 * 60 * 1000,
   });
 
+  const { data: analystsList } = useQuery({
+    queryKey: ['digisac-analysts-list'],
+    queryFn: () => digisacApi.getAnalysts(),
+    staleTime: 10 * 60 * 1000,
+  });
+
   const { data: geral, isLoading: isLoadingGeral, isError: isErrorGeral, error: errorGeral } = useQuery({
-    queryKey: ['digisac-geral', filters.start, filters.end, filters.departmentId],
-    queryFn: () => digisacApi.getDashboardGeral(filters.start || undefined, filters.end || undefined, filters.departmentId),
+    queryKey: ['digisac-geral', filters.start, filters.end, filters.departmentId, filters.analystId],
+    queryFn: () => digisacApi.getDashboardGeral(filters.start || undefined, filters.end || undefined, filters.departmentId, filters.analystId),
     refetchInterval: 5 * 60 * 1000
   });
 
   const { data: analistas, isLoading: isLoadingAnalistas, isError: isErrorAnalistas, error: errorAnalistas } = useQuery({
-    queryKey: ['digisac-analistas', filters.start, filters.end, filters.departmentId],
-    queryFn: () => digisacApi.getDashboardAnalistas(filters.start || undefined, filters.end || undefined, filters.departmentId),
+    queryKey: ['digisac-analistas', filters.start, filters.end, filters.departmentId, filters.analystId],
+    queryFn: () => digisacApi.getDashboardAnalistas(filters.start || undefined, filters.end || undefined, filters.departmentId, filters.analystId),
     refetchInterval: 5 * 60 * 1000
   });
 
   const applyFilters = () => {
-    setFilters({ start: startDate, end: endDate, departmentId });
+    setFilters({ start: startDate, end: endDate, departmentId, analystId });
   };
 
   const formatTma = (minutes: number) => {
