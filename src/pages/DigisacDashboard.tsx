@@ -121,13 +121,27 @@ export default function DigisacDashboard() {
           <div className="flex flex-col gap-1 min-w-[160px] flex-1 basis-full sm:basis-auto sm:flex-none">
             <span className="text-xs text-muted-foreground">Departamento</span>
             <Select value={departmentId} onValueChange={setDepartmentId}>
-              <SelectTrigger className="w-full sm:w-[200px] max-w-full h-9 truncate">
+              <SelectTrigger className="w-full sm:w-[180px] max-w-full h-9 truncate">
                 <SelectValue placeholder="Todos" />
               </SelectTrigger>
               <SelectContent className="max-w-[90vw]">
                 <SelectItem value="all">Todos os departamentos</SelectItem>
                 {departments?.map((d) => (
                   <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1 min-w-[160px] flex-1 basis-full sm:basis-auto sm:flex-none">
+            <span className="text-xs text-muted-foreground">Analista</span>
+            <Select value={analystId} onValueChange={setAnalystId}>
+              <SelectTrigger className="w-full sm:w-[180px] max-w-full h-9 truncate">
+                <SelectValue placeholder="Todos" />
+              </SelectTrigger>
+              <SelectContent className="max-w-[90vw]">
+                <SelectItem value="all">Todos os analistas</SelectItem>
+                {analystsList?.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
