@@ -274,7 +274,7 @@ Deno.serve(async (req) => {
 
       // Permission check (digisac_dashboard) — admins always allowed
       const userId = claimsData.claims.sub as string;
-      const protectedActions = new Set(["geral", "analistas", "listar_departments", "listar_digisac_users"]);
+      const protectedActions = new Set(["geral", "analistas", "listar_departments", "listar_digisac_users", "listar_analysts"]);
       if (protectedActions.has(action ?? "")) {
         const adminClient = createClient(
           Deno.env.get("SUPABASE_URL") ?? "",
@@ -321,9 +321,10 @@ Deno.serve(async (req) => {
       const startDate = formatDateOnly(typeof payload?.startDate === "string" ? payload.startDate : undefined) ?? today;
       const endDate = formatDateOnly(typeof payload?.endDate === "string" ? payload.endDate : undefined) ?? startDate;
       const departmentId = typeof payload?.departmentId === "string" && payload.departmentId ? payload.departmentId : "all";
+      const userIdFilter = typeof payload?.userId === "string" && payload.userId ? payload.userId : "all";
       const startPeriod = toDigisacPeriod(startDate, "start")!;
       const endPeriod = toDigisacPeriod(endDate, "end")!;
-      const cacheKey = `dashboard_general_${startPeriod}_${endPeriod}_${departmentId}`;
+      const cacheKey = `dashboard_general_${startPeriod}_${endPeriod}_${departmentId}_${userIdFilter}`;
 
       let snapshot = cache[cacheKey]?.data;
       if (!snapshot || Date.now() - cache[cacheKey].timestamp >= CACHE_TTL_MS) {
@@ -331,7 +332,7 @@ Deno.serve(async (req) => {
           startPeriod,
           endPeriod,
           periodType: "openDate",
-          userId: "all",
+          userId: userIdFilter,
           status: "all",
           withTotals: "true",
         });
@@ -356,9 +357,12 @@ Deno.serve(async (req) => {
           cache[usersCacheKey] = { data: users, timestamp: Date.now() };
         }
 
-        console.log("[Digisac] Buscando stats por analista para", users.length, "usuários (departmentId=" + departmentId + ")");
+        // If filtering by a specific analyst, restrict the per-user fetch to just that user
+        const targetUsers = userIdFilter === "all" ? users : users.filter((u) => u.id === userIdFilter);
+
+        console.log("[Digisac] Buscando stats por analista para", targetUsers.length, "usuários (departmentId=" + departmentId + ", userId=" + userIdFilter + ")");
         const analystResults = await Promise.all(
-          users.map((u) => fetchAnalystStats(digisacUrl, digisacToken, u, startPeriod, endPeriod, departmentId))
+          targetUsers.map((u) => fetchAnalystStats(digisacUrl, digisacToken, u, startPeriod, endPeriod, departmentId))
         );
 
         const analistas = analystResults
@@ -368,7 +372,8 @@ Deno.serve(async (req) => {
         snapshot = {
           totals: mapGeneralPayload(response.data),
           analistas,
-          rawMeta: { startPeriod, endPeriod, departmentId, totalAnalysts: analistas.length },
+          allUsers: users,
+          rawMeta: { startPeriod, endPeriod, departmentId, userIdFilter, totalAnalysts: analistas.length },
         };
 
         cache[cacheKey] = { data: snapshot, timestamp: Date.now() };
@@ -384,6 +389,22 @@ Deno.serve(async (req) => {
       }
 
       return jsonResponse(snapshot.analistas);
+    }
+
+    if (action === "listar_analysts") {
+      // Returns Digisac users (id, name) — used to feed the analyst filter
+      const usersCacheKey = "digisac_users_raw";
+      let users: Array<{ id: string; name: string }> = cache[usersCacheKey]?.data;
+      if (!users || Date.now() - cache[usersCacheKey].timestamp >= CACHE_TTL_MS) {
+        const ru = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/users");
+        const list = Array.isArray(ru.data?.data) ? ru.data.data : Array.isArray(ru.data) ? ru.data : [];
+        users = list
+          .filter((u: any) => u && u.id && !u.deletedAt && u.isClientUser !== true)
+          .map((u: any) => ({ id: String(u.id), name: u.name || "Sem nome" }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+        cache[usersCacheKey] = { data: users, timestamp: Date.now() };
+      }
+      return jsonResponse(users);
     }
 
     if (action === "listar_digisac_users") {

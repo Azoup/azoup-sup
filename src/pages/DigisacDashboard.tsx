@@ -24,7 +24,8 @@ export default function DigisacDashboard() {
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
   const [departmentId, setDepartmentId] = useState<string>("all");
-  const [filters, setFilters] = useState({ start: today, end: today, departmentId: "all" });
+  const [analystId, setAnalystId] = useState<string>("all");
+  const [filters, setFilters] = useState({ start: today, end: today, departmentId: "all", analystId: "all" });
 
   const { data: departments } = useQuery({
     queryKey: ['digisac-departments'],
@@ -32,20 +33,26 @@ export default function DigisacDashboard() {
     staleTime: 10 * 60 * 1000,
   });
 
+  const { data: analystsList } = useQuery({
+    queryKey: ['digisac-analysts-list'],
+    queryFn: () => digisacApi.getAnalysts(),
+    staleTime: 10 * 60 * 1000,
+  });
+
   const { data: geral, isLoading: isLoadingGeral, isError: isErrorGeral, error: errorGeral } = useQuery({
-    queryKey: ['digisac-geral', filters.start, filters.end, filters.departmentId],
-    queryFn: () => digisacApi.getDashboardGeral(filters.start || undefined, filters.end || undefined, filters.departmentId),
+    queryKey: ['digisac-geral', filters.start, filters.end, filters.departmentId, filters.analystId],
+    queryFn: () => digisacApi.getDashboardGeral(filters.start || undefined, filters.end || undefined, filters.departmentId, filters.analystId),
     refetchInterval: 5 * 60 * 1000
   });
 
   const { data: analistas, isLoading: isLoadingAnalistas, isError: isErrorAnalistas, error: errorAnalistas } = useQuery({
-    queryKey: ['digisac-analistas', filters.start, filters.end, filters.departmentId],
-    queryFn: () => digisacApi.getDashboardAnalistas(filters.start || undefined, filters.end || undefined, filters.departmentId),
+    queryKey: ['digisac-analistas', filters.start, filters.end, filters.departmentId, filters.analystId],
+    queryFn: () => digisacApi.getDashboardAnalistas(filters.start || undefined, filters.end || undefined, filters.departmentId, filters.analystId),
     refetchInterval: 5 * 60 * 1000
   });
 
   const applyFilters = () => {
-    setFilters({ start: startDate, end: endDate, departmentId });
+    setFilters({ start: startDate, end: endDate, departmentId, analystId });
   };
 
   const formatTma = (minutes: number) => {
@@ -114,13 +121,27 @@ export default function DigisacDashboard() {
           <div className="flex flex-col gap-1 min-w-[160px] flex-1 basis-full sm:basis-auto sm:flex-none">
             <span className="text-xs text-muted-foreground">Departamento</span>
             <Select value={departmentId} onValueChange={setDepartmentId}>
-              <SelectTrigger className="w-full sm:w-[200px] max-w-full h-9 truncate">
+              <SelectTrigger className="w-full sm:w-[180px] max-w-full h-9 truncate">
                 <SelectValue placeholder="Todos" />
               </SelectTrigger>
               <SelectContent className="max-w-[90vw]">
                 <SelectItem value="all">Todos os departamentos</SelectItem>
                 {departments?.map((d) => (
                   <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1 min-w-[160px] flex-1 basis-full sm:basis-auto sm:flex-none">
+            <span className="text-xs text-muted-foreground">Analista</span>
+            <Select value={analystId} onValueChange={setAnalystId}>
+              <SelectTrigger className="w-full sm:w-[180px] max-w-full h-9 truncate">
+                <SelectValue placeholder="Todos" />
+              </SelectTrigger>
+              <SelectContent className="max-w-[90vw]">
+                <SelectItem value="all">Todos os analistas</SelectItem>
+                {analystsList?.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -323,53 +344,55 @@ export default function DigisacDashboard() {
           </CardContent>
         </Card>
 
-        {/* Tabela de Analistas */}
-        <Card className="glass-card border-none shadow-sm col-span-1 overflow-hidden">
-          <CardHeader>
-            <CardTitle>Desempenho da Equipe</CardTitle>
-            <CardDescription>Métricas detalhadas por analista</CardDescription>
+        {/* Tabela de Analistas — compacta, ocupa toda a largura */}
+        <Card className="glass-card border-none shadow-sm md:col-span-2 overflow-hidden">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Desempenho da Equipe</CardTitle>
+            <CardDescription>Métricas detalhadas por analista (dados oficiais Digisac)</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             {isLoadingAnalistas ? (
                <div className="p-6 text-center text-muted-foreground">Carregando dados...</div>
             ) : (
-              <Table>
-                <TableHeader className="bg-muted/50">
-                  <TableRow>
-                    <TableHead>Analista</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="text-right">Fechados</TableHead>
-                    <TableHead className="text-right">Abertos</TableHead>
-                    <TableHead className="text-right">Contatos</TableHead>
-                    <TableHead className="text-right">Mensagens</TableHead>
-                    <TableHead className="text-right">TMA</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {analistas?.length ? analistas.map((analyst) => (
-                    <TableRow key={analyst.analyst_id}>
-                      <TableCell className="font-medium">
-                        {analyst.name}
-                        {analyst.mapped === false && (
-                          <span className="ml-2 text-xs text-muted-foreground">(não mapeado)</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">{analyst.total_chamados}</TableCell>
-                      <TableCell className="text-right">{analyst.chamados_fechados ?? 0}</TableCell>
-                      <TableCell className="text-right">{analyst.chamados_abertos ?? 0}</TableCell>
-                      <TableCell className="text-right">{analyst.total_contatos ?? 0}</TableCell>
-                      <TableCell className="text-right">{analyst.total_mensagens ?? 0}</TableCell>
-                      <TableCell className="text-right">{formatTma(analyst.tma_minutos)}</TableCell>
-                    </TableRow>
-                  )) : (
+              <div className="w-full overflow-hidden">
+                <Table className="w-full table-fixed text-xs">
+                  <TableHeader className="bg-muted/50">
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
-                         Nenhum dado encontrado para o período selecionado.
-                      </TableCell>
+                      <TableHead className="h-9 px-3 w-[28%]">Analista</TableHead>
+                      <TableHead className="h-9 px-2 text-right w-[10%]">Total</TableHead>
+                      <TableHead className="h-9 px-2 text-right w-[11%]">Fechados</TableHead>
+                      <TableHead className="h-9 px-2 text-right w-[10%]">Abertos</TableHead>
+                      <TableHead className="h-9 px-2 text-right w-[12%]">Contatos</TableHead>
+                      <TableHead className="h-9 px-2 text-right w-[14%]">Mensagens</TableHead>
+                      <TableHead className="h-9 px-3 text-right w-[15%]">TMA</TableHead>
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {analistas?.length ? analistas.map((analyst) => (
+                      <TableRow key={analyst.analyst_id} className="hover:bg-muted/30">
+                        <TableCell className="font-medium px-3 py-2 truncate" title={analyst.name}>
+                          {analyst.name}
+                          {analyst.mapped === false && (
+                            <span className="ml-1 text-[10px] text-muted-foreground">(não mapeado)</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right px-2 py-2 tabular-nums">{analyst.total_chamados}</TableCell>
+                        <TableCell className="text-right px-2 py-2 tabular-nums">{analyst.chamados_fechados ?? 0}</TableCell>
+                        <TableCell className="text-right px-2 py-2 tabular-nums">{analyst.chamados_abertos ?? 0}</TableCell>
+                        <TableCell className="text-right px-2 py-2 tabular-nums">{analyst.total_contatos ?? 0}</TableCell>
+                        <TableCell className="text-right px-2 py-2 tabular-nums">{analyst.total_mensagens ?? 0}</TableCell>
+                        <TableCell className="text-right px-3 py-2 tabular-nums font-semibold">{formatTma(analyst.tma_minutos)}</TableCell>
+                      </TableRow>
+                    )) : (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
+                           Nenhum dado encontrado para o período selecionado.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </CardContent>
         </Card>
