@@ -119,6 +119,10 @@ export const digisacApi = {
     return invokeDigisac<DigisacDepartment[]>('listar_departments');
   },
 
+  async getAnalysts(): Promise<DigisacUser[]> {
+    return invokeDigisac<DigisacUser[]>('listar_analysts');
+  },
+
   async getDigisacUsers(): Promise<DigisacUser[]> {
     return invokeDigisac<DigisacUser[]>('listar_digisac_users');
   },

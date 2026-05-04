@@ -274,7 +274,7 @@ Deno.serve(async (req) => {
 
       // Permission check (digisac_dashboard) — admins always allowed
       const userId = claimsData.claims.sub as string;
-      const protectedActions = new Set(["geral", "analistas", "listar_departments", "listar_digisac_users"]);
+      const protectedActions = new Set(["geral", "analistas", "listar_departments", "listar_digisac_users", "listar_analysts"]);
       if (protectedActions.has(action ?? "")) {
         const adminClient = createClient(
           Deno.env.get("SUPABASE_URL") ?? "",
