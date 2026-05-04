@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,18 @@ export default function DigisacDashboard() {
     queryFn: () => digisacApi.getDepartments(),
     staleTime: 10 * 60 * 1000,
   });
+
+  // Auto-seleciona "Suporte" como departamento padrão assim que a lista carregar.
+  // Garante que dashboard sempre bata com a tela "Estatísticas de atendimento" filtrada por Suporte.
+  useEffect(() => {
+    if (!departments || departments.length === 0) return;
+    if (departmentId !== "all") return;
+    const suporte = departments.find((d) => /suporte/i.test(d.name));
+    if (suporte) {
+      setDepartmentId(suporte.id);
+      setFilters((f) => ({ ...f, departmentId: suporte.id }));
+    }
+  }, [departments]);
 
   const { data: analystsList } = useQuery({
     queryKey: ['digisac-analysts-list'],
