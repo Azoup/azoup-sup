@@ -51,19 +51,26 @@ export default function DigisacDashboard() {
     staleTime: 10 * 60 * 1000,
   });
 
+  // PROIBIDO: nunca disparar query com departmentId === "all".
+  // Cada chamada precisa carregar dados de UM departamento específico para garantir separação correta.
+  const departmentSelected = filters.departmentId && filters.departmentId !== "all";
+
   const { data: geral, isLoading: isLoadingGeral, isError: isErrorGeral, error: errorGeral } = useQuery({
     queryKey: ['digisac-geral', filters.start, filters.end, filters.departmentId, filters.analystId],
     queryFn: () => digisacApi.getDashboardGeral(filters.start || undefined, filters.end || undefined, filters.departmentId, filters.analystId),
+    enabled: !!departmentSelected,
     refetchInterval: 5 * 60 * 1000
   });
 
   const { data: analistas, isLoading: isLoadingAnalistas, isError: isErrorAnalistas, error: errorAnalistas } = useQuery({
     queryKey: ['digisac-analistas', filters.start, filters.end, filters.departmentId, filters.analystId],
     queryFn: () => digisacApi.getDashboardAnalistas(filters.start || undefined, filters.end || undefined, filters.departmentId, filters.analystId),
+    enabled: !!departmentSelected,
     refetchInterval: 5 * 60 * 1000
   });
 
   const applyFilters = () => {
+    if (!departmentId || departmentId === "all") return;
     setFilters({ start: startDate, end: endDate, departmentId, analystId });
   };
 
@@ -137,7 +144,7 @@ export default function DigisacDashboard() {
                 <SelectValue placeholder="Todos" />
               </SelectTrigger>
               <SelectContent className="max-w-[90vw]">
-                <SelectItem value="all">Todos os departamentos</SelectItem>
+                
                 {departments?.map((d) => (
                   <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
                 ))}
@@ -177,7 +184,17 @@ export default function DigisacDashboard() {
         </div>
       )}
 
-      {showEmptyState && (
+      {!departmentSelected && (
+        <div className="bg-muted/50 text-muted-foreground p-4 rounded-md flex items-center gap-3">
+          <AlertCircle className="h-5 w-5" />
+          <div>
+            <p className="font-semibold text-foreground">Selecione um departamento</p>
+            <p className="text-sm">Os dados do Digisac são carregados separadamente por departamento. Escolha um e clique em Aplicar.</p>
+          </div>
+        </div>
+      )}
+
+      {departmentSelected && showEmptyState && (
         <div className="bg-muted/50 text-muted-foreground p-4 rounded-md flex items-center gap-3">
           <AlertCircle className="h-5 w-5" />
           <div>
