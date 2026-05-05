@@ -360,17 +360,16 @@ Deno.serve(async (req) => {
             .map((u: any) => ({ id: String(u.id), name: u.name || u.email || "Sem nome" }));
           cache[usersCacheKey] = { data: users, timestamp: Date.now() };
         }
+        const usersIndex = new Map(users.map((u) => [u.id, u.name]));
 
-        // If filtering by a specific analyst, restrict the per-user fetch to just that user
-        const targetUsers = userIdFilter === "all" ? users : users.filter((u) => u.id === userIdFilter);
-
-        console.log("[Digisac] Buscando stats por analista para", targetUsers.length, "usuários (departmentId=" + departmentId + ", userId=" + userIdFilter + ")");
-        const analystResults = await Promise.all(
-          targetUsers.map((u) => fetchAnalystStats(digisacUrl, digisacToken, u, startPeriod, endPeriod, departmentId))
+        // Uma única chamada /by-user retorna TODOS os analistas com seus próprios totais.
+        // TMA é calculado item a item: ticketTime / closedTicketsCount.
+        const analystResults = await fetchAnalystsByUser(
+          digisacUrl, digisacToken, startPeriod, endPeriod, departmentId, userIdFilter, usersIndex
         );
 
         const analistas = analystResults
-          .filter((a) => (a.total_chamados ?? 0) > 0)
+          .filter((a) => (a.chamados_fechados ?? 0) > 0 || (a.total_chamados ?? 0) > 0)
           .sort((a, b) => b.tma_minutos - a.tma_minutos);
 
         snapshot = {
