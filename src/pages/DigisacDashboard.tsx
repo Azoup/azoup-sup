@@ -144,7 +144,7 @@ export default function DigisacDashboard() {
                 <SelectValue placeholder="Todos" />
               </SelectTrigger>
               <SelectContent className="max-w-[90vw]">
-                <SelectItem value="all">Todos os departamentos</SelectItem>
+                
                 {departments?.map((d) => (
                   <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
                 ))}
