@@ -177,51 +177,55 @@ const mapGeneralPayload = (payload: any) => {
   };
 };
 
-const fetchAnalystStats = async (
+const fetchAnalystsByUser = async (
   baseUrl: string,
   token: string,
-  user: { id: string; name: string },
   startPeriod: string,
   endPeriod: string,
-  departmentId?: string,
+  departmentId: string,
+  userIdFilter: string,
+  usersIndex: Map<string, string>,
 ) => {
   const params = new URLSearchParams({
     startPeriod,
     endPeriod,
     periodType: "openDate",
-    userId: user.id,
+    userId: userIdFilter,
     status: "all",
     withTotals: "true",
   });
   if (departmentId && departmentId !== "all") params.set("departmentId", departmentId);
-  try {
-    const r = await fetchDigisac(baseUrl, token, "/api/v1/dashboard/general", params);
-    const totals = r.ok ? mapGeneralPayload(r.data) : null;
-    return {
-      analyst_id: user.id,
-      name: user.name,
-      mapped: true,
-      total_chamados: totals?.total_chamados ?? 0,
-      chamados_fechados: totals?.total_fechados ?? 0,
-      chamados_abertos: totals?.total_abertos ?? 0,
-      total_contatos: totals?.total_contatos ?? 0,
-      total_mensagens: totals?.total_mensagens ?? 0,
-      tma_minutos: totals?.tma_geral_minutos ?? 0,
-    };
-  } catch (e) {
-    console.error("[Digisac] Erro buscando stats do analista", user.id, e);
-    return {
-      analyst_id: user.id,
-      name: user.name,
-      mapped: true,
-      total_chamados: 0,
-      chamados_fechados: 0,
-      chamados_abertos: 0,
-      total_contatos: 0,
-      total_mensagens: 0,
-      tma_minutos: 0,
-    };
+
+  const r = await fetchDigisac(baseUrl, token, "/api/v1/dashboard/by-user", params);
+  if (!r.ok) {
+    console.error("[Digisac] by-user falhou:", r.status);
+    return [];
   }
+
+  const items = firstArray(r.data, ["items", "data", "rows", "users"]);
+  console.log("[Digisac] by-user items:", items.length);
+
+  return items.map((item: any) => {
+    const id = String(item.userId ?? item.id ?? item.user?.id ?? "");
+    const name = item.userName ?? item.name ?? item.user?.name ?? usersIndex.get(id) ?? "Sem nome";
+    const closed = asNumber(item.closedTicketsCount, item.closedTickets, item.closed);
+    const ticketTimeSec = asNumber(item.ticketTime, item.totalTicketTime, item.ticketsTime);
+    // REGRA: TMA = ticketTime / closedTicketsCount (por item). Não usar totals nem média global.
+    const tmaSeconds = closed > 0 ? ticketTimeSec / closed : 0;
+    const sent = asNumber(item.sentMessagesCount, item.sentMessages);
+    const received = asNumber(item.receivedMessagesCount, item.receivedMessages);
+    return {
+      analyst_id: id,
+      name,
+      mapped: true,
+      total_chamados: asNumber(item.totalTicketsCount, item.totalTickets) || closed,
+      chamados_fechados: closed,
+      chamados_abertos: asNumber(item.openedTicketsCount, item.openTickets, item.opened),
+      total_contatos: asNumber(item.contactsCount, item.totalContacts),
+      total_mensagens: sent + received,
+      tma_minutos: minutesFromSeconds(tmaSeconds),
+    };
+  });
 };
 
 
@@ -356,17 +360,16 @@ Deno.serve(async (req) => {
             .map((u: any) => ({ id: String(u.id), name: u.name || u.email || "Sem nome" }));
           cache[usersCacheKey] = { data: users, timestamp: Date.now() };
         }
+        const usersIndex = new Map(users.map((u) => [u.id, u.name]));
 
-        // If filtering by a specific analyst, restrict the per-user fetch to just that user
-        const targetUsers = userIdFilter === "all" ? users : users.filter((u) => u.id === userIdFilter);
-
-        console.log("[Digisac] Buscando stats por analista para", targetUsers.length, "usuários (departmentId=" + departmentId + ", userId=" + userIdFilter + ")");
-        const analystResults = await Promise.all(
-          targetUsers.map((u) => fetchAnalystStats(digisacUrl, digisacToken, u, startPeriod, endPeriod, departmentId))
+        // Uma única chamada /by-user retorna TODOS os analistas com seus próprios totais.
+        // TMA é calculado item a item: ticketTime / closedTicketsCount.
+        const analystResults = await fetchAnalystsByUser(
+          digisacUrl, digisacToken, startPeriod, endPeriod, departmentId, userIdFilter, usersIndex
         );
 
         const analistas = analystResults
-          .filter((a) => (a.total_chamados ?? 0) > 0)
+          .filter((a) => (a.chamados_fechados ?? 0) > 0 || (a.total_chamados ?? 0) > 0)
           .sort((a, b) => b.tma_minutos - a.tma_minutos);
 
         snapshot = {
