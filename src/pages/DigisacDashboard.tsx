@@ -184,7 +184,17 @@ export default function DigisacDashboard() {
         </div>
       )}
 
-      {showEmptyState && (
+      {!departmentSelected && (
+        <div className="bg-muted/50 text-muted-foreground p-4 rounded-md flex items-center gap-3">
+          <AlertCircle className="h-5 w-5" />
+          <div>
+            <p className="font-semibold text-foreground">Selecione um departamento</p>
+            <p className="text-sm">Os dados do Digisac são carregados separadamente por departamento. Escolha um e clique em Aplicar.</p>
+          </div>
+        </div>
+      )}
+
+      {departmentSelected && showEmptyState && (
         <div className="bg-muted/50 text-muted-foreground p-4 rounded-md flex items-center gap-3">
           <AlertCircle className="h-5 w-5" />
           <div>
