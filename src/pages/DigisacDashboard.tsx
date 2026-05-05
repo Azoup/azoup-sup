@@ -51,19 +51,26 @@ export default function DigisacDashboard() {
     staleTime: 10 * 60 * 1000,
   });
 
+  // PROIBIDO: nunca disparar query com departmentId === "all".
+  // Cada chamada precisa carregar dados de UM departamento específico para garantir separação correta.
+  const departmentSelected = filters.departmentId && filters.departmentId !== "all";
+
   const { data: geral, isLoading: isLoadingGeral, isError: isErrorGeral, error: errorGeral } = useQuery({
     queryKey: ['digisac-geral', filters.start, filters.end, filters.departmentId, filters.analystId],
     queryFn: () => digisacApi.getDashboardGeral(filters.start || undefined, filters.end || undefined, filters.departmentId, filters.analystId),
+    enabled: !!departmentSelected,
     refetchInterval: 5 * 60 * 1000
   });
 
   const { data: analistas, isLoading: isLoadingAnalistas, isError: isErrorAnalistas, error: errorAnalistas } = useQuery({
     queryKey: ['digisac-analistas', filters.start, filters.end, filters.departmentId, filters.analystId],
     queryFn: () => digisacApi.getDashboardAnalistas(filters.start || undefined, filters.end || undefined, filters.departmentId, filters.analystId),
+    enabled: !!departmentSelected,
     refetchInterval: 5 * 60 * 1000
   });
 
   const applyFilters = () => {
+    if (!departmentId || departmentId === "all") return;
     setFilters({ start: startDate, end: endDate, departmentId, analystId });
   };
 
