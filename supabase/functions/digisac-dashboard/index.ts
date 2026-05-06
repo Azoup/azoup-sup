@@ -405,7 +405,7 @@ Deno.serve(async (req) => {
 
       let snapshot = cache[cacheKey]?.data;
       if (!snapshot || Date.now() - cache[cacheKey].timestamp >= CACHE_TTL_MS) {
-        const params = buildDashboardParams(startPeriod, endPeriod, departmentId, analystUserIds, fallbackUserId);
+        const params = buildGeneralDashboardParams(startPeriod, endPeriod, departmentId, userIdFilter);
 
         const response = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/dashboard/general", params);
         if (!response.ok) {
