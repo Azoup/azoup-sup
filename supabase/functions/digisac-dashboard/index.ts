@@ -61,16 +61,9 @@ const toDigisacPeriod = (dateOnly: string | undefined, boundary: "start" | "end"
   const normalized = formatDateOnly(dateOnly);
   if (!normalized) return undefined;
   const [year, month, day] = normalized.split("-").map(Number);
-  const utcHour = boundary === "start" ? BRAZIL_UTC_OFFSET_HOURS : 24 + BRAZIL_UTC_OFFSET_HOURS - 1;
-  const utcMinute = boundary === "start" ? 0 : 59;
-  const utcSecond = boundary === "start" ? 0 : 59;
-  const utcMs = boundary === "start" ? 0 : 999;
   const utcDate = boundary === "start"
     ? new Date(Date.UTC(year, month - 1, day, 3, 0, 0, 0))
-    : new Date(Date.UTC(year, month - 1, day + 1, 2, 59, 59, 999));
-  if (boundary === "start") {
-    utcDate.setUTCHours(utcHour, utcMinute, utcSecond, utcMs);
-  }
+    : new Date(Date.UTC(year, month - 1, day, 2, 59, 59, 999));
   return utcDate.toISOString();
 };
 
@@ -199,34 +192,24 @@ const loadDigisacUsers = async (baseUrl: string, token: string) => {
   return users;
 };
 
-const buildGeneralDashboardParams = (
-  startPeriod: string,
-  endPeriod: string,
-  departmentId: string,
-  userId: string,
-) => {
-  const params = new URLSearchParams({
-    startPeriod,
-    endPeriod,
-    periodType: "openDate",
-    userParticipation: "last",
-    departmentParticipation: "last",
-    userId,
-    status: "all",
-    withTotals: "true",
-  });
+const normalizeRequestedUserIds = (payload: Record<string, unknown>) => {
+  const userIds = Array.isArray(payload.userIds)
+    ? payload.userIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0 && value !== "all")
+    : [];
+  const singleUserId = typeof payload.userId === "string" && payload.userId.trim().length > 0 && payload.userId !== "all"
+    ? payload.userId
+    : undefined;
 
-  if (departmentId && departmentId !== "all") params.set("departmentId", departmentId);
-
-  return params;
+  if (userIds.length > 0) return userIds;
+  if (singleUserId) return [singleUserId];
+  return [];
 };
 
-const buildAnalystsDashboardParams = (
+const buildDashboardProxyParams = (
   startPeriod: string,
   endPeriod: string,
   departmentId: string,
-  userIds: string[],
-  fallbackUserId?: string,
+  requestedUserIds: string[],
 ) => {
   const params = new URLSearchParams({
     startPeriod,
@@ -235,62 +218,20 @@ const buildAnalystsDashboardParams = (
     userParticipation: "last",
     departmentParticipation: "last",
     status: "all",
+    userStatus: "all",
     withTotals: "true",
   });
 
   if (departmentId && departmentId !== "all") params.set("departmentId", departmentId);
 
-  if (userIds.length > 0) {
-    userIds.forEach((userId) => params.append("userId[]", userId));
-  } else if (fallbackUserId) {
-    params.set("userId", fallbackUserId);
+  if (requestedUserIds.length > 0) {
+    requestedUserIds.forEach((userId) => params.append("userId[]", userId));
+  } else {
+    params.set("userId", "all");
   }
 
+  console.log("PARAMS FINAIS:", params.toString());
   return params;
-};
-
-const fetchAnalystsByUser = async (
-  baseUrl: string,
-  token: string,
-  startPeriod: string,
-  endPeriod: string,
-  departmentId: string,
-  userIds: string[],
-  fallbackUserId: string | undefined,
-  usersIndex: Map<string, string>,
-) => {
-  const params = buildAnalystsDashboardParams(startPeriod, endPeriod, departmentId, userIds, fallbackUserId);
-
-  const r = await fetchDigisac(baseUrl, token, "/api/v1/dashboard/by-user", params);
-  if (!r.ok) {
-    console.error("[Digisac] by-user falhou:", r.status);
-    return [];
-  }
-
-  const items = firstArray(r.data, ["items", "data", "rows", "users"]);
-  console.log("[Digisac] by-user items:", items.length);
-
-  return items.map((item: any) => {
-    const id = String(item.userId ?? item.id ?? item.user?.id ?? "");
-    const name = item.userName ?? item.name ?? item.user?.name ?? usersIndex.get(id) ?? "Sem nome";
-    const closed = asNumber(item.closedTicketsCount, item.closedTickets, item.closed);
-    const ticketTimeSec = asNumber(item.ticketTime, item.totalTicketTime, item.ticketsTime);
-    // REGRA: TMA = ticketTime / closedTicketsCount (por item). Não usar totals nem média global.
-    const tmaSeconds = closed > 0 ? ticketTimeSec / closed : 0;
-    const sent = asNumber(item.sentMessagesCount, item.sentMessages);
-    const received = asNumber(item.receivedMessagesCount, item.receivedMessages);
-    return {
-      analyst_id: id,
-      name,
-      mapped: true,
-      total_chamados: asNumber(item.totalTicketsCount, item.totalTickets) || closed,
-      chamados_fechados: closed,
-      chamados_abertos: asNumber(item.openedTicketsCount, item.openTickets, item.opened),
-      total_contatos: asNumber(item.contactsCount, item.totalContacts),
-      total_mensagens: sent + received,
-      tma_minutos: minutesFromSeconds(tmaSeconds),
-    };
-  });
 };
 
 
@@ -390,82 +331,32 @@ Deno.serve(async (req) => {
       const startDate = formatDateOnly(typeof payload?.startDate === "string" ? payload.startDate : undefined) ?? today;
       const endDate = formatDateOnly(typeof payload?.endDate === "string" ? payload.endDate : undefined) ?? startDate;
       const departmentId = typeof payload?.departmentId === "string" && payload.departmentId ? payload.departmentId : "all";
-      const userIdFilter = typeof payload?.userId === "string" && payload.userId ? payload.userId : "all";
+      const requestedUserIds = normalizeRequestedUserIds(payload);
       const startPeriod = toDigisacPeriod(startDate, "start")!;
       const endPeriod = toDigisacPeriod(endDate, "end")!;
-      const cacheKey = `dashboard_general_${startPeriod}_${endPeriod}_${departmentId}_${userIdFilter}`;
-      const users = await loadDigisacUsers(digisacUrl, digisacToken);
-      const usersIndex = new Map(users.map((user) => [user.id, user.name]));
-      const analystUserIds = userIdFilter === "all"
-        ? users.map((user) => user.id)
-        : users.some((user) => user.id === userIdFilter)
-          ? [userIdFilter]
-          : [];
-      const fallbackUserId = userIdFilter !== "all" ? userIdFilter : undefined;
+      const cacheKey = `dashboard_proxy_${action}_${startPeriod}_${endPeriod}_${departmentId}_${requestedUserIds.join(",") || "all"}`;
 
-      let snapshot = cache[cacheKey]?.data;
-      if (!snapshot || Date.now() - cache[cacheKey].timestamp >= CACHE_TTL_MS) {
-        let totals = {
-          total_chamados: 0,
-          total_fechados: 0,
-          total_abertos: 0,
-          total_mensagens: 0,
-          total_contatos: 0,
-          tma_geral_minutos: 0,
-          tempo_espera_minutos: 0,
-          primeira_resposta_minutos: 0,
-        };
-
-        if (action === "geral") {
-          const params = buildGeneralDashboardParams(startPeriod, endPeriod, departmentId, userIdFilter);
-          const response = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/dashboard/general", params);
-          if (!response.ok) {
-            return handledErrorResponse(action, `Erro API Digisac: ${response.status}`, {
-              code: "DIGISAC_API_ERROR",
-              digisac_status: response.status,
-            });
-          }
-
-          totals = mapGeneralPayload(response.data);
-        }
-
-        // Uma única chamada /by-user retorna TODOS os analistas com seus próprios totais.
-        // TMA é calculado item a item: ticketTime / closedTicketsCount.
-        const analystResults = await fetchAnalystsByUser(
-          digisacUrl,
-          digisacToken,
-          startPeriod,
-          endPeriod,
-          departmentId,
-          analystUserIds,
-          fallbackUserId,
-          usersIndex,
-        );
-
-        const analistas = analystResults
-          .filter((a) => (a.chamados_fechados ?? 0) > 0 || (a.total_chamados ?? 0) > 0)
-          .sort((a, b) => b.tma_minutos - a.tma_minutos);
-
-        snapshot = {
-          totals,
-          analistas,
-          allUsers: users,
-          rawMeta: { startPeriod, endPeriod, departmentId, userIdFilter, totalAnalysts: analistas.length },
-        };
-
-        cache[cacheKey] = { data: snapshot, timestamp: Date.now() };
-        console.log("[Digisac] Resultado final:", JSON.stringify(snapshot.totals), "analistas:", analistas.length);
+      const cached = cache[cacheKey]?.data;
+      if (cached && Date.now() - cache[cacheKey].timestamp < CACHE_TTL_MS) {
+        return jsonResponse(cached);
       }
 
-      if (action === "geral") {
-        return jsonResponse({
-          ...snapshot.totals,
-          total: snapshot.totals.total_chamados,
-          analistas: snapshot.analistas,
+      const endpoint = action === "geral" ? "/api/v1/dashboard/general" : "/api/v1/dashboard/by-user";
+      const params = buildDashboardProxyParams(startPeriod, endPeriod, departmentId, requestedUserIds);
+      const response = await fetchDigisac(digisacUrl, digisacToken, endpoint, params);
+      if (!response.ok) {
+        return handledErrorResponse(action, `Erro API Digisac: ${response.status}`, {
+          code: "DIGISAC_API_ERROR",
+          digisac_status: response.status,
         });
       }
 
-      return jsonResponse(snapshot.analistas);
+      cache[cacheKey] = {
+        data: response.data,
+        timestamp: Date.now(),
+      };
+
+      return jsonResponse(response.data);
     }
 
     if (action === "listar_analysts") {
