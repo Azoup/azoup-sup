@@ -94,7 +94,7 @@ const buildDigisacUrl = (baseUrl: string, endpoint: string, params?: URLSearchPa
 const fetchDigisac = async (baseUrl: string, token: string, endpoint: string, params?: URLSearchParams) => {
   const finalUrl = buildDigisacUrl(baseUrl, endpoint, params);
   console.log("[Digisac] URL completa:", finalUrl);
-  console.log("[Digisac] Parâmetros enviados:", JSON.stringify(Object.fromEntries(params?.entries?.() ?? [])));
+  console.log("[Digisac] Parâmetros enviados:", JSON.stringify(Array.from(params?.entries?.() ?? [])));
 
   const response = await fetch(finalUrl, {
     method: "GET",
@@ -177,25 +177,89 @@ const mapGeneralPayload = (payload: any) => {
   };
 };
 
-const fetchAnalystsByUser = async (
-  baseUrl: string,
-  token: string,
+const loadDigisacUsers = async (baseUrl: string, token: string) => {
+  const usersCacheKey = "digisac_users_raw";
+  let users: Array<{ id: string; name: string }> = cache[usersCacheKey]?.data;
+
+  if (!users || Date.now() - cache[usersCacheKey].timestamp >= CACHE_TTL_MS) {
+    const response = await fetchDigisac(baseUrl, token, "/api/v1/users");
+    const list = Array.isArray(response.data?.data) ? response.data.data : Array.isArray(response.data) ? response.data : [];
+
+    users = list
+      .filter((user: any) => user && user.id && !user.deletedAt && user.isClientUser !== true)
+      .map((user: any) => ({
+        id: String(user.id),
+        name: user.name || user.email || "Sem nome",
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    cache[usersCacheKey] = { data: users, timestamp: Date.now() };
+  }
+
+  return users;
+};
+
+const buildGeneralDashboardParams = (
   startPeriod: string,
   endPeriod: string,
   departmentId: string,
-  userIdFilter: string,
-  usersIndex: Map<string, string>,
+  userId: string,
 ) => {
   const params = new URLSearchParams({
     startPeriod,
     endPeriod,
     periodType: "openDate",
     userParticipation: "last",
-    userId: userIdFilter,
+    departmentParticipation: "last",
+    userId,
     status: "all",
     withTotals: "true",
   });
+
   if (departmentId && departmentId !== "all") params.set("departmentId", departmentId);
+
+  return params;
+};
+
+const buildAnalystsDashboardParams = (
+  startPeriod: string,
+  endPeriod: string,
+  departmentId: string,
+  userIds: string[],
+  fallbackUserId?: string,
+) => {
+  const params = new URLSearchParams({
+    startPeriod,
+    endPeriod,
+    periodType: "openDate",
+    userParticipation: "last",
+    departmentParticipation: "last",
+    status: "all",
+    withTotals: "true",
+  });
+
+  if (departmentId && departmentId !== "all") params.set("departmentId", departmentId);
+
+  if (userIds.length > 0) {
+    userIds.forEach((userId) => params.append("userId[]", userId));
+  } else if (fallbackUserId) {
+    params.set("userId", fallbackUserId);
+  }
+
+  return params;
+};
+
+const fetchAnalystsByUser = async (
+  baseUrl: string,
+  token: string,
+  startPeriod: string,
+  endPeriod: string,
+  departmentId: string,
+  userIds: string[],
+  fallbackUserId: string | undefined,
+  usersIndex: Map<string, string>,
+) => {
+  const params = buildAnalystsDashboardParams(startPeriod, endPeriod, departmentId, userIds, fallbackUserId);
 
   const r = await fetchDigisac(baseUrl, token, "/api/v1/dashboard/by-user", params);
   if (!r.ok) {
@@ -330,44 +394,52 @@ Deno.serve(async (req) => {
       const startPeriod = toDigisacPeriod(startDate, "start")!;
       const endPeriod = toDigisacPeriod(endDate, "end")!;
       const cacheKey = `dashboard_general_${startPeriod}_${endPeriod}_${departmentId}_${userIdFilter}`;
+      const users = await loadDigisacUsers(digisacUrl, digisacToken);
+      const usersIndex = new Map(users.map((user) => [user.id, user.name]));
+      const analystUserIds = userIdFilter === "all"
+        ? users.map((user) => user.id)
+        : users.some((user) => user.id === userIdFilter)
+          ? [userIdFilter]
+          : [];
+      const fallbackUserId = userIdFilter !== "all" ? userIdFilter : undefined;
 
       let snapshot = cache[cacheKey]?.data;
       if (!snapshot || Date.now() - cache[cacheKey].timestamp >= CACHE_TTL_MS) {
-        const params = new URLSearchParams({
-          startPeriod,
-          endPeriod,
-          periodType: "openDate",
-          userParticipation: "last",
-          userId: userIdFilter,
-          status: "all",
-          withTotals: "true",
-        });
-        if (departmentId !== "all") params.set("departmentId", departmentId);
+        let totals = {
+          total_chamados: 0,
+          total_fechados: 0,
+          total_abertos: 0,
+          total_mensagens: 0,
+          total_contatos: 0,
+          tma_geral_minutos: 0,
+          tempo_espera_minutos: 0,
+          primeira_resposta_minutos: 0,
+        };
 
-        const response = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/dashboard/general", params);
-        if (!response.ok) {
-          return handledErrorResponse(action, `Erro API Digisac: ${response.status}`, {
-            code: "DIGISAC_API_ERROR",
-            digisac_status: response.status,
-          });
-        }
+        if (action === "geral") {
+          const params = buildGeneralDashboardParams(startPeriod, endPeriod, departmentId, userIdFilter);
+          const response = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/dashboard/general", params);
+          if (!response.ok) {
+            return handledErrorResponse(action, `Erro API Digisac: ${response.status}`, {
+              code: "DIGISAC_API_ERROR",
+              digisac_status: response.status,
+            });
+          }
 
-        const usersCacheKey = "digisac_users_raw";
-        let users: Array<{ id: string; name: string }> = cache[usersCacheKey]?.data;
-        if (!users || Date.now() - cache[usersCacheKey].timestamp >= CACHE_TTL_MS) {
-          const ru = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/users");
-          const list = Array.isArray(ru.data?.data) ? ru.data.data : Array.isArray(ru.data) ? ru.data : [];
-          users = list
-            .filter((u: any) => u && u.id && !u.deletedAt && u.isClientUser !== true)
-            .map((u: any) => ({ id: String(u.id), name: u.name || u.email || "Sem nome" }));
-          cache[usersCacheKey] = { data: users, timestamp: Date.now() };
+          totals = mapGeneralPayload(response.data);
         }
-        const usersIndex = new Map(users.map((u) => [u.id, u.name]));
 
         // Uma única chamada /by-user retorna TODOS os analistas com seus próprios totais.
         // TMA é calculado item a item: ticketTime / closedTicketsCount.
         const analystResults = await fetchAnalystsByUser(
-          digisacUrl, digisacToken, startPeriod, endPeriod, departmentId, userIdFilter, usersIndex
+          digisacUrl,
+          digisacToken,
+          startPeriod,
+          endPeriod,
+          departmentId,
+          analystUserIds,
+          fallbackUserId,
+          usersIndex,
         );
 
         const analistas = analystResults
@@ -375,7 +447,7 @@ Deno.serve(async (req) => {
           .sort((a, b) => b.tma_minutos - a.tma_minutos);
 
         snapshot = {
-          totals: mapGeneralPayload(response.data),
+          totals,
           analistas,
           allUsers: users,
           rawMeta: { startPeriod, endPeriod, departmentId, userIdFilter, totalAnalysts: analistas.length },
@@ -398,17 +470,7 @@ Deno.serve(async (req) => {
 
     if (action === "listar_analysts") {
       // Returns Digisac users (id, name) — used to feed the analyst filter
-      const usersCacheKey = "digisac_users_raw";
-      let users: Array<{ id: string; name: string }> = cache[usersCacheKey]?.data;
-      if (!users || Date.now() - cache[usersCacheKey].timestamp >= CACHE_TTL_MS) {
-        const ru = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/users");
-        const list = Array.isArray(ru.data?.data) ? ru.data.data : Array.isArray(ru.data) ? ru.data : [];
-        users = list
-          .filter((u: any) => u && u.id && !u.deletedAt && u.isClientUser !== true)
-          .map((u: any) => ({ id: String(u.id), name: u.name || "Sem nome" }))
-          .sort((a, b) => a.name.localeCompare(b.name));
-        cache[usersCacheKey] = { data: users, timestamp: Date.now() };
-      }
+      const users = await loadDigisacUsers(digisacUrl, digisacToken);
       return jsonResponse(users);
     }
 
