@@ -338,82 +338,32 @@ Deno.serve(async (req) => {
       const startDate = formatDateOnly(typeof payload?.startDate === "string" ? payload.startDate : undefined) ?? today;
       const endDate = formatDateOnly(typeof payload?.endDate === "string" ? payload.endDate : undefined) ?? startDate;
       const departmentId = typeof payload?.departmentId === "string" && payload.departmentId ? payload.departmentId : "all";
-      const userIdFilter = typeof payload?.userId === "string" && payload.userId ? payload.userId : "all";
+      const requestedUserIds = normalizeRequestedUserIds(payload);
       const startPeriod = toDigisacPeriod(startDate, "start")!;
       const endPeriod = toDigisacPeriod(endDate, "end")!;
-      const cacheKey = `dashboard_general_${startPeriod}_${endPeriod}_${departmentId}_${userIdFilter}`;
-      const users = await loadDigisacUsers(digisacUrl, digisacToken);
-      const usersIndex = new Map(users.map((user) => [user.id, user.name]));
-      const analystUserIds = userIdFilter === "all"
-        ? users.map((user) => user.id)
-        : users.some((user) => user.id === userIdFilter)
-          ? [userIdFilter]
-          : [];
-      const fallbackUserId = userIdFilter !== "all" ? userIdFilter : undefined;
+      const cacheKey = `dashboard_proxy_${action}_${startPeriod}_${endPeriod}_${departmentId}_${requestedUserIds.join(",") || "all"}`;
 
-      let snapshot = cache[cacheKey]?.data;
-      if (!snapshot || Date.now() - cache[cacheKey].timestamp >= CACHE_TTL_MS) {
-        let totals = {
-          total_chamados: 0,
-          total_fechados: 0,
-          total_abertos: 0,
-          total_mensagens: 0,
-          total_contatos: 0,
-          tma_geral_minutos: 0,
-          tempo_espera_minutos: 0,
-          primeira_resposta_minutos: 0,
-        };
-
-        if (action === "geral") {
-          const params = buildGeneralDashboardParams(startPeriod, endPeriod, departmentId, userIdFilter);
-          const response = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/dashboard/general", params);
-          if (!response.ok) {
-            return handledErrorResponse(action, `Erro API Digisac: ${response.status}`, {
-              code: "DIGISAC_API_ERROR",
-              digisac_status: response.status,
-            });
-          }
-
-          totals = mapGeneralPayload(response.data);
-        }
-
-        // Uma única chamada /by-user retorna TODOS os analistas com seus próprios totais.
-        // TMA é calculado item a item: ticketTime / closedTicketsCount.
-        const analystResults = await fetchAnalystsByUser(
-          digisacUrl,
-          digisacToken,
-          startPeriod,
-          endPeriod,
-          departmentId,
-          analystUserIds,
-          fallbackUserId,
-          usersIndex,
-        );
-
-        const analistas = analystResults
-          .filter((a) => (a.chamados_fechados ?? 0) > 0 || (a.total_chamados ?? 0) > 0)
-          .sort((a, b) => b.tma_minutos - a.tma_minutos);
-
-        snapshot = {
-          totals,
-          analistas,
-          allUsers: users,
-          rawMeta: { startPeriod, endPeriod, departmentId, userIdFilter, totalAnalysts: analistas.length },
-        };
-
-        cache[cacheKey] = { data: snapshot, timestamp: Date.now() };
-        console.log("[Digisac] Resultado final:", JSON.stringify(snapshot.totals), "analistas:", analistas.length);
+      const cached = cache[cacheKey]?.data;
+      if (cached && Date.now() - cache[cacheKey].timestamp < CACHE_TTL_MS) {
+        return jsonResponse(cached);
       }
 
-      if (action === "geral") {
-        return jsonResponse({
-          ...snapshot.totals,
-          total: snapshot.totals.total_chamados,
-          analistas: snapshot.analistas,
+      const endpoint = action === "geral" ? "/api/v1/dashboard/general" : "/api/v1/dashboard/by-user";
+      const params = buildDashboardProxyParams(startPeriod, endPeriod, departmentId, requestedUserIds);
+      const response = await fetchDigisac(digisacUrl, digisacToken, endpoint, params);
+      if (!response.ok) {
+        return handledErrorResponse(action, `Erro API Digisac: ${response.status}`, {
+          code: "DIGISAC_API_ERROR",
+          digisac_status: response.status,
         });
       }
 
-      return jsonResponse(snapshot.analistas);
+      cache[cacheKey] = {
+        data: response.data,
+        timestamp: Date.now(),
+      };
+
+      return jsonResponse(response.data);
     }
 
     if (action === "listar_analysts") {
