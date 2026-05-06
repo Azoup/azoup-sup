@@ -94,7 +94,7 @@ const buildDigisacUrl = (baseUrl: string, endpoint: string, params?: URLSearchPa
 const fetchDigisac = async (baseUrl: string, token: string, endpoint: string, params?: URLSearchParams) => {
   const finalUrl = buildDigisacUrl(baseUrl, endpoint, params);
   console.log("[Digisac] URL completa:", finalUrl);
-  console.log("[Digisac] Parâmetros enviados:", JSON.stringify(Object.fromEntries(params?.entries?.() ?? [])));
+  console.log("[Digisac] Parâmetros enviados:", JSON.stringify(Array.from(params?.entries?.() ?? [])));
 
   const response = await fetch(finalUrl, {
     method: "GET",
@@ -177,25 +177,67 @@ const mapGeneralPayload = (payload: any) => {
   };
 };
 
-const fetchAnalystsByUser = async (
-  baseUrl: string,
-  token: string,
+const loadDigisacUsers = async (baseUrl: string, token: string) => {
+  const usersCacheKey = "digisac_users_raw";
+  let users: Array<{ id: string; name: string }> = cache[usersCacheKey]?.data;
+
+  if (!users || Date.now() - cache[usersCacheKey].timestamp >= CACHE_TTL_MS) {
+    const response = await fetchDigisac(baseUrl, token, "/api/v1/users");
+    const list = Array.isArray(response.data?.data) ? response.data.data : Array.isArray(response.data) ? response.data : [];
+
+    users = list
+      .filter((user: any) => user && user.id && !user.deletedAt && user.isClientUser !== true)
+      .map((user: any) => ({
+        id: String(user.id),
+        name: user.name || user.email || "Sem nome",
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    cache[usersCacheKey] = { data: users, timestamp: Date.now() };
+  }
+
+  return users;
+};
+
+const buildDashboardParams = (
   startPeriod: string,
   endPeriod: string,
   departmentId: string,
-  userIdFilter: string,
-  usersIndex: Map<string, string>,
+  userIds: string[],
+  fallbackUserId?: string,
 ) => {
   const params = new URLSearchParams({
     startPeriod,
     endPeriod,
     periodType: "openDate",
     userParticipation: "last",
-    userId: userIdFilter,
+    departmentParticipation: "last",
     status: "all",
     withTotals: "true",
   });
+
   if (departmentId && departmentId !== "all") params.set("departmentId", departmentId);
+
+  if (userIds.length > 0) {
+    userIds.forEach((userId) => params.append("userId[]", userId));
+  } else if (fallbackUserId) {
+    params.set("userId", fallbackUserId);
+  }
+
+  return params;
+};
+
+const fetchAnalystsByUser = async (
+  baseUrl: string,
+  token: string,
+  startPeriod: string,
+  endPeriod: string,
+  departmentId: string,
+  userIds: string[],
+  fallbackUserId: string | undefined,
+  usersIndex: Map<string, string>,
+) => {
+  const params = buildDashboardParams(startPeriod, endPeriod, departmentId, userIds, fallbackUserId);
 
   const r = await fetchDigisac(baseUrl, token, "/api/v1/dashboard/by-user", params);
   if (!r.ok) {
