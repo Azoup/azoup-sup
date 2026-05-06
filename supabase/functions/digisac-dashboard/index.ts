@@ -199,34 +199,24 @@ const loadDigisacUsers = async (baseUrl: string, token: string) => {
   return users;
 };
 
-const buildGeneralDashboardParams = (
-  startPeriod: string,
-  endPeriod: string,
-  departmentId: string,
-  userId: string,
-) => {
-  const params = new URLSearchParams({
-    startPeriod,
-    endPeriod,
-    periodType: "openDate",
-    userParticipation: "last",
-    departmentParticipation: "last",
-    userId,
-    status: "all",
-    withTotals: "true",
-  });
+const normalizeRequestedUserIds = (payload: Record<string, unknown>) => {
+  const userIds = Array.isArray(payload.userIds)
+    ? payload.userIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0 && value !== "all")
+    : [];
+  const singleUserId = typeof payload.userId === "string" && payload.userId.trim().length > 0 && payload.userId !== "all"
+    ? payload.userId
+    : undefined;
 
-  if (departmentId && departmentId !== "all") params.set("departmentId", departmentId);
-
-  return params;
+  if (userIds.length > 0) return userIds;
+  if (singleUserId) return [singleUserId];
+  return [];
 };
 
-const buildAnalystsDashboardParams = (
+const buildDashboardProxyParams = (
   startPeriod: string,
   endPeriod: string,
   departmentId: string,
-  userIds: string[],
-  fallbackUserId?: string,
+  requestedUserIds: string[],
 ) => {
   const params = new URLSearchParams({
     startPeriod,
@@ -235,62 +225,20 @@ const buildAnalystsDashboardParams = (
     userParticipation: "last",
     departmentParticipation: "last",
     status: "all",
+    userStatus: "all",
     withTotals: "true",
   });
 
   if (departmentId && departmentId !== "all") params.set("departmentId", departmentId);
 
-  if (userIds.length > 0) {
-    userIds.forEach((userId) => params.append("userId[]", userId));
-  } else if (fallbackUserId) {
-    params.set("userId", fallbackUserId);
+  if (requestedUserIds.length > 0) {
+    requestedUserIds.forEach((userId) => params.append("userId[]", userId));
+  } else {
+    params.set("userId", "all");
   }
 
+  console.log("PARAMS FINAIS:", params.toString());
   return params;
-};
-
-const fetchAnalystsByUser = async (
-  baseUrl: string,
-  token: string,
-  startPeriod: string,
-  endPeriod: string,
-  departmentId: string,
-  userIds: string[],
-  fallbackUserId: string | undefined,
-  usersIndex: Map<string, string>,
-) => {
-  const params = buildAnalystsDashboardParams(startPeriod, endPeriod, departmentId, userIds, fallbackUserId);
-
-  const r = await fetchDigisac(baseUrl, token, "/api/v1/dashboard/by-user", params);
-  if (!r.ok) {
-    console.error("[Digisac] by-user falhou:", r.status);
-    return [];
-  }
-
-  const items = firstArray(r.data, ["items", "data", "rows", "users"]);
-  console.log("[Digisac] by-user items:", items.length);
-
-  return items.map((item: any) => {
-    const id = String(item.userId ?? item.id ?? item.user?.id ?? "");
-    const name = item.userName ?? item.name ?? item.user?.name ?? usersIndex.get(id) ?? "Sem nome";
-    const closed = asNumber(item.closedTicketsCount, item.closedTickets, item.closed);
-    const ticketTimeSec = asNumber(item.ticketTime, item.totalTicketTime, item.ticketsTime);
-    // REGRA: TMA = ticketTime / closedTicketsCount (por item). Não usar totals nem média global.
-    const tmaSeconds = closed > 0 ? ticketTimeSec / closed : 0;
-    const sent = asNumber(item.sentMessagesCount, item.sentMessages);
-    const received = asNumber(item.receivedMessagesCount, item.receivedMessages);
-    return {
-      analyst_id: id,
-      name,
-      mapped: true,
-      total_chamados: asNumber(item.totalTicketsCount, item.totalTickets) || closed,
-      chamados_fechados: closed,
-      chamados_abertos: asNumber(item.openedTicketsCount, item.openTickets, item.opened),
-      total_contatos: asNumber(item.contactsCount, item.totalContacts),
-      total_mensagens: sent + received,
-      tma_minutos: minutesFromSeconds(tmaSeconds),
-    };
-  });
 };
 
 
