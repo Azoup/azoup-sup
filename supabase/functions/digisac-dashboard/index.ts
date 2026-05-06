@@ -61,16 +61,9 @@ const toDigisacPeriod = (dateOnly: string | undefined, boundary: "start" | "end"
   const normalized = formatDateOnly(dateOnly);
   if (!normalized) return undefined;
   const [year, month, day] = normalized.split("-").map(Number);
-  const utcHour = boundary === "start" ? BRAZIL_UTC_OFFSET_HOURS : 24 + BRAZIL_UTC_OFFSET_HOURS - 1;
-  const utcMinute = boundary === "start" ? 0 : 59;
-  const utcSecond = boundary === "start" ? 0 : 59;
-  const utcMs = boundary === "start" ? 0 : 999;
   const utcDate = boundary === "start"
     ? new Date(Date.UTC(year, month - 1, day, 3, 0, 0, 0))
-    : new Date(Date.UTC(year, month - 1, day + 1, 2, 59, 59, 999));
-  if (boundary === "start") {
-    utcDate.setUTCHours(utcHour, utcMinute, utcSecond, utcMs);
-  }
+    : new Date(Date.UTC(year, month - 1, day, 2, 59, 59, 999));
   return utcDate.toISOString();
 };
 
