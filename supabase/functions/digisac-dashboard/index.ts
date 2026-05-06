@@ -405,14 +405,28 @@ Deno.serve(async (req) => {
 
       let snapshot = cache[cacheKey]?.data;
       if (!snapshot || Date.now() - cache[cacheKey].timestamp >= CACHE_TTL_MS) {
-        const params = buildGeneralDashboardParams(startPeriod, endPeriod, departmentId, userIdFilter);
+        let totals = {
+          total_chamados: 0,
+          total_fechados: 0,
+          total_abertos: 0,
+          total_mensagens: 0,
+          total_contatos: 0,
+          tma_geral_minutos: 0,
+          tempo_espera_minutos: 0,
+          primeira_resposta_minutos: 0,
+        };
 
-        const response = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/dashboard/general", params);
-        if (!response.ok) {
-          return handledErrorResponse(action, `Erro API Digisac: ${response.status}`, {
-            code: "DIGISAC_API_ERROR",
-            digisac_status: response.status,
-          });
+        if (action === "geral") {
+          const params = buildGeneralDashboardParams(startPeriod, endPeriod, departmentId, userIdFilter);
+          const response = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/dashboard/general", params);
+          if (!response.ok) {
+            return handledErrorResponse(action, `Erro API Digisac: ${response.status}`, {
+              code: "DIGISAC_API_ERROR",
+              digisac_status: response.status,
+            });
+          }
+
+          totals = mapGeneralPayload(response.data);
         }
 
         // Uma única chamada /by-user retorna TODOS os analistas com seus próprios totais.
@@ -433,7 +447,7 @@ Deno.serve(async (req) => {
           .sort((a, b) => b.tma_minutos - a.tma_minutos);
 
         snapshot = {
-          totals: mapGeneralPayload(response.data),
+          totals,
           analistas,
           allUsers: users,
           rawMeta: { startPeriod, endPeriod, departmentId, userIdFilter, totalAnalysts: analistas.length },
