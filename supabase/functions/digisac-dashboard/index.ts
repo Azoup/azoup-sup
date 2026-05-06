@@ -199,7 +199,29 @@ const loadDigisacUsers = async (baseUrl: string, token: string) => {
   return users;
 };
 
-const buildDashboardParams = (
+const buildGeneralDashboardParams = (
+  startPeriod: string,
+  endPeriod: string,
+  departmentId: string,
+  userId: string,
+) => {
+  const params = new URLSearchParams({
+    startPeriod,
+    endPeriod,
+    periodType: "openDate",
+    userParticipation: "last",
+    departmentParticipation: "last",
+    userId,
+    status: "all",
+    withTotals: "true",
+  });
+
+  if (departmentId && departmentId !== "all") params.set("departmentId", departmentId);
+
+  return params;
+};
+
+const buildAnalystsDashboardParams = (
   startPeriod: string,
   endPeriod: string,
   departmentId: string,
@@ -237,7 +259,7 @@ const fetchAnalystsByUser = async (
   fallbackUserId: string | undefined,
   usersIndex: Map<string, string>,
 ) => {
-  const params = buildDashboardParams(startPeriod, endPeriod, departmentId, userIds, fallbackUserId);
+  const params = buildAnalystsDashboardParams(startPeriod, endPeriod, departmentId, userIds, fallbackUserId);
 
   const r = await fetchDigisac(baseUrl, token, "/api/v1/dashboard/by-user", params);
   if (!r.ok) {
