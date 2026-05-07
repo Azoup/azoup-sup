@@ -56,6 +56,7 @@ const KanbanDev = () => {
   const [developerId, setDeveloperId] = useState('');
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [pendingImages, setPendingImages] = useState<File[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [editingCard, setEditingCard] = useState<any>(null);
   const [viewingCard, setViewingCard] = useState<any>(null);
   const [newLabelName, setNewLabelName] = useState('');
