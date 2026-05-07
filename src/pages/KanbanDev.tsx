@@ -850,6 +850,7 @@ const KanbanDev = () => {
             selectedLabels={selectedLabels} toggleLabel={toggleLabel}
             pendingImages={pendingImages} setPendingImages={setPendingImages}
             pendingFiles={pendingFiles} setPendingFiles={setPendingFiles}
+            existingImages={[]} onDeleteImage={() => {}}
             onSubmit={() => createCard.mutate()} loading={createCard.isPending}
           />
         </DialogContent>
