@@ -17,18 +17,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
 
-const ALLOWED_TYPES = [
-  'image/jpeg', 'image/png', 'image/webp', 'image/gif',
-  'video/mp4', 'video/quicktime', 'video/webm',
-  'application/pdf',
-  'text/plain', 'text/csv', 'text/xml', 'application/xml',
-  'application/json',
-  'application/zip', 'application/x-zip-compressed',
-  'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/octet-stream',
-];
-
 interface DevCardFilesProps {
   cardId: string;
 }
