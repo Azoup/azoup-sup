@@ -111,9 +111,7 @@ export default function DigisacDashboard() {
     }));
 
   const totalChamadosFechados = chamadosChartData.reduce((acc, a) => acc + a.Fechados, 0);
-  const mediaTmaMinutos = analistasList.length
-    ? analistasList.reduce((acc, a) => acc + (a.tma_minutos || 0), 0) / analistasList.length
-    : 0;
+  const mediaTmaMinutos = geral?.tma_geral_minutos || 0;
 
   const hasError = isErrorGeral || isErrorAnalistas;
   const hasData = (geral?.total_chamados || 0) > 0 || analistasList.length > 0;
