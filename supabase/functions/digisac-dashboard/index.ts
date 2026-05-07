@@ -61,17 +61,24 @@ const toDigisacPeriod = (dateOnly: string | undefined, boundary: "start" | "end"
   const normalized = formatDateOnly(dateOnly);
   if (!normalized) return undefined;
   const [year, month, day] = normalized.split("-").map(Number);
+  
+  // Para o início do período: 00:00:00 no horário de Brasília (UTC-3) -> 03:00:00 UTC
+  // Para o fim do período: 23:59:59 no horário de Brasília (UTC-3) -> 02:59:59 UTC do DIA SEGUINTE
   const utcDate = boundary === "start"
     ? new Date(Date.UTC(year, month - 1, day, 3, 0, 0, 0))
-    : new Date(Date.UTC(year, month - 1, day, 2, 59, 59, 999));
+    : new Date(Date.UTC(year, month - 1, day + 1, 2, 59, 59, 999));
+    
   return utcDate.toISOString();
 };
 
 const getTodayBrazilDate = () => {
   const now = new Date();
-  const brazilMs = now.getTime() - BRAZIL_UTC_OFFSET_HOURS * 60 * 60 * 1000;
-  const brazil = new Date(brazilMs);
-  return `${brazil.getUTCFullYear()}-${String(brazil.getUTCMonth() + 1).padStart(2, "0")}-${String(brazil.getUTCDate()).padStart(2, "0")}`;
+  // Ajuste manual para UTC-3 (Horário de Brasília)
+  const brazilDate = new Date(now.getTime() - (3 * 60 * 60 * 1000));
+  const year = brazilDate.getUTCFullYear();
+  const month = String(brazilDate.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(brazilDate.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 const buildDigisacUrl = (baseUrl: string, endpoint: string, params?: URLSearchParams) => {
@@ -366,13 +373,13 @@ Deno.serve(async (req) => {
         return handledErrorResponse(action, "Usuário não autenticado. Faça login para acessar a integração.", { code: "UNAUTHORIZED" });
       }
       const token = authHeader.replace("Bearer ", "");
-      const { data: claimsData, error: claimsError } = await supabaseClient.auth.getClaims(token);
-      if (claimsError || !claimsData?.claims?.sub) {
+      const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+      if (authError || !user) {
         return handledErrorResponse(action, "Usuário não autenticado.", { code: "UNAUTHORIZED" });
       }
 
       // Permission check (digisac_dashboard) — admins always allowed
-      const userId = claimsData.claims.sub as string;
+      const userId = user.id;
       const protectedActions = new Set(["geral", "analistas", "listar_departments", "listar_digisac_users", "listar_analysts"]);
       if (protectedActions.has(action ?? "")) {
         const adminClient = createClient(
