@@ -124,6 +124,27 @@ const asNumber = (...values: unknown[]): number => {
 
 const minutesFromSeconds = (value: number) => value > 0 ? value / 60 : 0;
 
+const INVALID_DIGISAC_USER_NAMES = new Set([
+  "sem atendente",
+  "mandeumzap dev",
+  "mande um zap dev",
+  "azoup tecnologia ltda",
+  "azoup digisac",
+]);
+
+const normalizeComparableName = (value: string) => value
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .replace(/[^a-zA-Z0-9]+/g, " ")
+  .trim()
+  .toLowerCase();
+
+const isInvalidDigisacUserName = (value?: string) => {
+  const normalized = normalizeComparableName(value || "");
+  if (!normalized) return true;
+  return INVALID_DIGISAC_USER_NAMES.has(normalized);
+};
+
 const pickByKeys = (source: Record<string, any> | undefined, keys: string[]) => {
   if (!source) return 0;
   for (const key of keys) {
@@ -179,7 +200,7 @@ const loadDigisacUsers = async (baseUrl: string, token: string) => {
     const list = Array.isArray(response.data?.data) ? response.data.data : Array.isArray(response.data) ? response.data : [];
 
     users = list
-      .filter((user: any) => user && user.id && !user.deletedAt && user.isClientUser !== true)
+      .filter((user: any) => user && user.id && !user.deletedAt && user.isClientUser !== true && !isInvalidDigisacUserName(user.name || user.email))
       .map((user: any) => ({
         id: String(user.id),
         name: user.name || user.email || "Sem nome",
@@ -205,7 +226,54 @@ const normalizeRequestedUserIds = (payload: Record<string, unknown>) => {
   return [];
 };
 
-const buildDashboardProxyParams = (
+const loadValidMappedAnalystUsers = async (
+  adminClient: ReturnType<typeof createClient>,
+  baseUrl: string,
+  token: string,
+) => {
+  const [digisacUsers, mappingsResult, analystsResult] = await Promise.all([
+    loadDigisacUsers(baseUrl, token),
+    adminClient.from("digisac_analyst_mapping").select("digisac_user_id, digisac_user_name, analyst_id"),
+    adminClient.from("analysts").select("id, name, status").eq("status", "active"),
+  ]);
+
+  if (mappingsResult.error) throw mappingsResult.error;
+  if (analystsResult.error) throw analystsResult.error;
+
+  const activeAnalystsById = new Map(
+    (analystsResult.data ?? []).map((analyst: any) => [String(analyst.id), analyst]),
+  );
+  const digisacUsersById = new Map(digisacUsers.map((user) => [user.id, user]));
+  const validUsers = new Map<string, { id: string; name: string }>();
+
+  for (const mapping of mappingsResult.data ?? []) {
+    const activeAnalyst = activeAnalystsById.get(String(mapping.analyst_id));
+    const digisacUser = digisacUsersById.get(String(mapping.digisac_user_id));
+
+    if (!activeAnalyst || !digisacUser) continue;
+    if (isInvalidDigisacUserName(activeAnalyst.name) || isInvalidDigisacUserName(digisacUser.name || mapping.digisac_user_name)) continue;
+
+    validUsers.set(digisacUser.id, {
+      id: digisacUser.id,
+      name: digisacUser.name || mapping.digisac_user_name || activeAnalyst.name,
+    });
+  }
+
+  return Array.from(validUsers.values()).sort((a, b) => a.name.localeCompare(b.name));
+};
+
+const resolveAnalystUserIds = (
+  requestedUserIds: string[],
+  validUsers: Array<{ id: string; name: string }>,
+) => {
+  const validUserIds = new Set(validUsers.map((user) => user.id));
+  if (requestedUserIds.length > 0) {
+    return requestedUserIds.filter((userId) => validUserIds.has(userId));
+  }
+  return validUsers.map((user) => user.id);
+};
+
+const buildGeneralDashboardParams = (
   startPeriod: string,
   endPeriod: string,
   departmentId: string,
@@ -224,11 +292,32 @@ const buildDashboardProxyParams = (
 
   if (departmentId && departmentId !== "all") params.set("departmentId", departmentId);
 
-  if (requestedUserIds.length > 0) {
-    requestedUserIds.forEach((userId) => params.append("userId[]", userId));
-  } else {
-    params.set("userId", "all");
-  }
+  params.set("userId", requestedUserIds[0] ?? "all");
+
+  console.log("PARAMS FINAIS:", params.toString());
+  return params;
+};
+
+const buildAnalystsDashboardParams = (
+  startPeriod: string,
+  endPeriod: string,
+  departmentId: string,
+  requestedUserIds: string[],
+) => {
+  const params = new URLSearchParams({
+    startPeriod,
+    endPeriod,
+    periodType: "openDate",
+    userParticipation: "last",
+    departmentParticipation: "last",
+    status: "all",
+    userStatus: "all",
+    withTotals: "true",
+  });
+
+  if (departmentId && departmentId !== "all") params.set("departmentId", departmentId);
+
+  requestedUserIds.forEach((userId) => params.append("userId[]", userId));
 
   console.log("PARAMS FINAIS:", params.toString());
   return params;
