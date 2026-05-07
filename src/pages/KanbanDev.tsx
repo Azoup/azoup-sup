@@ -871,6 +871,7 @@ const KanbanDev = () => {
             analysts={analysts} developers={developers} labels={labels}
             selectedLabels={selectedLabels} toggleLabel={toggleLabel}
             pendingImages={pendingImages} setPendingImages={setPendingImages}
+            pendingFiles={pendingFiles} setPendingFiles={setPendingFiles}
             existingImages={editingCardImages} onDeleteImage={(id) => deleteImage.mutate(id)}
             onSubmit={() => updateCard.mutate()} loading={updateCard.isPending}
           />
