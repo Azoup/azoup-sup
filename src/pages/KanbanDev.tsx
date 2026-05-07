@@ -488,7 +488,7 @@ const KanbanDev = () => {
 
   const resetForm = () => {
     setTitle(''); setDescription(''); setAnalystId(''); setDeveloperId('');
-    setSelectedLabels([]); setPendingImages([]); setEditingCard(null);
+    setSelectedLabels([]); setPendingImages([]); setPendingFiles([]); setEditingCard(null);
   };
 
   const openEdit = (card: any) => {
