@@ -994,6 +994,7 @@ function DevCardFormContent({
   analysts, developers, labels,
   selectedLabels, toggleLabel,
   pendingImages, setPendingImages,
+  pendingFiles, setPendingFiles,
   existingImages, onDeleteImage,
   onSubmit, loading,
 }: {
@@ -1004,6 +1005,7 @@ function DevCardFormContent({
   analysts: any[]; developers: any[]; labels: any[];
   selectedLabels: string[]; toggleLabel: (id: string) => void;
   pendingImages: File[]; setPendingImages: (f: File[]) => void;
+  pendingFiles: File[]; setPendingFiles: (f: File[]) => void;
   existingImages: any[]; onDeleteImage: (id: string) => void;
   onSubmit: () => void; loading: boolean;
 }) {
@@ -1024,14 +1026,36 @@ function DevCardFormContent({
     }
   }, [pendingImages, setPendingImages]);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length > 0) setPendingImages([...pendingImages, ...files]);
     e.target.value = '';
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) setPendingFiles([...pendingFiles, ...files]);
+    e.target.value = '';
+  };
+
+  const handleFileDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length > 0) setPendingFiles([...pendingFiles, ...files]);
+  };
+
   const removePending = (index: number) => {
     setPendingImages(pendingImages.filter((_, i) => i !== index));
+  };
+  const removePendingFile = (index: number) => {
+    setPendingFiles(pendingFiles.filter((_, i) => i !== index));
+  };
+
+  const formatSize = (b: number) => {
+    if (b < 1024) return `${b} B`;
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+    if (b < 1024 * 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(b / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
   return (
@@ -1092,10 +1116,35 @@ function DevCardFormContent({
         </div>
       )}
 
+      <div
+        className="rounded-md border border-dashed p-3 text-xs text-muted-foreground"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={handleFileDrop}
+      >
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <span className="flex items-center gap-1"><Paperclip className="h-3 w-3" /> Anexar arquivos (qualquer formato) — arraste aqui ou</span>
+          <label className="cursor-pointer text-primary hover:underline">
+            selecionar
+            <input type="file" accept="*/*" multiple className="hidden" onChange={handleFileSelect} />
+          </label>
+        </div>
+        {pendingFiles.length > 0 && (
+          <ul className="mt-2 space-y-1">
+            {pendingFiles.map((f, i) => (
+              <li key={i} className="flex items-center justify-between gap-2 rounded bg-muted/30 px-2 py-1">
+                <span className="truncate text-foreground">{f.name}</span>
+                <span className="shrink-0 text-[10px]">{formatSize(f.size)}</span>
+                <button type="button" onClick={() => removePendingFile(i)} className="text-destructive shrink-0"><X className="h-3 w-3" /></button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <div className="flex items-center gap-2">
         <label className="text-xs text-muted-foreground flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors">
           <ImagePlus className="h-3 w-3" /> Adicionar imagens
-          <input type="file" accept="image/*" multiple className="hidden" onChange={handleFileSelect} />
+          <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageSelect} />
         </label>
         <span className="text-[10px] text-muted-foreground">ou CTRL+V para colar</span>
       </div>
@@ -1106,5 +1155,4 @@ function DevCardFormContent({
     </div>
   );
 }
-
 export default KanbanDev;
