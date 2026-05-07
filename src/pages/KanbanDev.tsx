@@ -300,6 +300,10 @@ const KanbanDev = () => {
       if (pendingImages.length > 0) {
         await uploadAndSaveImages(editingCard.id, pendingImages);
       }
+      if (pendingFiles.length > 0) {
+        await uploadAndSaveFiles(editingCard.id, pendingFiles);
+        queryClient.invalidateQueries({ queryKey: ['dev-card-files', editingCard.id] });
+      }
       await logActivity('Editou card no Kanban DEV', title);
 
       // Notifications — notify both developer and analyst
