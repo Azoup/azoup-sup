@@ -63,6 +63,29 @@ function minutesFromSeconds(value: number) {
   return value > 0 ? value / 60 : 0;
 }
 
+const INVALID_DIGISAC_USER_NAMES = new Set([
+  'sem atendente',
+  'mandeumzap dev',
+  'mande um zap dev',
+  'azoup tecnologia ltda',
+  'azoup digisac',
+]);
+
+function normalizeComparableName(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function isInvalidDigisacUserName(value?: string) {
+  const normalized = normalizeComparableName(value || '');
+  if (!normalized) return true;
+  return INVALID_DIGISAC_USER_NAMES.has(normalized);
+}
+
 function pickByKeys(source: Record<string, any> | undefined, keys: string[]) {
   if (!source) return 0;
   for (const key of keys) {
@@ -101,7 +124,9 @@ function normalizeGeralResponse(payload: any): DigisacGeralResponse {
 function normalizeAnalistasResponse(payload: any): DigisacAnalystStats[] {
   const items = Array.isArray(payload) ? payload : firstArray(payload, ['items', 'data', 'rows', 'users']);
 
-  return items.map((item: any) => {
+  return items
+    .filter((item: any) => !isInvalidDigisacUserName(item?.userName ?? item?.name ?? item?.user?.name))
+    .map((item: any) => {
     const closed = asNumber(item.closedTicketsCount, item.closedTickets, item.closed);
     const opened = asNumber(item.openedTicketsCount, item.openTickets, item.opened);
     const ticketTimeSeconds = asNumber(item.ticketTime, item.totalTicketTime, item.ticketsTime);
@@ -117,7 +142,7 @@ function normalizeAnalistasResponse(payload: any): DigisacAnalystStats[] {
       chamados_abertos: opened,
       total_contatos: asNumber(item.contactsCount, item.totalContacts),
       total_mensagens: sent + received,
-      tma_minutos: minutesFromSeconds(closed > 0 ? ticketTimeSeconds / closed : 0),
+      tma_minutos: minutesFromSeconds(ticketTimeSeconds),
     };
   });
 }
