@@ -70,10 +70,6 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
       toast.error(`${file.name}: excede o limite de 100MB`);
       return;
     }
-    if (ALLOWED_TYPES.length && !ALLOWED_TYPES.includes(file.type) && file.type !== '') {
-      toast.error(`${file.name}: tipo de arquivo não permitido`);
-      return;
-    }
 
     const idx = uploads.length;
     setUploads(prev => [...prev, { name: file.name, progress: 0, status: 'uploading' }]);
