@@ -254,6 +254,9 @@ const KanbanDev = () => {
       if (pendingImages.length > 0) {
         await uploadAndSaveImages(data.id, pendingImages);
       }
+      if (pendingFiles.length > 0) {
+        await uploadAndSaveFiles(data.id, pendingFiles);
+      }
       await logActivity('Criou card no Kanban DEV', title);
       if (developerId || analystId) {
         await notifyDevAndAnalyst({
