@@ -210,6 +210,32 @@ const KanbanDev = () => {
     }
   };
 
+  const uploadAndSaveFiles = async (cardId: string, files: File[]) => {
+    for (const file of files) {
+      try {
+        const ext = file.name.split('.').pop() || 'bin';
+        const path = `${cardId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const { error: upErr } = await supabase.storage
+          .from('dev-kanban-files')
+          .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+        if (upErr) throw upErr;
+        const { data: urlData } = supabase.storage.from('dev-kanban-files').getPublicUrl(path);
+        await supabase.from('dev_kanban_card_files').insert({
+          card_id: cardId,
+          file_url: urlData.publicUrl,
+          file_path: path,
+          file_name: file.name,
+          file_type: file.type || 'application/octet-stream',
+          file_size: file.size,
+          uploaded_by: user?.id,
+          uploaded_by_email: user?.email || '',
+        });
+      } catch (e: any) {
+        toast.error(`Erro ao enviar ${file.name}: ${e.message}`);
+      }
+    }
+  };
+
   const createCard = useMutation({
     mutationFn: async () => {
       const colCards = cardsByColumn[targetColumn] || [];
