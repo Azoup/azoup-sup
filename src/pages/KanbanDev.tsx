@@ -499,6 +499,7 @@ const KanbanDev = () => {
     setDeveloperId(card.developer_id || '');
     setSelectedLabels((card.labels || []).map((l: any) => l.id));
     setPendingImages([]);
+    setPendingFiles([]);
     setEditOpen(true);
   };
 
