@@ -430,8 +430,23 @@ Deno.serve(async (req) => {
         return jsonResponse(cached);
       }
 
+      const adminClient = createClient(
+        Deno.env.get("SUPABASE_URL") ?? "",
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      );
       const endpoint = action === "geral" ? "/api/v1/dashboard/general" : "/api/v1/dashboard/by-user";
-      const params = buildDashboardProxyParams(startPeriod, endPeriod, departmentId, requestedUserIds);
+      const validMappedUsers = await loadValidMappedAnalystUsers(adminClient, digisacUrl, digisacToken);
+      const effectiveUserIds = resolveAnalystUserIds(requestedUserIds, validMappedUsers);
+
+      if (action === "analistas" && effectiveUserIds.length === 0) {
+        const emptyPayload = { items: [], totals: { closedTicketsCount: 0, contactsCount: 0, openedTicketsCount: 0, receivedMessagesCount: 0, sentMessagesCount: 0, totalMessagesCount: 0, totalTicketsCount: 0 } };
+        cache[cacheKey] = { data: emptyPayload, timestamp: Date.now() };
+        return jsonResponse(emptyPayload);
+      }
+
+      const params = action === "geral"
+        ? buildGeneralDashboardParams(startPeriod, endPeriod, departmentId, requestedUserIds)
+        : buildAnalystsDashboardParams(startPeriod, endPeriod, departmentId, effectiveUserIds);
       const response = await fetchDigisac(digisacUrl, digisacToken, endpoint, params);
       if (!response.ok) {
         return handledErrorResponse(action, `Erro API Digisac: ${response.status}`, {
@@ -449,8 +464,12 @@ Deno.serve(async (req) => {
     }
 
     if (action === "listar_analysts") {
-      // Returns Digisac users (id, name) — used to feed the analyst filter
-      const users = await loadDigisacUsers(digisacUrl, digisacToken);
+      // Returns only valid Digisac users mapped to active internal analysts
+      const adminClient = createClient(
+        Deno.env.get("SUPABASE_URL") ?? "",
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      );
+      const users = await loadValidMappedAnalystUsers(adminClient, digisacUrl, digisacToken);
       return jsonResponse(users);
     }
 
