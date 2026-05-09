@@ -214,10 +214,13 @@ const KanbanDev = () => {
     for (const file of files) {
       try {
         const ext = file.name.split('.').pop() || 'bin';
+        const isRar = ext.toLowerCase() === 'rar';
         const path = `${cardId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const contentType = isRar ? 'application/octet-stream' : (file.type || 'application/octet-stream');
+        
         const { error: upErr } = await supabase.storage
           .from('dev-kanban-files')
-          .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+          .upload(path, file, { contentType, upsert: false });
         if (upErr) throw upErr;
         const { data: urlData } = supabase.storage.from('dev-kanban-files').getPublicUrl(path);
         await supabase.from('dev_kanban_card_files').insert({
@@ -225,12 +228,13 @@ const KanbanDev = () => {
           file_url: urlData.publicUrl,
           file_path: path,
           file_name: file.name,
-          file_type: file.type || 'application/octet-stream',
+          file_type: file.type || contentType,
           file_size: file.size,
           uploaded_by: user?.id,
           uploaded_by_email: user?.email || '',
         });
       } catch (e: any) {
+        console.error("Erro no upload do arquivo:", e);
         toast.error(`Erro ao enviar ${file.name}: ${e.message}`);
       }
     }
@@ -463,7 +467,11 @@ const KanbanDev = () => {
     const { data, error } = await supabase.from('dev_kanban_labels')
       .insert({ name: 'Concluído', color: '#10b981' })
       .select().single();
-    if (error || !data) return null;
+    if (error || !data) {
+      console.error("Erro ao criar etiqueta Concluído:", error);
+      toast.error("Erro ao criar etiqueta 'Concluído' automaticamente.");
+      return null;
+    }
     queryClient.invalidateQueries({ queryKey: ['dev-kanban-labels'] });
     return data.id;
   }, [labels, queryClient]);
@@ -477,18 +485,33 @@ const KanbanDev = () => {
     if (movedToDone) {
       const doneLabelId = await ensureDoneLabel();
       if (!doneLabelId) return;
+
+      // Optimistic update das labels
+      queryClient.setQueryData(['dev-kanban-card-labels'], (old: any[] | undefined) => {
+        if (!old) return old;
+        const targetLabel = (labels as any[]).find(l => l.id === doneLabelId);
+        return [...old.filter(cl => cl.card_id !== cardId), { card_id: cardId, label_id: doneLabelId, dev_kanban_labels: targetLabel }];
+      });
+
       // Remove todas as etiquetas e adiciona apenas "Concluído"
       await supabase.from('dev_kanban_card_labels').delete().eq('card_id', cardId);
       await supabase.from('dev_kanban_card_labels').insert({ card_id: cardId, label_id: doneLabelId });
     } else if (movedFromDone) {
-      // Remove apenas a etiqueta "Concluído" (não restaura antigas)
       const doneLabelId = await ensureDoneLabel();
       if (!doneLabelId) return;
+
+      // Optimistic update
+      queryClient.setQueryData(['dev-kanban-card-labels'], (old: any[] | undefined) => {
+        if (!old) return old;
+        return old.filter(cl => !(cl.card_id === cardId && cl.label_id === doneLabelId));
+      });
+
+      // Remove apenas a etiqueta "Concluído" (não restaura antigas)
       await supabase.from('dev_kanban_card_labels').delete()
         .eq('card_id', cardId).eq('label_id', doneLabelId);
     }
     queryClient.invalidateQueries({ queryKey: ['dev-kanban-card-labels'] });
-  }, [ensureDoneLabel, queryClient]);
+  }, [ensureDoneLabel, queryClient, labels]);
 
   const onDragEnd = useCallback((result: DropResult) => {
     if (!result.destination) return;
@@ -796,9 +819,9 @@ const KanbanDev = () => {
                                     <span className="text-[10px] text-muted-foreground">{card.developer.name}</span>
                                   </div>
                                 )}
-                                <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 ml-auto">
-                                  <Calendar className="h-3 w-3" />
-                                  {format(new Date(card.created_at), 'dd/MM HH:mm')}
+                                <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 ml-auto" title={isDoneSlug(card.status) ? "Data de conclusão" : "Data de criação"}>
+                                  {isDoneSlug(card.status) && card.completed_at ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <Calendar className="h-3 w-3" />}
+                                  {format(new Date((isDoneSlug(card.status) && card.completed_at) ? card.completed_at : card.created_at), 'dd/MM HH:mm')}
                                 </span>
                               </div>
                             </div>
