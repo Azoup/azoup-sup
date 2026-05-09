@@ -450,28 +450,78 @@ const KanbanDev = () => {
     },
   });
 
+  // Helper: detecta se um slug de coluna representa "Concluídos"
+  const isDoneSlug = (slug: string) => {
+    const s = (slug || '').toLowerCase();
+    return s.includes('conclu') || s.includes('final') || s.includes('done');
+  };
+
+  // Helper: garante existência da etiqueta "Concluído" e retorna seu id
+  const ensureDoneLabel = useCallback(async (): Promise<string | null> => {
+    const existing = (labels as any[]).find((l: any) => (l.name || '').toLowerCase() === 'concluído' || (l.name || '').toLowerCase() === 'concluido');
+    if (existing) return existing.id;
+    const { data, error } = await supabase.from('dev_kanban_labels')
+      .insert({ name: 'Concluído', color: '#10b981' })
+      .select().single();
+    if (error || !data) return null;
+    queryClient.invalidateQueries({ queryKey: ['dev-kanban-labels'] });
+    return data.id;
+  }, [labels, queryClient]);
+
+  // Aplica regra automática de etiquetas ao mover entre colunas
+  const applyDoneLabelRule = useCallback(async (cardId: string, fromSlug: string, toSlug: string) => {
+    const movedToDone = !isDoneSlug(fromSlug) && isDoneSlug(toSlug);
+    const movedFromDone = isDoneSlug(fromSlug) && !isDoneSlug(toSlug);
+    if (!movedToDone && !movedFromDone) return;
+
+    if (movedToDone) {
+      const doneLabelId = await ensureDoneLabel();
+      if (!doneLabelId) return;
+      // Remove todas as etiquetas e adiciona apenas "Concluído"
+      await supabase.from('dev_kanban_card_labels').delete().eq('card_id', cardId);
+      await supabase.from('dev_kanban_card_labels').insert({ card_id: cardId, label_id: doneLabelId });
+    } else if (movedFromDone) {
+      // Remove apenas a etiqueta "Concluído" (não restaura antigas)
+      const doneLabelId = await ensureDoneLabel();
+      if (!doneLabelId) return;
+      await supabase.from('dev_kanban_card_labels').delete()
+        .eq('card_id', cardId).eq('label_id', doneLabelId);
+    }
+    queryClient.invalidateQueries({ queryKey: ['dev-kanban-card-labels'] });
+  }, [ensureDoneLabel, queryClient]);
+
   const onDragEnd = useCallback((result: DropResult) => {
     if (!result.destination) return;
     const { source, destination, draggableId } = result;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
     const movedCard = cards.find((c: any) => c.id === draggableId);
     const statusChanged = source.droppableId !== destination.droppableId;
+
+    const wasDone = isDoneSlug(source.droppableId);
+    const willBeDone = isDoneSlug(destination.droppableId);
+    let completedAtUpdate: { completed_at: string | null } | {} = {};
+    if (statusChanged && willBeDone) completedAtUpdate = { completed_at: new Date().toISOString() };
+    else if (statusChanged && wasDone && !willBeDone) completedAtUpdate = { completed_at: null };
+
     queryClient.setQueryData(['dev-kanban-cards'], (old: any[] | undefined) => {
       if (!old) return old;
       return old.map(card =>
         card.id === draggableId
-          ? { ...card, status: destination.droppableId, position: destination.index }
+          ? { ...card, status: destination.droppableId, position: destination.index, ...completedAtUpdate }
           : card
       );
     });
     supabase.from('dev_kanban_cards')
-      .update({ status: destination.droppableId, position: destination.index })
+      .update({ status: destination.droppableId, position: destination.index, ...completedAtUpdate })
       .eq('id', draggableId)
       .then(async ({ error }) => {
         if (error) {
           queryClient.invalidateQueries({ queryKey: ['dev-kanban-cards'] });
           toast.error('Erro ao mover card.');
           return;
+        }
+        if (statusChanged) {
+          await applyDoneLabelRule(draggableId, source.droppableId, destination.droppableId);
         }
         if (statusChanged && movedCard) {
           const colTitle = sortedColumns.find((c: any) => c.slug === destination.droppableId)?.title || destination.droppableId;
@@ -484,7 +534,7 @@ const KanbanDev = () => {
           });
         }
       });
-  }, [queryClient, cards, sortedColumns, user, actorName]);
+  }, [queryClient, cards, sortedColumns, user, actorName, applyDoneLabelRule]);
 
   const resetForm = () => {
     setTitle(''); setDescription(''); setAnalystId(''); setDeveloperId('');
@@ -1061,7 +1111,7 @@ function DevCardFormContent({
   return (
     <div className="space-y-3" onPaste={handlePaste}>
       <Input placeholder="Título" value={title} onChange={e => setTitle(e.target.value)} autoComplete="off" />
-      <Textarea placeholder="Observações (use CTRL+V para colar imagens)" value={description} onChange={e => setDescription(e.target.value)} rows={4} className="resize-y" />
+      <Textarea placeholder="Observações (use CTRL+V para colar imagens)" value={description} onChange={e => setDescription(e.target.value)} rows={8} className="resize-y min-h-[150px]" />
       <Select value={analystId} onValueChange={setAnalystId}>
         <SelectTrigger><SelectValue placeholder="Analista responsável" /></SelectTrigger>
         <SelectContent>

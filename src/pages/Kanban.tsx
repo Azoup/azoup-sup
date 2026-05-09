@@ -20,6 +20,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { toast } from 'sonner';
 import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar, Search } from 'lucide-react';
 import { CardComments } from '@/components/CardComments';
+import { CardFiles } from '@/components/CardFiles';
 import { CardChecklist } from '@/components/CardChecklist';
 import { ChecklistBadge } from '@/components/ChecklistBadge';
 import { KanbanSkeleton } from '@/components/KanbanSkeleton';
@@ -51,6 +52,7 @@ const Kanban = () => {
   const [analystId, setAnalystId] = useState('');
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [pendingImages, setPendingImages] = useState<File[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [editingCard, setEditingCard] = useState<any>(null);
   const [viewingCard, setViewingCard] = useState<any>(null);
   const [newLabelName, setNewLabelName] = useState('');
@@ -196,6 +198,32 @@ const Kanban = () => {
     }
   };
 
+  const uploadAndSaveFiles = async (cardId: string, files: File[]) => {
+    for (const file of files) {
+      try {
+        const ext = file.name.split('.').pop() || 'bin';
+        const path = `${cardId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const { error: upErr } = await supabase.storage
+          .from('kanban-files')
+          .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+        if (upErr) throw upErr;
+        const { data: urlData } = supabase.storage.from('kanban-files').getPublicUrl(path);
+        await supabase.from('kanban_card_files').insert({
+          card_id: cardId,
+          file_url: urlData.publicUrl,
+          file_path: path,
+          file_name: file.name,
+          file_type: file.type || 'application/octet-stream',
+          file_size: file.size,
+          uploaded_by: user?.id,
+          uploaded_by_email: user?.email || '',
+        });
+      } catch (e: any) {
+        toast.error(`Erro ao enviar ${file.name}: ${e.message}`);
+      }
+    }
+  };
+
   // Resolve current user's display name once for notification labels
   const getActorName = useCallback(async (): Promise<string> => {
     if (!user) return 'Alguém';
@@ -220,6 +248,9 @@ const Kanban = () => {
       }
       if (pendingImages.length > 0) {
         await uploadAndSaveImages(data.id, pendingImages);
+      }
+      if (pendingFiles.length > 0) {
+        await uploadAndSaveFiles(data.id, pendingFiles);
       }
       await logActivity('Criou card no Kanban', title);
       // Notify analyst on assignment
@@ -259,6 +290,10 @@ const Kanban = () => {
       }
       if (pendingImages.length > 0) {
         await uploadAndSaveImages(editingCard.id, pendingImages);
+      }
+      if (pendingFiles.length > 0) {
+        await uploadAndSaveFiles(editingCard.id, pendingFiles);
+        queryClient.invalidateQueries({ queryKey: ['card-files', editingCard.id] });
       }
       await logActivity('Editou card no Kanban', title);
       // Notifications
@@ -517,7 +552,7 @@ const Kanban = () => {
 
   const resetForm = () => {
     setTitle(''); setDescription(''); setAnalystId('');
-    setSelectedLabels([]); setPendingImages([]); setEditingCard(null);
+    setSelectedLabels([]); setPendingImages([]); setPendingFiles([]); setEditingCard(null);
   };
 
   const openEdit = (card: any) => {
@@ -527,6 +562,7 @@ const Kanban = () => {
     setAnalystId(card.analyst_id || '');
     setSelectedLabels((card.labels || []).map((l: any) => l.id));
     setPendingImages([]);
+    setPendingFiles([]);
     setEditOpen(true);
   };
 
@@ -878,6 +914,7 @@ const Kanban = () => {
                 )}
               </div>
               <CardChecklist cardId={viewingCard.id} cardType="kanban" description={viewingCard.description} />
+              <CardFiles cardId={viewingCard.id} />
               <CardComments cardId={viewingCard.id} />
               <div className="flex gap-2 pt-2">
                 <Button size="sm" variant="outline" onClick={() => { setViewOpen(false); openEdit(viewingCard); }}>
@@ -903,6 +940,7 @@ const Kanban = () => {
             analysts={analysts} labels={labels}
             selectedLabels={selectedLabels} toggleLabel={toggleLabel}
             pendingImages={pendingImages} setPendingImages={setPendingImages}
+            pendingFiles={pendingFiles} setPendingFiles={setPendingFiles}
             existingImages={[]}
             onDeleteImage={() => {}}
             onSubmit={() => createCard.mutate()} loading={createCard.isPending}
@@ -924,6 +962,7 @@ const Kanban = () => {
             analysts={analysts} labels={labels}
             selectedLabels={selectedLabels} toggleLabel={toggleLabel}
             pendingImages={pendingImages} setPendingImages={setPendingImages}
+            pendingFiles={pendingFiles} setPendingFiles={setPendingFiles}
             existingImages={editingCardImages}
             onDeleteImage={(id) => deleteImage.mutate(id)}
             onSubmit={() => updateCard.mutate()} loading={updateCard.isPending}
@@ -1101,6 +1140,7 @@ function CardFormContent({
   analysts: any[]; labels: any[];
   selectedLabels: string[]; toggleLabel: (id: string) => void;
   pendingImages: File[]; setPendingImages: (f: File[]) => void;
+  pendingFiles: File[]; setPendingFiles: (f: File[]) => void;
   existingImages: any[];
   onDeleteImage: (id: string) => void;
   onSubmit: () => void; loading: boolean;
@@ -1125,13 +1165,38 @@ function CardFormContent({
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length > 0) {
+      setPendingFiles([...pendingFiles, ...files]);
+    }
+    e.target.value = '';
+  };
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
       setPendingImages([...pendingImages, ...files]);
     }
     e.target.value = '';
   };
 
+  const handleFileDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length > 0) setPendingFiles([...pendingFiles, ...files]);
+  };
+
   const removePending = (index: number) => {
     setPendingImages(pendingImages.filter((_, i) => i !== index));
+  };
+
+  const removePendingFile = (index: number) => {
+    setPendingFiles(pendingFiles.filter((_, i) => i !== index));
+  };
+
+  const formatSize = (b: number) => {
+    if (b < 1024) return `${b} B`;
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+    if (b < 1024 * 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(b / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
   return (
@@ -1146,8 +1211,8 @@ function CardFormContent({
         placeholder="Observações (use CTRL+V para colar imagens)"
         value={description}
         onChange={e => setDescription(e.target.value)}
-        rows={4}
-        className="resize-y"
+        rows={8}
+        className="resize-y min-h-[150px]"
       />
       <Select value={analystId} onValueChange={setAnalystId}>
         <SelectTrigger><SelectValue placeholder="Responsável" /></SelectTrigger>
@@ -1215,10 +1280,35 @@ function CardFormContent({
         </div>
       )}
 
+      <div
+        className="rounded-md border border-dashed p-3 text-xs text-muted-foreground"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={handleFileDrop}
+      >
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <span className="flex items-center gap-1"><Paperclip className="h-3 w-3" /> Anexar arquivos (qualquer formato) — arraste aqui ou</span>
+          <label className="cursor-pointer text-primary hover:underline">
+            selecionar
+            <input type="file" accept="*/*" multiple className="hidden" onChange={handleFileSelect} />
+          </label>
+        </div>
+        {pendingFiles.length > 0 && (
+          <ul className="mt-2 space-y-1">
+            {pendingFiles.map((f, i) => (
+              <li key={i} className="flex items-center justify-between gap-2 rounded bg-muted/30 px-2 py-1">
+                <span className="truncate text-foreground">{f.name}</span>
+                <span className="shrink-0 text-[10px]">{formatSize(f.size)}</span>
+                <button type="button" onClick={() => removePendingFile(i)} className="text-destructive shrink-0"><X className="h-3 w-3" /></button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <div className="flex items-center gap-2">
         <label className="text-xs text-muted-foreground flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors">
           <ImagePlus className="h-3 w-3" /> Adicionar imagens
-          <input type="file" accept="image/*" multiple className="hidden" onChange={handleFileSelect} />
+          <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageSelect} />
         </label>
         <span className="text-[10px] text-muted-foreground">ou CTRL+V para colar</span>
       </div>

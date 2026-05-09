@@ -576,6 +576,60 @@ export type Database = {
           },
         ]
       }
+      kanban_card_files: {
+        Row: {
+          id: string
+          card_id: string
+          file_url: string
+          file_path: string
+          file_name: string
+          file_type: string | null
+          file_size: number | null
+          uploaded_by: string | null
+          uploaded_by_email: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          card_id: string
+          file_url: string
+          file_path: string
+          file_name: string
+          file_type?: string | null
+          file_size?: number | null
+          uploaded_by?: string | null
+          uploaded_by_email?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          card_id?: string
+          file_url?: string
+          file_path?: string
+          file_name?: string
+          file_type?: string | null
+          file_size?: number | null
+          uploaded_by?: string | null
+          uploaded_by_email?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kanban_card_files_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "kanban_cards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kanban_card_files_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       kanban_card_images: {
         Row: {
           card_id: string
