@@ -88,6 +88,9 @@ export const digisacApi = {
       endDate: normalizeDateOnly(endDate),
       departmentId: departmentId || 'all',
       userId: userId || 'all',
+      /** Igual ao web Digisac (estatísticas antigas / geral). */
+      userParticipation: 'last',
+      departmentParticipation: 'last',
     });
     return normalizeGeralResponse(data);
   },
@@ -98,6 +101,13 @@ export const digisacApi = {
       endDate: normalizeDateOnly(endDate),
       departmentId: departmentId || 'all',
       userId: userId || 'all',
+      userParticipation: 'last',
+      departmentParticipation: 'last',
+      /**
+       * Igual à URL da tela nova do Digisac (`departmentId=all` + vários userId).
+       * Para restringir ao departamento do filtro, envie `digisacAnalystDashboardDepartmentScope: "filter"` na edge (futuro UI).
+       */
+      digisacAnalystDashboardDepartmentScope: 'all',
     });
     return normalizeAnalistasResponse(data);
   },
