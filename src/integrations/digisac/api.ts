@@ -136,7 +136,7 @@ function normalizeAnalistasResponse(payload: any): DigisacAnalystStats[] {
     return {
       analyst_id: String(item.userId ?? item.id ?? item.user?.id ?? item.name ?? ''),
       name: item.userName ?? item.name ?? item.user?.name ?? 'Sem nome',
-      mapped: true,
+      mapped: typeof item.mapped === 'boolean' ? item.mapped : undefined,
       total_chamados: asNumber(item.totalTicketsCount, item.totalTickets, closed + opened),
       chamados_fechados: closed,
       chamados_abertos: opened,

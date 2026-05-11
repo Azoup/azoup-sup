@@ -4,7 +4,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 
 interface CacheItem { data: any; timestamp: number; }
 const cache: Record<string, CacheItem> = {};
-const CACHE_TTL_MS = 60 * 1000;
+const CACHE_TTL_MS = 15 * 1000;
 const BRAZIL_UTC_OFFSET_HOURS = 3;
 
 const jsonResponse = (payload: unknown, status = 200) => new Response(JSON.stringify(payload), {
@@ -284,7 +284,7 @@ const buildGeneralDashboardParams = (
   startPeriod: string,
   endPeriod: string,
   departmentId: string,
-  requestedUserIds: string[],
+  filteredUserIds: string[],
 ) => {
   const params = new URLSearchParams({
     startPeriod,
@@ -299,7 +299,7 @@ const buildGeneralDashboardParams = (
 
   if (departmentId && departmentId !== "all") params.set("departmentId", departmentId);
 
-  params.set("userId", requestedUserIds[0] ?? "all");
+  params.set("userId", filteredUserIds[0] ?? "all");
 
   console.log("PARAMS FINAIS:", params.toString());
   return params;
@@ -452,7 +452,7 @@ Deno.serve(async (req) => {
       }
 
       const params = action === "geral"
-        ? buildGeneralDashboardParams(startPeriod, endPeriod, departmentId, requestedUserIds)
+        ? buildGeneralDashboardParams(startPeriod, endPeriod, departmentId, effectiveUserIds)
         : buildAnalystsDashboardParams(startPeriod, endPeriod, departmentId, effectiveUserIds);
       const response = await fetchDigisac(digisacUrl, digisacToken, endpoint, params);
       if (!response.ok) {
