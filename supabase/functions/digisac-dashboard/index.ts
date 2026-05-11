@@ -357,18 +357,18 @@ const resolveAnalystUserIds = (
 };
 
 /**
- * Participação do atendente / andamento no departamento (mesmos filtros da tela Digisac).
- * Padrão `all` = contar chamados em que houve participação (não só como último responsável).
- * Se a API da sua instância exigir outro valor, defina DIGISAC_USER_PARTICIPATION / DIGISAC_DEPARTMENT_PARTICIPATION (ex.: last).
+ * Participação do atendente / departamento — alinhado às URLs do painel Digisac (ex.: `userParticipation=last`).
+ * Padrão `last` = mesmo critério da tela antiga (geral) e da tela nova (vários userId no `/dashboard/general`).
+ * Para voltar ao comportamento anterior (`all`), defina `DIGISAC_USER_PARTICIPATION=all` / `DIGISAC_DEPARTMENT_PARTICIPATION=all`.
  */
 const dashboardUserParticipation = () => {
   const v = Deno.env.get("DIGISAC_USER_PARTICIPATION")?.trim();
-  return v && v.length > 0 ? v : "all";
+  return v && v.length > 0 ? v : "last";
 };
 
 const dashboardDepartmentParticipation = () => {
   const v = Deno.env.get("DIGISAC_DEPARTMENT_PARTICIPATION")?.trim();
-  return v && v.length > 0 ? v : "all";
+  return v && v.length > 0 ? v : "last";
 };
 
 /**
@@ -391,6 +391,7 @@ const buildGeneralDashboardParams = (
     userStatus: "all",
     withTotals: "true",
   });
+  params.set("grouping", "");
 
   if (departmentId && departmentId !== "all") params.set("departmentId", departmentId);
 
@@ -404,7 +405,10 @@ const buildGeneralDashboardParams = (
   return params;
 };
 
-const buildAnalystsDashboardParams = (
+/**
+ * Tela nova Digisac: `GET /api/v1/dashboard/general` com `userId[]` + `userIdsList[]` (não `/dashboard/by-user`).
+ */
+const buildAnalystsGeneralDashboardParams = (
   startPeriod: string,
   endPeriod: string,
   departmentId: string,
@@ -420,12 +424,19 @@ const buildAnalystsDashboardParams = (
     userStatus: "all",
     withTotals: "true",
   });
+  params.set("grouping", "");
 
   if (departmentId && departmentId !== "all") params.set("departmentId", departmentId);
+  else params.set("departmentId", "all");
 
-  requestedUserIds.forEach((userId) => params.append("userId[]", userId));
+  for (const userId of requestedUserIds) {
+    const id = userId.trim();
+    if (!id) continue;
+    params.append("userId[]", id);
+    params.append("userIdsList[]", id);
+  }
 
-  console.log("PARAMS FINAIS (analistas):", params.toString());
+  console.log("PARAMS FINAIS (analistas / general multi-user):", params.toString());
   return params;
 };
 
@@ -437,7 +448,7 @@ const mergeByUserPayloadWithExpectedIds = (
   const items = Array.isArray(payload) ? payload : firstArray(payload, ["items", "data", "rows", "users"]);
   const byId = new Map<string, any>();
   for (const row of items) {
-    const id = String(row?.userId ?? row?.id ?? row?.user?.id ?? "").trim();
+    const id = String(row?.userId ?? row?.id ?? row?.user?.id ?? row?.user_id ?? "").trim();
     if (id) byId.set(id, row);
   }
   const merged: any[] = [];
@@ -583,7 +594,7 @@ Deno.serve(async (req) => {
         return jsonResponse(cached);
       }
 
-      const endpoint = action === "geral" ? "/api/v1/dashboard/general" : "/api/v1/dashboard/by-user";
+      const endpoint = "/api/v1/dashboard/general";
 
       if (action === "analistas" && effectiveUserIds.length === 0) {
         const emptyPayload = { items: [], totals: { closedTicketsCount: 0, contactsCount: 0, openedTicketsCount: 0, receivedMessagesCount: 0, sentMessagesCount: 0, totalMessagesCount: 0, totalTicketsCount: 0 } };
@@ -593,7 +604,7 @@ Deno.serve(async (req) => {
 
       const params = action === "geral"
         ? buildGeneralDashboardParams(startPeriod, endPeriod, departmentId, generalSingleUserId)
-        : buildAnalystsDashboardParams(startPeriod, endPeriod, departmentId, effectiveUserIds);
+        : buildAnalystsGeneralDashboardParams(startPeriod, endPeriod, departmentId, effectiveUserIds);
       const response = await fetchDigisac(digisacUrl, digisacToken, endpoint, params);
       if (!response.ok) {
         return handledErrorResponse(action, `Erro API Digisac: ${response.status}`, {
