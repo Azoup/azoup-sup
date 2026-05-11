@@ -210,7 +210,7 @@ const Kanban = () => {
           .upload(path, file, { contentType, upsert: false });
         if (upErr) throw upErr;
         const { data: urlData } = supabase.storage.from('kanban-files').getPublicUrl(path);
-        await supabase.from('kanban_card_files').insert({
+        const { error: fileInsertError } = await supabase.from('kanban_card_files').insert({
           card_id: cardId,
           file_url: urlData.publicUrl,
           file_path: path,
@@ -220,6 +220,7 @@ const Kanban = () => {
           uploaded_by: user?.id,
           uploaded_by_email: user?.email || '',
         });
+        if (fileInsertError) throw fileInsertError;
       } catch (e: any) {
         console.error("Erro no upload do arquivo:", e);
         toast.error(`Erro ao enviar ${file.name}: ${e.message}`);
@@ -296,7 +297,7 @@ const Kanban = () => {
       }
       if (pendingFiles.length > 0) {
         await uploadAndSaveFiles(editingCard.id, pendingFiles);
-        queryClient.invalidateQueries({ queryKey: ['card-files', editingCard.id] });
+        queryClient.invalidateQueries({ queryKey: ['dev-card-files', editingCard.id] });
       }
       await logActivity('Editou card no Kanban', title);
       // Notifications
@@ -452,12 +453,20 @@ const Kanban = () => {
 
   // Helper: garante existência da etiqueta "Concluído" e retorna seu id
   const ensureDoneLabel = useCallback(async (): Promise<string | null> => {
-    const existing = (labels as any[]).find((l: any) => (l.name || '').toLowerCase() === 'concluído' || (l.name || '').toLowerCase() === 'concluido');
+    const existing = (labels as any[]).find((l: any) => (l.name || '').toLowerCase().includes('conclu'));
     if (existing) return existing.id;
     const { data, error } = await supabase.from('kanban_labels')
       .insert({ name: 'Concluído', color: '#10b981' })
       .select().single();
     if (error || !data) {
+      // Retry fetch in case label already exists with a different variant/name.
+      const fallback = await supabase
+        .from('kanban_labels')
+        .select('id,name')
+        .ilike('name', '%conclu%')
+        .limit(1)
+        .maybeSingle();
+      if (fallback.data?.id) return fallback.data.id;
       console.error("Erro ao criar etiqueta Concluído:", error);
       toast.error("Erro ao criar etiqueta 'Concluído' automaticamente.");
       return null;
@@ -484,8 +493,10 @@ const Kanban = () => {
       });
 
       // Remove todas as etiquetas e adiciona apenas "Concluído"
-      await supabase.from('kanban_card_labels').delete().eq('card_id', cardId);
-      await supabase.from('kanban_card_labels').insert({ card_id: cardId, label_id: doneLabelId });
+      const { error: deleteLabelsError } = await supabase.from('kanban_card_labels').delete().eq('card_id', cardId);
+      if (deleteLabelsError) throw deleteLabelsError;
+      const { error: addDoneLabelError } = await supabase.from('kanban_card_labels').insert({ card_id: cardId, label_id: doneLabelId });
+      if (addDoneLabelError) throw addDoneLabelError;
     } else if (movedFromDone) {
       const doneLabelId = await ensureDoneLabel();
       if (!doneLabelId) return;
@@ -497,8 +508,9 @@ const Kanban = () => {
       });
 
       // Remove apenas a etiqueta "Concluído" (não restaura antigas)
-      await supabase.from('kanban_card_labels').delete()
+      const { error: removeDoneLabelError } = await supabase.from('kanban_card_labels').delete()
         .eq('card_id', cardId).eq('label_id', doneLabelId);
+      if (removeDoneLabelError) throw removeDoneLabelError;
     }
     queryClient.invalidateQueries({ queryKey: ['kanban-card-labels'] });
   }, [ensureDoneLabel, queryClient, labels]);
@@ -512,45 +524,23 @@ const Kanban = () => {
     const movedCard = cards.find((c: any) => c.id === draggableId);
     const statusChanged = source.droppableId !== destination.droppableId;
 
-    // Determina mudança para/de "Concluídos" para gerenciar completed_at
-    const wasDone = isDoneSlug(source.droppableId);
-    const willBeDone = isDoneSlug(destination.droppableId);
-    let completedAtUpdate: { completed_at: string | null } | {} = {};
-    if (statusChanged && willBeDone) completedAtUpdate = { completed_at: new Date().toISOString() };
-    else if (statusChanged && wasDone && !willBeDone) completedAtUpdate = { completed_at: null };
-
     // Optimistic update: immediately update the cache
     queryClient.setQueryData(['kanban-cards'], (old: any[] | undefined) => {
       if (!old) return old;
       return old.map(card =>
         card.id === draggableId
-          ? { ...card, status: destination.droppableId, position: destination.index, ...completedAtUpdate }
+          ? { ...card, status: destination.droppableId, position: destination.index }
           : card
       );
     });
 
-    // Persist in background (with fallback when completed_at is unavailable in DB)
-    const movePayload = { status: destination.droppableId, position: destination.index, ...completedAtUpdate };
+    // Persist move with a minimal payload to avoid schema drift issues.
+    const movePayload = { status: destination.droppableId, position: destination.index };
     supabase.from('kanban_cards')
       .update(movePayload)
       .eq('id', draggableId)
       .then(async ({ error }) => {
-        let finalError = error;
-
-        // Some environments may not have the completed_at column yet.
-        if (
-          finalError &&
-          'completed_at' in movePayload &&
-          `${finalError.message || ''}`.toLowerCase().includes('completed_at')
-        ) {
-          const retry = await supabase
-            .from('kanban_cards')
-            .update({ status: destination.droppableId, position: destination.index })
-            .eq('id', draggableId);
-          finalError = retry.error;
-        }
-
-        if (finalError) {
+        if (error) {
           // Rollback on error
           queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
           toast.error('Erro ao mover card.');
@@ -558,7 +548,13 @@ const Kanban = () => {
         }
         // Regra automática de etiquetas para coluna "Concluídos"
         if (statusChanged) {
-          await applyDoneLabelRule(draggableId, source.droppableId, destination.droppableId);
+          try {
+            await applyDoneLabelRule(draggableId, source.droppableId, destination.droppableId);
+          } catch (labelError: any) {
+            console.error('Erro ao aplicar etiqueta de concluído:', labelError);
+            toast.error('Card movido, mas houve erro ao atualizar etiquetas.');
+            queryClient.invalidateQueries({ queryKey: ['kanban-card-labels'] });
+          }
         }
         // Notify analyst on column change
         if (statusChanged && movedCard?.analyst_id) {
@@ -1169,6 +1165,7 @@ function CardFormContent({
   analystId, setAnalystId, analysts, labels,
   selectedLabels, toggleLabel,
   pendingImages, setPendingImages,
+  pendingFiles, setPendingFiles,
   existingImages, onDeleteImage,
   onSubmit, loading,
 }: {
