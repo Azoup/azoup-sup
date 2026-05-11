@@ -304,43 +304,48 @@ export function mergeNestedDigisacRow(item: Record<string, unknown>): Record<str
 }
 
 function rowClosedCount(row: Record<string, unknown>): number {
-  return asNumber(
-    row.closedTicketsCount,
-    row.closedTickets,
-    row.closed,
-    row.closed_tickets_count,
-    row.closedTicketsTotal,
-    row.totalClosedTickets,
-  );
+  return pickByKeys(row, [
+    "closedTicketsCount",
+    "closedTickets",
+    "closed_tickets_count",
+    "closedTicketsTotal",
+    "totalClosedTickets",
+    "total_fechados",
+    "finishedTickets",
+  ]);
 }
 
 function rowOpenedCount(row: Record<string, unknown>): number {
-  return asNumber(
-    row.openedTicketsCount,
-    row.openTickets,
-    row.opened,
-    row.open,
-    row.opened_tickets_count,
-    row.openTicketsCount,
-    row.totalOpenTickets,
-  );
+  return pickByKeys(row, [
+    "openedTicketsCount",
+    "openTickets",
+    "opened_tickets_count",
+    "openTicketsCount",
+    "openedTickets",
+    "total_abertos",
+    "totalOpenTickets",
+  ]);
 }
 
-const TICKET_BREAKDOWN_KEYS = [
+/**
+ * Só chaves inequívocas do Digisac. Evita ativar "breakdown" por `open`/`closed` genéricos no JSON
+ * (isso fazia total_chamados cair em totalTicketsCount 237 em vez de 244+0).
+ */
+const EXPLICIT_TICKET_BREAKDOWN_KEYS = [
   "closedTicketsCount",
   "closedTickets",
-  "closed",
   "closed_tickets_count",
   "openedTicketsCount",
   "openTickets",
-  "opened",
-  "open",
   "opened_tickets_count",
   "openTicketsCount",
+  "openedTickets",
+  "total_abertos",
+  "total_fechados",
 ] as const;
 
 export function recordHasTicketBreakdown(row: Record<string, unknown>): boolean {
-  return TICKET_BREAKDOWN_KEYS.some((k) => k in row);
+  return EXPLICIT_TICKET_BREAKDOWN_KEYS.some((k) => k in row);
 }
 
 export function recordHasMessageBreakdown(row: Record<string, unknown>): boolean {
@@ -348,7 +353,7 @@ export function recordHasMessageBreakdown(row: Record<string, unknown>): boolean
 }
 
 export function totalsHasTicketBreakdown(totals: Record<string, unknown>): boolean {
-  return TICKET_BREAKDOWN_KEYS.some((k) => k in totals);
+  return EXPLICIT_TICKET_BREAKDOWN_KEYS.some((k) => k in totals);
 }
 
 export function totalsHasMessageBreakdown(totals: Record<string, unknown>): boolean {
@@ -365,7 +370,6 @@ export function normalizeGeralResponse(payload: unknown): DigisacGeralResponse {
     "closed_tickets_count",
     "total_fechados",
     "finishedTickets",
-    "closed",
   ]);
   const total_abertos = pickByKeys(totals, [
     "openedTicketsCount",
@@ -374,7 +378,6 @@ export function normalizeGeralResponse(payload: unknown): DigisacGeralResponse {
     "openTicketsCount",
     "total_abertos",
     "openedTickets",
-    "open",
   ]);
 
   const sumTickets = total_fechados + total_abertos;
@@ -383,9 +386,9 @@ export function normalizeGeralResponse(payload: unknown): DigisacGeralResponse {
     "totalTickets",
     "total_chamados",
     "ticketsTotal",
-    "total",
     "attendanceCount",
   ]);
+  /** Digisac: total exibido = max(totalTicketsCount, fechados+abertos) quando há breakdown explícito. */
   const total_chamados = totalsHasTicketBreakdown(totals)
     ? fromTicketTotal > 0 && sumTickets > 0
       ? Math.max(fromTicketTotal, sumTickets)

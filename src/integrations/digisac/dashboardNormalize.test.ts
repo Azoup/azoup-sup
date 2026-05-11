@@ -223,4 +223,22 @@ describe("normalizeAnalistasResponse", () => {
     const rows = normalizeAnalistasResponse(payload);
     expect(rows[0].total_chamados).toBe(12);
   });
+
+  it("ignora chave genérica `open` numérica na linha (só conta openTickets* / openedTickets*)", () => {
+    const payload = {
+      items: [
+        {
+          userId: "u3",
+          userName: "Bob",
+          closedTicketsCount: 5,
+          openedTicketsCount: 0,
+          open: 999,
+          ticketTime: 120,
+        },
+      ],
+    };
+    const rows = normalizeAnalistasResponse(payload);
+    expect(rows[0].chamados_abertos).toBe(0);
+    expect(rows[0].total_chamados).toBe(5);
+  });
 });

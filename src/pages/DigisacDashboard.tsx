@@ -78,15 +78,15 @@ export default function DigisacDashboard() {
     setFilters({ start: startDate, end: endDate, departmentId, analystId });
   };
 
+  /** Mesmo formato do painel Digisac (HH:MM:SS). */
   const formatTma = (minutes: number) => {
-    if (!minutes || minutes <= 0) return "0m";
+    if (!minutes || minutes <= 0 || !Number.isFinite(minutes)) return "00:00:00";
     const totalSeconds = Math.round(minutes * 60);
     const h = Math.floor(totalSeconds / 3600);
     const m = Math.floor((totalSeconds % 3600) / 60);
     const s = totalSeconds % 60;
-    if (h > 0) return `${h}h ${m}m`;
-    if (m > 0) return `${m}m ${s}s`;
-    return `${s}s`;
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${pad(h)}:${pad(m)}:${pad(s)}`;
   };
 
   const analistasList = analistas ?? [];
