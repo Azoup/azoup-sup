@@ -70,10 +70,6 @@ export default function DigisacDashboard() {
     return `${s}s`;
   };
 
-  // Logs de debug solicitados
-  console.log('[DigisacDashboard] geral recebido:', geral);
-  console.log('[DigisacDashboard] analistas recebidos:', analistas);
-
   const analistasList = analistas ?? [];
 
   // Gráfico TMA por analista (ordenado do MAIOR para o MENOR)
@@ -247,12 +243,12 @@ export default function DigisacDashboard() {
 
         <Card className="glass-card border-none shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">1ª Resposta</CardTitle>
+            <CardTitle className="text-sm font-medium">1º tempo de espera</CardTitle>
             <Timer className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{isLoadingGeral ? "..." : formatTma(geral?.primeira_resposta_minutos || 0)}</div>
-            <p className="text-xs text-muted-foreground mt-1">Tempo médio até 1ª resposta</p>
+            <p className="text-xs text-muted-foreground mt-1">Média até a 1ª resposta humana (Estatísticas Digisac)</p>
           </CardContent>
         </Card>
 
@@ -360,13 +356,14 @@ export default function DigisacDashboard() {
                 <Table className="w-full table-fixed text-xs">
                   <TableHeader className="bg-muted/50">
                     <TableRow>
-                      <TableHead className="h-9 px-3 w-[28%]">Analista</TableHead>
-                      <TableHead className="h-9 px-2 text-right w-[10%]">Total</TableHead>
-                      <TableHead className="h-9 px-2 text-right w-[11%]">Fechados</TableHead>
-                      <TableHead className="h-9 px-2 text-right w-[10%]">Abertos</TableHead>
-                      <TableHead className="h-9 px-2 text-right w-[12%]">Contatos</TableHead>
-                      <TableHead className="h-9 px-2 text-right w-[14%]">Mensagens</TableHead>
-                      <TableHead className="h-9 px-3 text-right w-[15%]">TMA</TableHead>
+                      <TableHead className="h-9 px-3 w-[24%]">Analista</TableHead>
+                      <TableHead className="h-9 px-2 text-right w-[9%]">Total</TableHead>
+                      <TableHead className="h-9 px-2 text-right w-[9%]">Fechados</TableHead>
+                      <TableHead className="h-9 px-2 text-right w-[8%]">Abertos</TableHead>
+                      <TableHead className="h-9 px-2 text-right w-[10%]">Contatos</TableHead>
+                      <TableHead className="h-9 px-2 text-right w-[11%]">Mensagens</TableHead>
+                      <TableHead className="h-9 px-2 text-right w-[11%]">1º espera</TableHead>
+                      <TableHead className="h-9 px-3 text-right w-[12%]">TMA</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -383,11 +380,12 @@ export default function DigisacDashboard() {
                         <TableCell className="text-right px-2 py-2 tabular-nums">{analyst.chamados_abertos ?? 0}</TableCell>
                         <TableCell className="text-right px-2 py-2 tabular-nums">{analyst.total_contatos ?? 0}</TableCell>
                         <TableCell className="text-right px-2 py-2 tabular-nums">{analyst.total_mensagens ?? 0}</TableCell>
+                        <TableCell className="text-right px-2 py-2 tabular-nums">{formatTma(analyst.primeira_espera_minutos ?? 0)}</TableCell>
                         <TableCell className="text-right px-3 py-2 tabular-nums font-semibold">{formatTma(analyst.tma_minutos)}</TableCell>
                       </TableRow>
                     )) : (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
+                        <TableCell colSpan={8} className="text-center py-6 text-muted-foreground">
                            Nenhum dado encontrado para o período selecionado.
                         </TableCell>
                       </TableRow>

@@ -203,17 +203,46 @@ const loadDigisacUsers = async (baseUrl: string, token: string) => {
   let users: Array<{ id: string; name: string }> = cache[usersCacheKey]?.data;
 
   if (!users || Date.now() - cache[usersCacheKey].timestamp >= CACHE_TTL_MS) {
-    const response = await fetchDigisac(baseUrl, token, "/api/v1/users");
-    const list = Array.isArray(response.data?.data) ? response.data.data : Array.isArray(response.data) ? response.data : [];
+    const pageSize = 200;
+    const collected: Array<{ id: string; name: string }> = [];
+    const seen = new Set<string>();
+    let page = 1;
+    let hasMore = true;
 
-    users = list
-      .filter((user: any) => user && user.id && !user.deletedAt && user.isClientUser !== true && !isInvalidDigisacUserName(user.name || user.email))
-      .map((user: any) => ({
-        id: String(user.id),
-        name: user.name || user.email || "Sem nome",
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    while (hasMore && page < 80) {
+      const params = new URLSearchParams({ limit: String(pageSize), page: String(page) });
+      const response = await fetchDigisac(baseUrl, token, "/api/v1/users", params);
+      if (!response.ok) {
+        if (page === 1) {
+          const fallback = await fetchDigisac(baseUrl, token, "/api/v1/users");
+          const list = Array.isArray(fallback.data?.data) ? fallback.data.data : Array.isArray(fallback.data) ? fallback.data : [];
+          for (const user of list) {
+            if (!user?.id || user.deletedAt || user.isClientUser === true) continue;
+            if (isInvalidDigisacUserName(user.name || user.email)) continue;
+            const id = String(user.id);
+            if (seen.has(id)) continue;
+            seen.add(id);
+            collected.push({ id, name: user.name || user.email || "Sem nome" });
+          }
+        }
+        break;
+      }
+      const list = Array.isArray(response.data?.data) ? response.data.data : Array.isArray(response.data) ? response.data : [];
+      let newOnPage = 0;
+      for (const user of list) {
+        if (!user?.id || user.deletedAt || user.isClientUser === true) continue;
+        if (isInvalidDigisacUserName(user.name || user.email)) continue;
+        const id = String(user.id);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        collected.push({ id, name: user.name || user.email || "Sem nome" });
+        newOnPage++;
+      }
+      if (list.length < pageSize || newOnPage === 0) hasMore = false;
+      else page++;
+    }
 
+    users = collected.sort((a, b) => a.name.localeCompare(b.name));
     cache[usersCacheKey] = { data: users, timestamp: Date.now() };
   }
 
@@ -255,14 +284,15 @@ const loadValidMappedAnalystUsers = async (
 
   for (const mapping of mappingsResult.data ?? []) {
     const activeAnalyst = activeAnalystsById.get(String(mapping.analyst_id));
+    if (!activeAnalyst) continue;
+
     const digisacUser = digisacUsersById.get(String(mapping.digisac_user_id));
+    const displayName = digisacUser?.name || (mapping.digisac_user_name as string) || activeAnalyst.name;
+    if (isInvalidDigisacUserName(activeAnalyst.name) || isInvalidDigisacUserName(displayName)) continue;
 
-    if (!activeAnalyst || !digisacUser) continue;
-    if (isInvalidDigisacUserName(activeAnalyst.name) || isInvalidDigisacUserName(digisacUser.name || mapping.digisac_user_name)) continue;
-
-    validUsers.set(digisacUser.id, {
-      id: digisacUser.id,
-      name: digisacUser.name || mapping.digisac_user_name || activeAnalyst.name,
+    validUsers.set(String(mapping.digisac_user_id), {
+      id: String(mapping.digisac_user_id),
+      name: displayName,
     });
   }
 
@@ -295,11 +325,15 @@ const dashboardDepartmentParticipation = () => {
   return v && v.length > 0 ? v : "all";
 };
 
+/**
+ * Dashboard geral: com o mesmo critério da Digisac ao filtrar só departamento/período,
+ * usar `userId=all` (toda a equipe no escopo). Só restringe a um atendente quando o filtro do app pede um analista.
+ */
 const buildGeneralDashboardParams = (
   startPeriod: string,
   endPeriod: string,
   departmentId: string,
-  filteredUserIds: string[],
+  singleMappedDigisacUserId?: string,
 ) => {
   const params = new URLSearchParams({
     startPeriod,
@@ -314,9 +348,13 @@ const buildGeneralDashboardParams = (
 
   if (departmentId && departmentId !== "all") params.set("departmentId", departmentId);
 
-  params.set("userId", filteredUserIds[0] ?? "all");
+  if (singleMappedDigisacUserId && singleMappedDigisacUserId.trim().length > 0) {
+    params.set("userId", singleMappedDigisacUserId.trim());
+  } else {
+    params.set("userId", "all");
+  }
 
-  console.log("PARAMS FINAIS:", params.toString());
+  console.log("PARAMS FINAIS (geral):", params.toString());
   return params;
 };
 
@@ -341,8 +379,42 @@ const buildAnalystsDashboardParams = (
 
   requestedUserIds.forEach((userId) => params.append("userId[]", userId));
 
-  console.log("PARAMS FINAIS:", params.toString());
+  console.log("PARAMS FINAIS (analistas):", params.toString());
   return params;
+};
+
+const mergeByUserPayloadWithExpectedIds = (
+  payload: any,
+  expectedUserIds: string[],
+  nameById: Map<string, string>,
+) => {
+  const items = Array.isArray(payload) ? payload : firstArray(payload, ["items", "data", "rows", "users"]);
+  const byId = new Map<string, any>();
+  for (const row of items) {
+    const id = String(row?.userId ?? row?.id ?? row?.user?.id ?? "").trim();
+    if (id) byId.set(id, row);
+  }
+  const merged: any[] = [];
+  for (const id of expectedUserIds) {
+    const existing = byId.get(id);
+    if (existing) merged.push(existing);
+    else {
+      merged.push({
+        userId: id,
+        userName: nameById.get(id) ?? "Analista",
+        closedTicketsCount: 0,
+        openedTicketsCount: 0,
+        totalTicketsCount: 0,
+        ticketTime: 0,
+        totalMessagesCount: 0,
+        contactsCount: 0,
+        firstWaitingTime: 0,
+      });
+    }
+  }
+  if (Array.isArray(payload)) return merged;
+  if (payload && typeof payload === "object") return { ...payload, items: merged };
+  return { items: merged };
 };
 
 
@@ -445,20 +517,27 @@ Deno.serve(async (req) => {
       const requestedUserIds = normalizeRequestedUserIds(payload);
       const startPeriod = toDigisacPeriod(startDate, "start")!;
       const endPeriod = toDigisacPeriod(endDate, "end")!;
-      const cacheKey = `dashboard_proxy_${action}_${startPeriod}_${endPeriod}_${departmentId}_${requestedUserIds.join(",") || "all"}`;
+      const adminClient = createClient(
+        Deno.env.get("SUPABASE_URL") ?? "",
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      );
+      const validMappedUsers = await loadValidMappedAnalystUsers(adminClient, digisacUrl, digisacToken);
+      const effectiveUserIds = resolveAnalystUserIds(requestedUserIds, validMappedUsers);
+      const generalSingleUserId =
+        requestedUserIds.length === 1 && resolveAnalystUserIds(requestedUserIds, validMappedUsers).length === 1
+          ? requestedUserIds[0]
+          : undefined;
+      const cacheScope = action === "geral"
+        ? (generalSingleUserId ?? "all")
+        : (effectiveUserIds.join(",") || "none");
+      const cacheKey = `dashboard_proxy_${action}_${startPeriod}_${endPeriod}_${departmentId}_${cacheScope}`;
 
       const cached = cache[cacheKey]?.data;
       if (cached && Date.now() - cache[cacheKey].timestamp < CACHE_TTL_MS) {
         return jsonResponse(cached);
       }
 
-      const adminClient = createClient(
-        Deno.env.get("SUPABASE_URL") ?? "",
-        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-      );
       const endpoint = action === "geral" ? "/api/v1/dashboard/general" : "/api/v1/dashboard/by-user";
-      const validMappedUsers = await loadValidMappedAnalystUsers(adminClient, digisacUrl, digisacToken);
-      const effectiveUserIds = resolveAnalystUserIds(requestedUserIds, validMappedUsers);
 
       if (action === "analistas" && effectiveUserIds.length === 0) {
         const emptyPayload = { items: [], totals: { closedTicketsCount: 0, contactsCount: 0, openedTicketsCount: 0, receivedMessagesCount: 0, sentMessagesCount: 0, totalMessagesCount: 0, totalTicketsCount: 0 } };
@@ -467,7 +546,7 @@ Deno.serve(async (req) => {
       }
 
       const params = action === "geral"
-        ? buildGeneralDashboardParams(startPeriod, endPeriod, departmentId, effectiveUserIds)
+        ? buildGeneralDashboardParams(startPeriod, endPeriod, departmentId, generalSingleUserId)
         : buildAnalystsDashboardParams(startPeriod, endPeriod, departmentId, effectiveUserIds);
       const response = await fetchDigisac(digisacUrl, digisacToken, endpoint, params);
       if (!response.ok) {
@@ -477,12 +556,18 @@ Deno.serve(async (req) => {
         });
       }
 
+      let outData = response.data;
+      if (action === "analistas") {
+        const nameById = new Map(validMappedUsers.map((u) => [u.id, u.name]));
+        outData = mergeByUserPayloadWithExpectedIds(response.data, effectiveUserIds, nameById);
+      }
+
       cache[cacheKey] = {
-        data: response.data,
+        data: outData,
         timestamp: Date.now(),
       };
 
-      return jsonResponse(response.data);
+      return jsonResponse(outData);
     }
 
     if (action === "listar_analysts") {
@@ -496,20 +581,47 @@ Deno.serve(async (req) => {
     }
 
     if (action === "listar_digisac_users") {
-      const cacheKey = "digisac_users";
+      const cacheKey = "digisac_users_full_list";
       if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < CACHE_TTL_MS) {
         return jsonResponse(cache[cacheKey].data);
       }
-      const r = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/users");
-      if (!r.ok) {
-        return handledErrorResponse(action, `Erro API Digisac: ${r.status}`, {
-          code: "DIGISAC_API_ERROR",
-          digisac_status: r.status,
-        });
+      const pageSize = 200;
+      const merged: unknown[] = [];
+      const seen = new Set<string>();
+      let page = 1;
+      let hasMore = true;
+      while (hasMore && page < 80) {
+        const params = new URLSearchParams({ limit: String(pageSize), page: String(page) });
+        const r = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/users", params);
+        if (!r.ok) {
+          if (page === 1) {
+            const r0 = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/users");
+            if (!r0.ok) {
+              return handledErrorResponse(action, `Erro API Digisac: ${r0.status}`, {
+                code: "DIGISAC_API_ERROR",
+                digisac_status: r0.status,
+              });
+            }
+            const users = Array.isArray(r0.data?.data) ? r0.data.data : Array.isArray(r0.data) ? r0.data : [];
+            cache[cacheKey] = { data: users, timestamp: Date.now() };
+            return jsonResponse(users);
+          }
+          break;
+        }
+        const list = Array.isArray(r.data?.data) ? r.data.data : Array.isArray(r.data) ? r.data : [];
+        let newOnPage = 0;
+        for (const u of list) {
+          const id = String((u as any)?.id ?? "");
+          if (!id || seen.has(id)) continue;
+          seen.add(id);
+          merged.push(u);
+          newOnPage++;
+        }
+        if (list.length < pageSize || newOnPage === 0) hasMore = false;
+        else page++;
       }
-      const users = Array.isArray(r.data?.data) ? r.data.data : Array.isArray(r.data) ? r.data : [];
-      cache[cacheKey] = { data: users, timestamp: Date.now() };
-      return jsonResponse(users);
+      cache[cacheKey] = { data: merged, timestamp: Date.now() };
+      return jsonResponse(merged);
     }
 
     if (action === "listar_departments") {

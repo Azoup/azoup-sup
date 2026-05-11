@@ -1,27 +1,12 @@
 import { supabase } from "@/integrations/supabase/client";
+import {
+  normalizeAnalistasResponse,
+  normalizeGeralResponse,
+  type DigisacAnalystStats,
+  type DigisacGeralResponse,
+} from "@/integrations/digisac/dashboardNormalize";
 
-export interface DigisacGeralResponse {
-  total_chamados: number;
-  total_fechados: number;
-  total_abertos: number;
-  total_mensagens: number;
-  total_contatos: number;
-  tma_geral_minutos: number;
-  tempo_espera_minutos: number;
-  primeira_resposta_minutos: number;
-}
-
-export interface DigisacAnalystStats {
-  analyst_id: string;
-  name: string;
-  mapped?: boolean;
-  total_chamados: number;
-  chamados_fechados: number;
-  chamados_abertos: number;
-  total_contatos?: number;
-  total_mensagens?: number;
-  tma_minutos: number;
-}
+export type { DigisacAnalystStats, DigisacGeralResponse };
 
 export interface DigisacDepartment {
   id: string;
@@ -46,155 +31,6 @@ interface DigisacErrorPayload {
 
 function isDigisacErrorPayload(value: unknown): value is DigisacErrorPayload {
   return !!value && typeof value === 'object' && ('error' in (value as Record<string, unknown>) || 'message' in (value as Record<string, unknown>));
-}
-
-function asNumber(...values: unknown[]): number {
-  for (const value of values) {
-    if (typeof value === 'number' && Number.isFinite(value)) return value;
-    if (typeof value === 'string') {
-      const parsed = Number(value.replace(',', '.'));
-      if (Number.isFinite(parsed)) return parsed;
-    }
-  }
-  return 0;
-}
-
-function minutesFromSeconds(value: number) {
-  return value > 0 ? value / 60 : 0;
-}
-
-/** Converte campo numérico de TMA/tempo: em geral segundos; valores muito altos costumam ser ms. */
-function timeRawToAverageMinutes(raw: number): number {
-  if (!(raw > 0) || !Number.isFinite(raw)) return 0;
-  if (raw >= 10_000_000) return minutesFromSeconds(raw / 1000);
-  return minutesFromSeconds(raw);
-}
-
-function rowMessagesTotal(item: Record<string, any>): number {
-  const aggregate = pickByKeys(item, [
-    'totalMessagesCount',
-    'totalMessages',
-    'messagesTotal',
-    'messagesCount',
-    'messages',
-  ]);
-  if (aggregate > 0) return aggregate;
-  const sent = asNumber(item.sentMessagesCount, item.sentMessages);
-  const received = asNumber(item.receivedMessagesCount, item.receivedMessages);
-  return sent + received;
-}
-
-function rowTicketTimeMinutes(item: Record<string, any>): number {
-  const explicitMinutes = asNumber(
-    item.ticketTimeMinutes,
-    item.averageTicketTimeMinutes,
-    item.avgTicketTimeMinutes,
-    item.tmaMinutes,
-    item.averageTmaMinutes,
-  );
-  if (explicitMinutes > 0) return explicitMinutes;
-  const raw = asNumber(
-    item.ticketTime,
-    item.averageTicketTime,
-    item.avgTicketTime,
-    item.totalTicketTime,
-    item.ticketsTime,
-    item.tma,
-  );
-  return timeRawToAverageMinutes(raw);
-}
-
-const INVALID_DIGISAC_USER_NAMES = new Set([
-  'sem atendente',
-  'mandeumzap dev',
-  'mande um zap dev',
-  'azoup tecnologia ltda',
-  'azoup digisac',
-]);
-
-function normalizeComparableName(value: string) {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9]+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
-
-function isInvalidDigisacUserName(value?: string) {
-  const normalized = normalizeComparableName(value || '');
-  if (!normalized) return true;
-  return INVALID_DIGISAC_USER_NAMES.has(normalized);
-}
-
-function pickByKeys(source: Record<string, any> | undefined, keys: string[]) {
-  if (!source) return 0;
-  for (const key of keys) {
-    if (key in source) return asNumber(source[key]);
-  }
-  return 0;
-}
-
-function firstArray(payload: any, keys: string[]) {
-  for (const key of keys) {
-    const value = payload?.[key];
-    if (Array.isArray(value)) return value;
-    if (value && typeof value === 'object') {
-      if (Array.isArray(value.data)) return value.data;
-      if (Array.isArray(value.items)) return value.items;
-      if (Array.isArray(value.rows)) return value.rows;
-    }
-  }
-  return [];
-}
-
-function normalizeGeralResponse(payload: any): DigisacGeralResponse {
-  const totals = payload?.totals ?? payload?.data?.totals ?? payload?.data ?? payload ?? {};
-  return {
-    total_chamados: pickByKeys(totals, ['totalTicketsCount', 'totalTickets', 'total_chamados', 'ticketsTotal', 'total', 'attendanceCount']),
-    total_fechados: pickByKeys(totals, ['closedTicketsCount', 'closedTickets', 'total_fechados', 'finishedTickets', 'closed']),
-    total_abertos: pickByKeys(totals, ['openedTicketsCount', 'openTickets', 'total_abertos', 'openedTickets', 'open']),
-    total_mensagens: pickByKeys(totals, ['totalMessagesCount', 'totalMessages', 'total_mensagens', 'messagesTotal', 'messages']),
-    total_contatos: pickByKeys(totals, ['contactsCount', 'totalContacts', 'total_contatos', 'contactsTotal', 'contacts']),
-    tma_geral_minutos: (() => {
-      const explicitMin = pickByKeys(totals, ['ticketTimeMinutes', 'averageTicketTimeMinutes', 'tmaMinutes']);
-      if (explicitMin > 0) return explicitMin;
-      return timeRawToAverageMinutes(
-        pickByKeys(totals, ['ticketTime', 'avgTicketTime', 'averageTicketTime', 'tma']),
-      );
-    })(),
-    tempo_espera_minutos: minutesFromSeconds(pickByKeys(totals, ['waitingTimeAvg', 'waitingTime', 'avgWaitingTime', 'averageWaitingTime'])),
-    primeira_resposta_minutos: minutesFromSeconds(pickByKeys(totals, ['firstWaitingTime', 'avgFirstWaitingTime', 'averageFirstWaitingTime', 'firstResponseTime', 'waitingTimeAfterBot'])),
-  };
-}
-
-function normalizeAnalistasResponse(payload: any): DigisacAnalystStats[] {
-  const items = Array.isArray(payload) ? payload : firstArray(payload, ['items', 'data', 'rows', 'users']);
-
-  return items
-    .filter((item: any) => !isInvalidDigisacUserName(item?.userName ?? item?.name ?? item?.user?.name))
-    .map((item: any) => {
-    const closed = asNumber(item.closedTicketsCount, item.closedTickets, item.closed);
-    const opened = asNumber(item.openedTicketsCount, item.openTickets, item.opened);
-
-    return {
-      analyst_id: String(item.userId ?? item.id ?? item.user?.id ?? item.name ?? ''),
-      name: item.userName ?? item.name ?? item.user?.name ?? 'Sem nome',
-      mapped: typeof item.mapped === 'boolean' ? item.mapped : undefined,
-      total_chamados: asNumber(
-        item.totalTicketsCount,
-        item.totalTickets,
-        item.attendanceCount,
-        item.ticketsTotal,
-        closed + opened,
-      ),
-      chamados_fechados: closed,
-      chamados_abertos: opened,
-      total_contatos: asNumber(item.contactsCount, item.totalContacts, item.uniqueContactsCount),
-      total_mensagens: rowMessagesTotal(item),
-      tma_minutos: rowTicketTimeMinutes(item),
-    };
-  });
 }
 
 function normalizeDateOnly(date: string | undefined): string | undefined {
@@ -247,7 +83,7 @@ async function invokeDigisac<T>(action: string, payload: Record<string, any> = {
 
 export const digisacApi = {
   async getDashboardGeral(startDate?: string, endDate?: string, departmentId?: string, userId?: string): Promise<DigisacGeralResponse> {
-    const data = await invokeDigisac<any>('geral', {
+    const data = await invokeDigisac<unknown>('geral', {
       startDate: normalizeDateOnly(startDate),
       endDate: normalizeDateOnly(endDate),
       departmentId: departmentId || 'all',
@@ -257,7 +93,7 @@ export const digisacApi = {
   },
 
   async getDashboardAnalistas(startDate?: string, endDate?: string, departmentId?: string, userId?: string): Promise<DigisacAnalystStats[]> {
-    const data = await invokeDigisac<any>('analistas', {
+    const data = await invokeDigisac<unknown>('analistas', {
       startDate: normalizeDateOnly(startDate),
       endDate: normalizeDateOnly(endDate),
       departmentId: departmentId || 'all',
