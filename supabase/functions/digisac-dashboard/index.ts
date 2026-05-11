@@ -4,7 +4,15 @@ import { corsHeaders } from "../_shared/cors.ts";
 
 interface CacheItem { data: any; timestamp: number; }
 const cache: Record<string, CacheItem> = {};
-const CACHE_TTL_MS = 15 * 1000;
+/** 0 = sem cache no dashboard geral/analistas. `DIGISAC_DASHBOARD_CACHE_MS` em ms. */
+const DASHBOARD_CACHE_TTL_MS = (() => {
+  const raw = Deno.env.get("DIGISAC_DASHBOARD_CACHE_MS")?.trim();
+  if (!raw) return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+})();
+/** Listas auxiliares (usuários/departamentos) — evita martelar a API a cada refresh do painel. */
+const LIST_CACHE_TTL_MS = 15 * 1000;
 const BRAZIL_UTC_OFFSET_HOURS = 3;
 
 const jsonResponse = (payload: unknown, status = 200) => new Response(JSON.stringify(payload), {
@@ -34,6 +42,8 @@ const buildErrorPayload = (action: string | undefined, message: string, extra: R
     total_fechados: 0,
     total_abertos: 0,
     total_mensagens: 0,
+    mensagens_enviadas: 0,
+    mensagens_recebidas: 0,
     total_contatos: 0,
     tma_geral_minutos: 0,
     tempo_espera_minutos: 0,
@@ -194,39 +204,40 @@ const mapGeneralPayload = (payload: any) => {
     "open",
   ]);
   const hasBreakdown = ["closedTicketsCount", "closedTickets", "closed", "openedTicketsCount", "openTickets", "opened", "open"].some((k) => k in totals);
+  const sumTickets = totalFechados + totalAbertos;
+  const fromTicketTotal = pickByKeys(totals, ["totalTicketsCount", "totalTickets", "total_chamados", "ticketsTotal", "total", "attendanceCount"]);
   const totalChamados = hasBreakdown
-    ? totalFechados + totalAbertos
-    : pickByKeys(totals, ["totalTicketsCount", "totalTickets", "total_chamados", "ticketsTotal", "total", "attendanceCount"]);
-  const hasMsgBreakdown = "sentMessagesCount" in totals || "receivedMessagesCount" in totals;
-  const totalMensagens = hasMsgBreakdown
-    ? pickByKeys(totals, ["sentMessagesCount", "sentMessages"]) + pickByKeys(totals, ["receivedMessagesCount", "receivedMessages"])
-    : pickByKeys(totals, ["totalMessagesCount", "totalMessages", "total_mensagens", "messagesTotal", "messages"]);
+    ? fromTicketTotal > 0 && sumTickets > 0 ? Math.max(fromTicketTotal, sumTickets) : (sumTickets || fromTicketTotal)
+    : fromTicketTotal;
+  const sentMsg = pickByKeys(totals, ["sentMessagesCount", "sentMessages", "sent_messages_count", "messagesSent", "messages_sent", "outboundMessagesCount"]);
+  const recMsg = pickByKeys(totals, ["receivedMessagesCount", "receivedMessages", "received_messages_count", "messagesReceived", "messages_received", "inboundMessagesCount"]);
+  const apiMsgTotal = pickByKeys(totals, ["totalMessagesCount", "totalMessages", "total_mensagens", "messagesTotal", "messagesCount", "messages"]);
+  const totalMensagens = apiMsgTotal > 0 ? apiMsgTotal : sentMsg + recMsg;
   const totalContatos = pickByKeys(totals, ["contactsCount", "totalContacts", "total_contatos", "contactsTotal", "contacts"]);
 
   const ticketTimeMinutes = minutesFromSeconds(pickByKeys(totals, ["ticketTime", "avgTicketTime", "averageTicketTime", "tma"]));
   const waitingTimeMinutes = minutesFromSeconds(pickByKeys(totals, ["waitingTimeAvg", "avgWaitingTime", "averageWaitingTime", "totalWaitingTime"]));
-  const firstWaitingExplicit = pickByKeys(totals, [
-    "firstWaitingTimeMinutes",
-    "averageFirstWaitingTimeMinutes",
-    "firstResponseTimeMinutes",
-  ]);
-  const firstWaitingMinutes = firstWaitingExplicit > 0
-    ? firstWaitingExplicit
-    : ("waitingTime" in totals && asNumber(totals.waitingTime) > 0)
+  const firstWaitingMinutes = ("waitingTime" in totals && asNumber(totals.waitingTime) > 0)
     ? minutesFromSeconds(asNumber(totals.waitingTime))
-    : minutesFromSeconds(pickByKeys(totals, [
-      "firstWaitingTime",
-      "avgFirstWaitingTime",
-      "averageFirstWaitingTime",
-      "firstResponseTime",
-      "waitingTimeAfterBot",
-    ]));
+    : (() => {
+      const ex = pickByKeys(totals, ["firstWaitingTimeMinutes", "averageFirstWaitingTimeMinutes", "avgFirstWaitingTimeMinutes"]);
+      if (ex > 0) return ex;
+      return minutesFromSeconds(pickByKeys(totals, [
+        "firstWaitingTime",
+        "avgFirstWaitingTime",
+        "averageFirstWaitingTime",
+        "firstResponseTime",
+        "waitingTimeAfterBot",
+      ]));
+    })();
 
   return {
     total_chamados: totalChamados,
     total_fechados: totalFechados,
     total_abertos: totalAbertos,
     total_mensagens: totalMensagens,
+    mensagens_enviadas: sentMsg,
+    mensagens_recebidas: recMsg,
     total_contatos: totalContatos,
     tma_geral_minutos: ticketTimeMinutes,
     tempo_espera_minutos: waitingTimeMinutes,
@@ -238,7 +249,7 @@ const loadDigisacUsers = async (baseUrl: string, token: string) => {
   const usersCacheKey = "digisac_users_raw";
   let users: Array<{ id: string; name: string }> = cache[usersCacheKey]?.data;
 
-  if (!users || Date.now() - cache[usersCacheKey].timestamp >= CACHE_TTL_MS) {
+  if (!users || Date.now() - cache[usersCacheKey].timestamp >= LIST_CACHE_TTL_MS) {
     const pageSize = 200;
     const collected: Array<{ id: string; name: string }> = [];
     const seen = new Set<string>();
@@ -569,7 +580,7 @@ Deno.serve(async (req) => {
       const cacheKey = `dashboard_proxy_${action}_${startPeriod}_${endPeriod}_${departmentId}_${cacheScope}`;
 
       const cached = cache[cacheKey]?.data;
-      if (cached && Date.now() - cache[cacheKey].timestamp < CACHE_TTL_MS) {
+      if (cached && Date.now() - cache[cacheKey].timestamp < DASHBOARD_CACHE_TTL_MS) {
         return jsonResponse(cached);
       }
 
@@ -618,7 +629,7 @@ Deno.serve(async (req) => {
 
     if (action === "listar_digisac_users") {
       const cacheKey = "digisac_users_full_list";
-      if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < CACHE_TTL_MS) {
+      if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < LIST_CACHE_TTL_MS) {
         return jsonResponse(cache[cacheKey].data);
       }
       const pageSize = 200;
@@ -662,7 +673,7 @@ Deno.serve(async (req) => {
 
     if (action === "listar_departments") {
       const cacheKey = "digisac_departments";
-      if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < CACHE_TTL_MS) {
+      if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < LIST_CACHE_TTL_MS) {
         return jsonResponse(cache[cacheKey].data);
       }
       const r = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/departments");

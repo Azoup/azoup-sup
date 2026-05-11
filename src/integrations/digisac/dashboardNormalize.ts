@@ -65,22 +65,21 @@ export function totalsTmaMinutes(totals: Record<string, unknown>) {
 
 /**
  * Média do 1º tempo de espera (cartão Digisac).
- * Em `/dashboard/general`, `totals.waitingTime` (segundos) é exatamente o valor do painel;
- * outros campos (ex.: firstResponseTime) podem diferir em segundos — priorizar `waitingTime`.
+ * `totals.waitingTime` (segundos) bate com o painel "Média do 1º tempo de espera".
+ * `firstResponseTimeMinutes` / `firstResponseTime` costumam ser outra métrica (ex.: 234s vs 229s).
  */
 export function totalsPrimeiraRespostaMinutes(totals: Record<string, unknown>) {
-  const explicitMin = pickFirstPositiveByKeys(totals, [
-    "firstWaitingTimeMinutes",
-    "averageFirstWaitingTimeMinutes",
-    "avgFirstWaitingTimeMinutes",
-    "firstResponseTimeMinutes",
-    "avgFirstHumanWaitingTimeMinutes",
-  ]);
-  if (explicitMin > 0) return explicitMin;
   if ("waitingTime" in totals) {
     const wt = asNumber(totals.waitingTime);
     if (wt > 0) return timeRawToAverageMinutes(wt);
   }
+  const explicitMin = pickFirstPositiveByKeys(totals, [
+    "firstWaitingTimeMinutes",
+    "averageFirstWaitingTimeMinutes",
+    "avgFirstWaitingTimeMinutes",
+    "avgFirstHumanWaitingTimeMinutes",
+  ]);
+  if (explicitMin > 0) return explicitMin;
   const raw = pickFirstPositiveByKeys(totals, [
     "firstWaitingTime",
     "avgFirstWaitingTime",
@@ -94,6 +93,7 @@ export function totalsPrimeiraRespostaMinutes(totals: Record<string, unknown>) {
     "averageWaitingTimeUntilFirstHumanResponse",
     "firstResponseWaitingTime",
     "waitingTimeAfterBot",
+    "firstResponseTimeMinutes",
   ]);
   return timeRawToAverageMinutes(raw);
 }
@@ -136,7 +136,10 @@ export interface DigisacGeralResponse {
   total_chamados: number;
   total_fechados: number;
   total_abertos: number;
+  /** Total de mensagens (campo total da Digisac ou enviadas+recebidas). */
   total_mensagens: number;
+  mensagens_enviadas: number;
+  mensagens_recebidas: number;
   total_contatos: number;
   tma_geral_minutos: number;
   tempo_espera_minutos: number;
@@ -152,6 +155,8 @@ export interface DigisacAnalystStats {
   chamados_abertos: number;
   total_contatos?: number;
   total_mensagens?: number;
+  mensagens_enviadas?: number;
+  mensagens_recebidas?: number;
   tma_minutos: number;
   primeira_espera_minutos?: number;
 }
@@ -179,22 +184,65 @@ function isInvalidDigisacUserName(value?: string) {
   return INVALID_DIGISAC_USER_NAMES.has(normalized);
 }
 
+const MESSAGE_SENT_KEYS = [
+  "sentMessagesCount",
+  "sentMessages",
+  "sent_messages_count",
+  "messagesSent",
+  "messages_sent",
+  "outboundMessagesCount",
+] as const;
+
+const MESSAGE_RECEIVED_KEYS = [
+  "receivedMessagesCount",
+  "receivedMessages",
+  "received_messages_count",
+  "messagesReceived",
+  "messages_received",
+  "inboundMessagesCount",
+] as const;
+
+const MESSAGE_TOTAL_KEYS = [
+  "totalMessagesCount",
+  "totalMessages",
+  "total_mensagens",
+  "messagesTotal",
+  "messagesCount",
+  "messages",
+] as const;
+
+function recordHasAnyMessageMetricKeys(row: Record<string, unknown>): boolean {
+  const keys = [...MESSAGE_SENT_KEYS, ...MESSAGE_RECEIVED_KEYS, ...MESSAGE_TOTAL_KEYS];
+  return keys.some((k) => k in row);
+}
+
+export function totalsMessageCounts(totals: Record<string, unknown>) {
+  const mensagens_enviadas = pickByKeys(totals, [...MESSAGE_SENT_KEYS]);
+  const mensagens_recebidas = pickByKeys(totals, [...MESSAGE_RECEIVED_KEYS]);
+  const apiTotal = pickByKeys(totals, [...MESSAGE_TOTAL_KEYS]);
+  const sum = mensagens_enviadas + mensagens_recebidas;
+  const total_mensagens = apiTotal > 0 ? apiTotal : sum;
+  return { mensagens_enviadas, mensagens_recebidas, total_mensagens };
+}
+
+export function rowSentMessagesCount(item: Record<string, unknown>): number {
+  return pickByKeys(item, [...MESSAGE_SENT_KEYS]);
+}
+
+export function rowReceivedMessagesCount(item: Record<string, unknown>): number {
+  return pickByKeys(item, [...MESSAGE_RECEIVED_KEYS]);
+}
+
+export function rowTotalMessagesCount(item: Record<string, unknown>): number {
+  const sent = rowSentMessagesCount(item);
+  const received = rowReceivedMessagesCount(item);
+  const apiTotal = pickByKeys(item, [...MESSAGE_TOTAL_KEYS]);
+  const sum = sent + received;
+  return apiTotal > 0 ? apiTotal : sum;
+}
+
 export function rowMessagesTotal(item: Record<string, unknown>): number {
-  if (recordHasMessageBreakdown(item)) {
-    return pickByKeys(item, ["sentMessagesCount", "sentMessages"]) +
-      pickByKeys(item, ["receivedMessagesCount", "receivedMessages"]);
-  }
-  const aggregate = pickByKeys(item, [
-    "totalMessagesCount",
-    "totalMessages",
-    "messagesTotal",
-    "messagesCount",
-    "messages",
-  ]);
-  if (aggregate > 0) return aggregate;
-  const sent = asNumber(item.sentMessagesCount, item.sentMessages);
-  const received = asNumber(item.receivedMessagesCount, item.receivedMessages);
-  return sent + received;
+  return rowTotalMessagesCount(item);
 }
 
 export function rowTicketTimeMinutes(item: Record<string, unknown>): number {
@@ -210,6 +258,8 @@ export function rowTicketTimeMinutes(item: Record<string, unknown>): number {
     "ticketTime",
     "averageTicketTime",
     "avgTicketTime",
+    "averageTicketDuration",
+    "avgTicketDuration",
     "totalTicketTime",
     "ticketsTime",
     "tma",
@@ -221,18 +271,17 @@ export function rowTicketTimeMinutes(item: Record<string, unknown>): number {
 
 /** Média do 1º tempo de espera por analista (alinhado ao painel Digisac). */
 export function rowPrimeiraEsperaMinutes(item: Record<string, unknown>): number {
-  const explicitMin = pickFirstPositiveByKeys(item, [
-    "firstWaitingTimeMinutes",
-    "averageFirstWaitingTimeMinutes",
-    "avgFirstWaitingTimeMinutes",
-    "firstResponseTimeMinutes",
-    "avgFirstHumanWaitingTimeMinutes",
-  ]);
-  if (explicitMin > 0) return explicitMin;
   if ("waitingTime" in item) {
     const wt = asNumber(item.waitingTime);
     if (wt > 0) return timeRawToAverageMinutes(wt);
   }
+  const explicitMin = pickFirstPositiveByKeys(item, [
+    "firstWaitingTimeMinutes",
+    "averageFirstWaitingTimeMinutes",
+    "avgFirstWaitingTimeMinutes",
+    "avgFirstHumanWaitingTimeMinutes",
+  ]);
+  if (explicitMin > 0) return explicitMin;
   const raw = pickFirstPositiveByKeys(item, [
     "firstWaitingTime",
     "avgFirstWaitingTime",
@@ -247,6 +296,7 @@ export function rowPrimeiraEsperaMinutes(item: Record<string, unknown>): number 
     "firstResponseWaitingTime",
     "waiting_time",
     "waitingTimeAfterBot",
+    "firstResponseTimeMinutes",
   ]);
   return timeRawToAverageMinutes(raw);
 }
@@ -304,7 +354,7 @@ export function recordHasTicketBreakdown(row: Record<string, unknown>): boolean 
 }
 
 export function recordHasMessageBreakdown(row: Record<string, unknown>): boolean {
-  return "sentMessagesCount" in row || "receivedMessagesCount" in row || "sentMessages" in row || "receivedMessages" in row;
+  return recordHasAnyMessageMetricKeys(row);
 }
 
 export function totalsHasTicketBreakdown(totals: Record<string, unknown>): boolean {
@@ -312,7 +362,7 @@ export function totalsHasTicketBreakdown(totals: Record<string, unknown>): boole
 }
 
 export function totalsHasMessageBreakdown(totals: Record<string, unknown>): boolean {
-  return "sentMessagesCount" in totals || "receivedMessagesCount" in totals;
+  return recordHasAnyMessageMetricKeys(totals);
 }
 
 export function normalizeGeralResponse(payload: unknown): DigisacGeralResponse {
@@ -337,19 +387,30 @@ export function normalizeGeralResponse(payload: unknown): DigisacGeralResponse {
     "open",
   ]);
 
+  const sumTickets = total_fechados + total_abertos;
+  const fromTicketTotal = pickByKeys(totals, [
+    "totalTicketsCount",
+    "totalTickets",
+    "total_chamados",
+    "ticketsTotal",
+    "total",
+    "attendanceCount",
+  ]);
   const total_chamados = totalsHasTicketBreakdown(totals)
-    ? total_fechados + total_abertos
-    : pickByKeys(totals, ["totalTicketsCount", "totalTickets", "total_chamados", "ticketsTotal", "total", "attendanceCount"]);
+    ? fromTicketTotal > 0 && sumTickets > 0
+      ? Math.max(fromTicketTotal, sumTickets)
+      : (sumTickets || fromTicketTotal)
+    : fromTicketTotal;
 
-  const total_mensagens = totalsHasMessageBreakdown(totals)
-    ? pickByKeys(totals, ["sentMessagesCount", "sentMessages"]) + pickByKeys(totals, ["receivedMessagesCount", "receivedMessages"])
-    : pickByKeys(totals, ["totalMessagesCount", "totalMessages", "total_mensagens", "messagesTotal", "messages"]);
+  const { mensagens_enviadas, mensagens_recebidas, total_mensagens } = totalsMessageCounts(totals);
 
   return {
     total_chamados,
     total_fechados,
     total_abertos,
     total_mensagens,
+    mensagens_enviadas,
+    mensagens_recebidas,
     total_contatos: pickByKeys(totals, ["contactsCount", "totalContacts", "total_contatos", "contactsTotal", "contacts"]),
     tma_geral_minutos: totalsTmaMinutes(totals),
     tempo_espera_minutos: totalsTempoEsperaMinutes(totals),
@@ -371,16 +432,19 @@ export function normalizeAnalistasResponse(payload: unknown): DigisacAnalystStat
       const opened = rowOpenedCount(item);
       const user = item.user as Record<string, unknown> | undefined;
 
+      const fromBreakdown = closed + opened;
+      const fromTicketTotal = asNumber(
+        item.totalTicketsCount,
+        item.totalTickets,
+        item.attendanceCount,
+        item.ticketsTotal,
+        item.total_tickets_count,
+      );
       const total_chamados = recordHasTicketBreakdown(item)
-        ? closed + opened
-        : asNumber(
-            item.totalTicketsCount,
-            item.totalTickets,
-            item.attendanceCount,
-            item.ticketsTotal,
-            item.total_tickets_count,
-            closed + opened,
-          );
+        ? fromTicketTotal > 0 && fromBreakdown > 0
+          ? Math.max(fromTicketTotal, fromBreakdown)
+          : (fromBreakdown || fromTicketTotal)
+        : (fromTicketTotal || fromBreakdown);
 
       return {
         analyst_id: String(item.userId ?? item.id ?? user?.id ?? item.name ?? ""),
@@ -395,7 +459,9 @@ export function normalizeAnalistasResponse(payload: unknown): DigisacAnalystStat
           item.uniqueContactsCount,
           item.contacts_count,
         ),
-        total_mensagens: rowMessagesTotal(item),
+        mensagens_enviadas: rowSentMessagesCount(item),
+        mensagens_recebidas: rowReceivedMessagesCount(item),
+        total_mensagens: rowTotalMessagesCount(item),
         tma_minutos: rowTicketTimeMinutes(item),
         primeira_espera_minutos: rowPrimeiraEsperaMinutes(item),
       };

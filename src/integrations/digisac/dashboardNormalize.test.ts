@@ -47,6 +47,9 @@ describe("normalizeGeralResponse", () => {
     expect(g.total_chamados).toBe(10);
     expect(g.tma_geral_minutos).toBeCloseTo(10, 5);
     expect(g.primeira_resposta_minutos).toBeCloseTo(3, 5);
+    expect(g.mensagens_enviadas).toBe(0);
+    expect(g.mensagens_recebidas).toBe(0);
+    expect(g.total_mensagens).toBe(100);
   });
 
   it("total de chamados = fechados + abertos quando a API manda os dois (ex.: 244 vs totalTicketsCount 237)", () => {
@@ -89,6 +92,16 @@ describe("normalizeGeralResponse", () => {
     expect(totalsPrimeiraRespostaMinutes(totals)).toBeCloseTo(229 / 60, 5);
   });
 
+  it("waitingTime vence firstResponseTimeMinutes (minutos) da API", () => {
+    const totals = {
+      closedTicketsCount: 1,
+      openedTicketsCount: 0,
+      waitingTime: 229,
+      firstResponseTimeMinutes: 3.9,
+    };
+    expect(totalsPrimeiraRespostaMinutes(totals)).toBeCloseTo(229 / 60, 5);
+  });
+
   it("payload real Digisac: waitingTime = 1º espera; waitingTimeAvg = espera geral", () => {
     const totals = {
       sentMessagesCount: 3071,
@@ -108,6 +121,8 @@ describe("normalizeGeralResponse", () => {
     const g = normalizeGeralResponse({ totals });
     expect(g.total_chamados).toBe(244);
     expect(g.total_mensagens).toBe(7010);
+    expect(g.mensagens_enviadas).toBe(3071);
+    expect(g.mensagens_recebidas).toBe(3939);
     expect(g.primeira_resposta_minutos).toBeCloseTo(229 / 60, 4);
     expect(g.tempo_espera_minutos).toBeCloseTo(109 / 60, 4);
     expect(g.tma_geral_minutos).toBeCloseTo(3819 / 60, 4);
@@ -137,6 +152,9 @@ describe("normalizeAnalistasResponse", () => {
     expect(rows[0].primeira_espera_minutos).toBeCloseTo(2, 5);
     expect(rows[0].tma_minutos).toBeCloseTo(5, 5);
     expect(rows[0].total_chamados).toBe(5);
+    expect(rows[0].mensagens_enviadas).toBe(0);
+    expect(rows[0].mensagens_recebidas).toBe(0);
+    expect(rows[0].total_mensagens).toBe(20);
   });
 
   it("achata stats aninhados para contagem e TMA", () => {
@@ -160,6 +178,9 @@ describe("normalizeAnalistasResponse", () => {
     expect(rows[0].total_chamados).toBe(8);
     expect(rows[0].tma_minutos).toBeCloseTo(2, 5);
     expect(rows[0].primeira_espera_minutos).toBeCloseTo(1, 5);
+    expect(rows[0].mensagens_enviadas).toBe(2);
+    expect(rows[0].mensagens_recebidas).toBe(3);
+    expect(rows[0].total_mensagens).toBe(5);
   });
 
   it("stats aninhado sobrescreve zeros no nível raiz (contagem / TMA)", () => {

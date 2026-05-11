@@ -1,26 +1,36 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DigisacMappingModal } from "@/components/DigisacMappingModal";
 import { digisacApi } from "@/integrations/digisac/api";
-import { Clock, Ticket, Users, Filter, MessageSquare, Hourglass, Timer, CheckCircle2, CircleDot } from "lucide-react";
+import { Clock, Ticket, Users, Filter, MessageSquare, Hourglass, Timer, CheckCircle2, CircleDot, RefreshCw, AlertCircle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, LabelList } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertCircle } from "lucide-react";
 
-const getTodayDateInputValue = () => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+/** Data "hoje" alinhada ao calendário do Digisac (America/Sao_Paulo), evitando dia errado em outros fusos. */
+const getTodayDateStringBrazil = () => {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  } catch {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
 };
 
 export default function DigisacDashboard() {
-  const today = getTodayDateInputValue();
+  const queryClient = useQueryClient();
+  const today = getTodayDateStringBrazil();
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
   const [departmentId, setDepartmentId] = useState<string>("all");
@@ -45,15 +55,24 @@ export default function DigisacDashboard() {
     queryKey: ['digisac-geral', filters.start, filters.end, filters.departmentId, filters.analystId],
     queryFn: () => digisacApi.getDashboardGeral(filters.start || undefined, filters.end || undefined, filters.departmentId, filters.analystId),
     enabled: shouldLoadDashboard,
-    refetchInterval: 5 * 60 * 1000
+    staleTime: 0,
+    refetchInterval: 30 * 1000,
+    refetchOnWindowFocus: true,
   });
 
   const { data: analistas, isLoading: isLoadingAnalistas, isError: isErrorAnalistas, error: errorAnalistas } = useQuery({
     queryKey: ['digisac-analistas', filters.start, filters.end, filters.departmentId, filters.analystId],
     queryFn: () => digisacApi.getDashboardAnalistas(filters.start || undefined, filters.end || undefined, filters.departmentId, filters.analystId),
     enabled: shouldLoadDashboard,
-    refetchInterval: 5 * 60 * 1000
+    staleTime: 0,
+    refetchInterval: 30 * 1000,
+    refetchOnWindowFocus: true,
   });
+
+  const refreshDigisacDashboard = () => {
+    void queryClient.invalidateQueries({ queryKey: ["digisac-geral"] });
+    void queryClient.invalidateQueries({ queryKey: ["digisac-analistas"] });
+  };
 
   const applyFilters = () => {
     setFilters({ start: startDate, end: endDate, departmentId, analystId });
@@ -95,7 +114,12 @@ export default function DigisacDashboard() {
   const mediaTmaMinutos = geral?.tma_geral_minutos || 0;
 
   const hasError = isErrorGeral || isErrorAnalistas;
-  const hasData = (geral?.total_chamados || 0) > 0 || analistasList.length > 0;
+  const hasData =
+    (geral?.total_chamados || 0) > 0 ||
+    (geral?.total_mensagens || 0) > 0 ||
+    (geral?.mensagens_enviadas || 0) > 0 ||
+    (geral?.mensagens_recebidas || 0) > 0 ||
+    analistasList.length > 0;
   const showEmptyState = !hasError && !isLoadingGeral && !isLoadingAnalistas && !hasData;
 
   return (
@@ -147,6 +171,10 @@ export default function DigisacDashboard() {
           <Button onClick={applyFilters} className="h-9 gap-2 shrink-0">
             <Filter className="w-4 h-4" />
             Aplicar
+          </Button>
+          <Button type="button" variant="outline" onClick={refreshDigisacDashboard} className="h-9 gap-2 shrink-0" title="Buscar de novo na Digisac">
+            <RefreshCw className="w-4 h-4" />
+            Atualizar
           </Button>
           <div className="hidden lg:block w-px h-10 bg-border mx-1"></div>
           <div className="shrink-0"><DigisacMappingModal /></div>
@@ -248,7 +276,7 @@ export default function DigisacDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{isLoadingGeral ? "..." : formatTma(geral?.primeira_resposta_minutos || 0)}</div>
-            <p className="text-xs text-muted-foreground mt-1">Média até a 1ª resposta humana (Estatísticas Digisac)</p>
+            <p className="text-xs text-muted-foreground mt-1">Média do 1º tempo de espera (campo waitingTime da Digisac)</p>
           </CardContent>
         </Card>
 
@@ -257,9 +285,26 @@ export default function DigisacDashboard() {
             <CardTitle className="text-sm font-medium">Mensagens</CardTitle>
             <MessageSquare className="h-4 w-4 text-primary" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{isLoadingGeral ? "..." : geral?.total_mensagens || 0}</div>
-            <p className="text-xs text-muted-foreground mt-1">Trocadas no período</p>
+          <CardContent className="space-y-3">
+            {isLoadingGeral ? (
+              <div className="text-2xl font-bold">...</div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Enviadas</p>
+                  <p className="text-lg font-bold tabular-nums">{geral?.mensagens_enviadas ?? 0}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Recebidas</p>
+                  <p className="text-lg font-bold tabular-nums">{geral?.mensagens_recebidas ?? 0}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Total</p>
+                  <p className="text-lg font-bold tabular-nums">{geral?.total_mensagens ?? 0}</p>
+                </div>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">Mesmos totais da tela de estatísticas Digisac</p>
           </CardContent>
         </Card>
       </div>
@@ -356,14 +401,16 @@ export default function DigisacDashboard() {
                 <Table className="w-full table-fixed text-xs">
                   <TableHeader className="bg-muted/50">
                     <TableRow>
-                      <TableHead className="h-9 px-3 w-[24%]">Analista</TableHead>
-                      <TableHead className="h-9 px-2 text-right w-[9%]">Total</TableHead>
-                      <TableHead className="h-9 px-2 text-right w-[9%]">Fechados</TableHead>
-                      <TableHead className="h-9 px-2 text-right w-[8%]">Abertos</TableHead>
-                      <TableHead className="h-9 px-2 text-right w-[10%]">Contatos</TableHead>
-                      <TableHead className="h-9 px-2 text-right w-[11%]">Mensagens</TableHead>
-                      <TableHead className="h-9 px-2 text-right w-[11%]">1º espera</TableHead>
-                      <TableHead className="h-9 px-3 text-right w-[12%]">TMA</TableHead>
+                      <TableHead className="h-9 px-3 w-[18%]">Analista</TableHead>
+                      <TableHead className="h-9 px-1 text-right w-[7%]">Total</TableHead>
+                      <TableHead className="h-9 px-1 text-right w-[7%]">Fech.</TableHead>
+                      <TableHead className="h-9 px-1 text-right w-[7%]">Aber.</TableHead>
+                      <TableHead className="h-9 px-1 text-right w-[8%]">Cont.</TableHead>
+                      <TableHead className="h-9 px-1 text-right w-[8%]" title="Mensagens enviadas">Env.</TableHead>
+                      <TableHead className="h-9 px-1 text-right w-[8%]" title="Mensagens recebidas">Rec.</TableHead>
+                      <TableHead className="h-9 px-1 text-right w-[8%]" title="Total de mensagens">Msg.</TableHead>
+                      <TableHead className="h-9 px-1 text-right w-[9%]">1º esp.</TableHead>
+                      <TableHead className="h-9 px-2 text-right w-[10%]">TMA</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -379,13 +426,15 @@ export default function DigisacDashboard() {
                         <TableCell className="text-right px-2 py-2 tabular-nums">{analyst.chamados_fechados ?? 0}</TableCell>
                         <TableCell className="text-right px-2 py-2 tabular-nums">{analyst.chamados_abertos ?? 0}</TableCell>
                         <TableCell className="text-right px-2 py-2 tabular-nums">{analyst.total_contatos ?? 0}</TableCell>
-                        <TableCell className="text-right px-2 py-2 tabular-nums">{analyst.total_mensagens ?? 0}</TableCell>
+                        <TableCell className="text-right px-1 py-2 tabular-nums">{analyst.mensagens_enviadas ?? 0}</TableCell>
+                        <TableCell className="text-right px-1 py-2 tabular-nums">{analyst.mensagens_recebidas ?? 0}</TableCell>
+                        <TableCell className="text-right px-1 py-2 tabular-nums">{analyst.total_mensagens ?? 0}</TableCell>
                         <TableCell className="text-right px-2 py-2 tabular-nums">{formatTma(analyst.primeira_espera_minutos ?? 0)}</TableCell>
                         <TableCell className="text-right px-3 py-2 tabular-nums font-semibold">{formatTma(analyst.tma_minutos)}</TableCell>
                       </TableRow>
                     )) : (
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center py-6 text-muted-foreground">
+                        <TableCell colSpan={10} className="text-center py-6 text-muted-foreground">
                            Nenhum dado encontrado para o período selecionado.
                         </TableCell>
                       </TableRow>
