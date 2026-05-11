@@ -63,7 +63,11 @@ export function totalsTmaMinutes(totals: Record<string, unknown>) {
   );
 }
 
-/** Média do 1º tempo de espera (cartão "Média do 1º tempo de espera" — humano, não o "após bot"). */
+/**
+ * Média do 1º tempo de espera (cartão Digisac).
+ * Na API v1, o bloco `totals` costuma expor isso em `waitingTime` (segundos), enquanto
+ * `waitingTimeAvg` é o tempo médio de espera geral — não inverter.
+ */
 export function totalsPrimeiraRespostaMinutes(totals: Record<string, unknown>) {
   const explicitMin = pickFirstPositiveByKeys(totals, [
     "firstWaitingTimeMinutes",
@@ -85,6 +89,7 @@ export function totalsPrimeiraRespostaMinutes(totals: Record<string, unknown>) {
     "waitingTimeBeforeFirstHumanResponse",
     "averageWaitingTimeUntilFirstHumanResponse",
     "firstResponseWaitingTime",
+    "waitingTime",
     "waitingTimeAfterBot",
   ]);
   return timeRawToAverageMinutes(raw);
@@ -98,7 +103,12 @@ export function totalsTempoEsperaMinutes(totals: Record<string, unknown>) {
   ]);
   if (explicitMin > 0) return explicitMin;
   return timeRawToAverageMinutes(
-    pickFirstPositiveByKeys(totals, ["waitingTimeAvg", "waitingTime", "avgWaitingTime", "averageWaitingTime", "totalWaitingTime"]),
+    pickFirstPositiveByKeys(totals, [
+      "waitingTimeAvg",
+      "avgWaitingTime",
+      "averageWaitingTime",
+      "totalWaitingTime",
+    ]),
   );
 }
 
@@ -226,6 +236,7 @@ export function rowPrimeiraEsperaMinutes(item: Record<string, unknown>): number 
     "waitingTimeBeforeFirstHumanResponse",
     "averageWaitingTimeUntilFirstHumanResponse",
     "firstResponseWaitingTime",
+    "waitingTime",
     "waitingTimeAfterBot",
   ]);
   return timeRawToAverageMinutes(raw);

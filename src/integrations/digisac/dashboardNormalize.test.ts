@@ -4,6 +4,7 @@ import {
   normalizeAnalistasResponse,
   pickFirstPositiveByKeys,
   totalsPrimeiraRespostaMinutes,
+  totalsTempoEsperaMinutes,
   timeRawToAverageMinutes,
 } from "./dashboardNormalize";
 
@@ -76,6 +77,30 @@ describe("normalizeGeralResponse", () => {
     };
     const g = normalizeGeralResponse(payload);
     expect(g.primeira_resposta_minutos).toBeCloseTo(3.82, 4);
+  });
+
+  it("payload real Digisac: waitingTime = 1º espera; waitingTimeAvg = espera geral", () => {
+    const totals = {
+      sentMessagesCount: 3071,
+      receivedMessagesCount: 3939,
+      totalMessagesCount: 7010,
+      openedTicketsCount: 0,
+      closedTicketsCount: 244,
+      contactsCount: 134,
+      totalTicketsCount: 244,
+      ticketTime: 3819,
+      waitingTime: 229,
+      waitingTimeAfterBot: 0,
+      waitingTimeAvg: 109,
+    };
+    expect(totalsPrimeiraRespostaMinutes(totals)).toBeCloseTo(229 / 60, 4);
+    expect(totalsTempoEsperaMinutes(totals)).toBeCloseTo(109 / 60, 4);
+    const g = normalizeGeralResponse({ totals });
+    expect(g.total_chamados).toBe(244);
+    expect(g.total_mensagens).toBe(7010);
+    expect(g.primeira_resposta_minutos).toBeCloseTo(229 / 60, 4);
+    expect(g.tempo_espera_minutos).toBeCloseTo(109 / 60, 4);
+    expect(g.tma_geral_minutos).toBeCloseTo(3819 / 60, 4);
   });
 });
 
