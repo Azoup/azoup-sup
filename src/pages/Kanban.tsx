@@ -529,12 +529,28 @@ const Kanban = () => {
       );
     });
 
-    // Persist in background
+    // Persist in background (with fallback when completed_at is unavailable in DB)
+    const movePayload = { status: destination.droppableId, position: destination.index, ...completedAtUpdate };
     supabase.from('kanban_cards')
-      .update({ status: destination.droppableId, position: destination.index, ...completedAtUpdate })
+      .update(movePayload)
       .eq('id', draggableId)
       .then(async ({ error }) => {
-        if (error) {
+        let finalError = error;
+
+        // Some environments may not have the completed_at column yet.
+        if (
+          finalError &&
+          'completed_at' in movePayload &&
+          `${finalError.message || ''}`.toLowerCase().includes('completed_at')
+        ) {
+          const retry = await supabase
+            .from('kanban_cards')
+            .update({ status: destination.droppableId, position: destination.index })
+            .eq('id', draggableId);
+          finalError = retry.error;
+        }
+
+        if (finalError) {
           // Rollback on error
           queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
           toast.error('Erro ao mover card.');

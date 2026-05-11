@@ -76,6 +76,8 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
 
     try {
       const ext = file.name.split('.').pop() || 'bin';
+      const isRar = ext.toLowerCase() === 'rar';
+      const contentType = isRar ? 'application/octet-stream' : (file.type || 'application/octet-stream');
       const path = `${cardId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
       // Simulated progress (Supabase JS SDK doesn't expose upload progress directly)
@@ -89,7 +91,7 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
 
       const { error: uploadError } = await supabase.storage
         .from('dev-kanban-files')
-        .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+        .upload(path, file, { contentType, upsert: false });
 
       clearInterval(progressInterval);
 
@@ -102,7 +104,7 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
         file_url: urlData.publicUrl,
         file_path: path,
         file_name: file.name,
-        file_type: file.type || 'application/octet-stream',
+        file_type: file.type || contentType,
         file_size: file.size,
         uploaded_by: user?.id,
         uploaded_by_email: user?.email || '',

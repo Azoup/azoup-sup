@@ -534,11 +534,27 @@ const KanbanDev = () => {
           : card
       );
     });
+    const movePayload = { status: destination.droppableId, position: destination.index, ...completedAtUpdate };
     supabase.from('dev_kanban_cards')
-      .update({ status: destination.droppableId, position: destination.index, ...completedAtUpdate })
+      .update(movePayload)
       .eq('id', draggableId)
       .then(async ({ error }) => {
-        if (error) {
+        let finalError = error;
+
+        // Fallback for environments where completed_at hasn't been migrated yet.
+        if (
+          finalError &&
+          'completed_at' in movePayload &&
+          `${finalError.message || ''}`.toLowerCase().includes('completed_at')
+        ) {
+          const retry = await supabase
+            .from('dev_kanban_cards')
+            .update({ status: destination.droppableId, position: destination.index })
+            .eq('id', draggableId);
+          finalError = retry.error;
+        }
+
+        if (finalError) {
           queryClient.invalidateQueries({ queryKey: ['dev-kanban-cards'] });
           toast.error('Erro ao mover card.');
           return;
