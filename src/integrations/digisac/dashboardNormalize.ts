@@ -65,8 +65,8 @@ export function totalsTmaMinutes(totals: Record<string, unknown>) {
 
 /**
  * Média do 1º tempo de espera (cartão Digisac).
- * Na API v1, o bloco `totals` costuma expor isso em `waitingTime` (segundos), enquanto
- * `waitingTimeAvg` é o tempo médio de espera geral — não inverter.
+ * Em `/dashboard/general`, `totals.waitingTime` (segundos) é exatamente o valor do painel;
+ * outros campos (ex.: firstResponseTime) podem diferir em segundos — priorizar `waitingTime`.
  */
 export function totalsPrimeiraRespostaMinutes(totals: Record<string, unknown>) {
   const explicitMin = pickFirstPositiveByKeys(totals, [
@@ -77,6 +77,10 @@ export function totalsPrimeiraRespostaMinutes(totals: Record<string, unknown>) {
     "avgFirstHumanWaitingTimeMinutes",
   ]);
   if (explicitMin > 0) return explicitMin;
+  if ("waitingTime" in totals) {
+    const wt = asNumber(totals.waitingTime);
+    if (wt > 0) return timeRawToAverageMinutes(wt);
+  }
   const raw = pickFirstPositiveByKeys(totals, [
     "firstWaitingTime",
     "avgFirstWaitingTime",
@@ -89,7 +93,6 @@ export function totalsPrimeiraRespostaMinutes(totals: Record<string, unknown>) {
     "waitingTimeBeforeFirstHumanResponse",
     "averageWaitingTimeUntilFirstHumanResponse",
     "firstResponseWaitingTime",
-    "waitingTime",
     "waitingTimeAfterBot",
   ]);
   return timeRawToAverageMinutes(raw);
@@ -203,14 +206,16 @@ export function rowTicketTimeMinutes(item: Record<string, unknown>): number {
     item.averageTmaMinutes,
   );
   if (explicitMinutes > 0) return explicitMinutes;
-  const raw = asNumber(
-    item.ticketTime,
-    item.averageTicketTime,
-    item.avgTicketTime,
-    item.totalTicketTime,
-    item.ticketsTime,
-    item.tma,
-  );
+  const raw = pickFirstPositiveByKeys(item, [
+    "ticketTime",
+    "averageTicketTime",
+    "avgTicketTime",
+    "totalTicketTime",
+    "ticketsTime",
+    "tma",
+    "ticket_time",
+    "average_ticket_time",
+  ]);
   return timeRawToAverageMinutes(raw);
 }
 
@@ -224,6 +229,10 @@ export function rowPrimeiraEsperaMinutes(item: Record<string, unknown>): number 
     "avgFirstHumanWaitingTimeMinutes",
   ]);
   if (explicitMin > 0) return explicitMin;
+  if ("waitingTime" in item) {
+    const wt = asNumber(item.waitingTime);
+    if (wt > 0) return timeRawToAverageMinutes(wt);
+  }
   const raw = pickFirstPositiveByKeys(item, [
     "firstWaitingTime",
     "avgFirstWaitingTime",
@@ -236,20 +245,58 @@ export function rowPrimeiraEsperaMinutes(item: Record<string, unknown>): number 
     "waitingTimeBeforeFirstHumanResponse",
     "averageWaitingTimeUntilFirstHumanResponse",
     "firstResponseWaitingTime",
-    "waitingTime",
+    "waiting_time",
     "waitingTimeAfterBot",
   ]);
   return timeRawToAverageMinutes(raw);
+}
+
+/** Alguns payloads `by-user` trazem métricas em `stats` / `totals` aninhados. */
+export function mergeNestedDigisacRow(item: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...item };
+  for (const key of ["stats", "totals", "metrics", "summary", "aggregates"] as const) {
+    const inner = item[key];
+    if (!inner || typeof inner !== "object" || Array.isArray(inner)) continue;
+    // Sobrescreve chaves do topo: a API costuma mandar zeros no nível raiz e totais corretos dentro de `stats`.
+    Object.assign(out, inner as Record<string, unknown>);
+  }
+  return out;
+}
+
+function rowClosedCount(row: Record<string, unknown>): number {
+  return asNumber(
+    row.closedTicketsCount,
+    row.closedTickets,
+    row.closed,
+    row.closed_tickets_count,
+    row.closedTicketsTotal,
+    row.totalClosedTickets,
+  );
+}
+
+function rowOpenedCount(row: Record<string, unknown>): number {
+  return asNumber(
+    row.openedTicketsCount,
+    row.openTickets,
+    row.opened,
+    row.open,
+    row.opened_tickets_count,
+    row.openTicketsCount,
+    row.totalOpenTickets,
+  );
 }
 
 const TICKET_BREAKDOWN_KEYS = [
   "closedTicketsCount",
   "closedTickets",
   "closed",
+  "closed_tickets_count",
   "openedTicketsCount",
   "openTickets",
   "opened",
   "open",
+  "opened_tickets_count",
+  "openTicketsCount",
 ] as const;
 
 export function recordHasTicketBreakdown(row: Record<string, unknown>): boolean {
@@ -272,8 +319,23 @@ export function normalizeGeralResponse(payload: unknown): DigisacGeralResponse {
   const p = payload as Record<string, unknown>;
   const totals = (p?.totals ?? (p?.data as Record<string, unknown>)?.totals ?? p?.data ?? p ?? {}) as Record<string, unknown>;
 
-  const total_fechados = pickByKeys(totals, ["closedTicketsCount", "closedTickets", "total_fechados", "finishedTickets", "closed"]);
-  const total_abertos = pickByKeys(totals, ["openedTicketsCount", "openTickets", "total_abertos", "openedTickets", "open"]);
+  const total_fechados = pickByKeys(totals, [
+    "closedTicketsCount",
+    "closedTickets",
+    "closed_tickets_count",
+    "total_fechados",
+    "finishedTickets",
+    "closed",
+  ]);
+  const total_abertos = pickByKeys(totals, [
+    "openedTicketsCount",
+    "openTickets",
+    "opened_tickets_count",
+    "openTicketsCount",
+    "total_abertos",
+    "openedTickets",
+    "open",
+  ]);
 
   const total_chamados = totalsHasTicketBreakdown(totals)
     ? total_fechados + total_abertos
@@ -299,10 +361,14 @@ export function normalizeAnalistasResponse(payload: unknown): DigisacAnalystStat
   const items = Array.isArray(payload) ? payload : firstArray(payload, ["items", "data", "rows", "users"]);
 
   return (items as Record<string, unknown>[])
-    .filter((item) => !isInvalidDigisacUserName((item.userName ?? item.name ?? (item.user as Record<string, unknown>)?.name) as string))
-    .map((item) => {
-      const closed = asNumber(item.closedTicketsCount, item.closedTickets, item.closed);
-      const opened = asNumber(item.openedTicketsCount, item.openTickets, item.opened);
+    .filter((raw) => {
+      const item = mergeNestedDigisacRow(raw);
+      return !isInvalidDigisacUserName((item.userName ?? item.name ?? (item.user as Record<string, unknown>)?.name) as string);
+    })
+    .map((raw) => {
+      const item = mergeNestedDigisacRow(raw);
+      const closed = rowClosedCount(item);
+      const opened = rowOpenedCount(item);
       const user = item.user as Record<string, unknown> | undefined;
 
       const total_chamados = recordHasTicketBreakdown(item)
@@ -312,6 +378,7 @@ export function normalizeAnalistasResponse(payload: unknown): DigisacAnalystStat
             item.totalTickets,
             item.attendanceCount,
             item.ticketsTotal,
+            item.total_tickets_count,
             closed + opened,
           );
 
@@ -322,7 +389,12 @@ export function normalizeAnalistasResponse(payload: unknown): DigisacAnalystStat
         total_chamados,
         chamados_fechados: closed,
         chamados_abertos: opened,
-        total_contatos: asNumber(item.contactsCount, item.totalContacts, item.uniqueContactsCount),
+        total_contatos: asNumber(
+          item.contactsCount,
+          item.totalContacts,
+          item.uniqueContactsCount,
+          item.contacts_count,
+        ),
         total_mensagens: rowMessagesTotal(item),
         tma_minutos: rowTicketTimeMinutes(item),
         primeira_espera_minutos: rowPrimeiraEsperaMinutes(item),

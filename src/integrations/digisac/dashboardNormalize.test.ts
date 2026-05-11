@@ -79,6 +79,16 @@ describe("normalizeGeralResponse", () => {
     expect(g.primeira_resposta_minutos).toBeCloseTo(3.82, 4);
   });
 
+  it("prioriza totals.waitingTime mesmo se firstResponseTime for maior (evita 3m54s vs 3m49s)", () => {
+    const totals = {
+      closedTicketsCount: 1,
+      openedTicketsCount: 0,
+      waitingTime: 229,
+      firstResponseTime: 234,
+    };
+    expect(totalsPrimeiraRespostaMinutes(totals)).toBeCloseTo(229 / 60, 5);
+  });
+
   it("payload real Digisac: waitingTime = 1º espera; waitingTimeAvg = espera geral", () => {
     const totals = {
       sentMessagesCount: 3071,
@@ -127,6 +137,53 @@ describe("normalizeAnalistasResponse", () => {
     expect(rows[0].primeira_espera_minutos).toBeCloseTo(2, 5);
     expect(rows[0].tma_minutos).toBeCloseTo(5, 5);
     expect(rows[0].total_chamados).toBe(5);
+  });
+
+  it("achata stats aninhados para contagem e TMA", () => {
+    const payload = {
+      items: [
+        {
+          userId: "x1",
+          userName: "Test",
+          stats: {
+            closedTicketsCount: 7,
+            openedTicketsCount: 1,
+            ticketTime: 120,
+            waitingTime: 60,
+            sentMessagesCount: 2,
+            receivedMessagesCount: 3,
+          },
+        },
+      ],
+    };
+    const rows = normalizeAnalistasResponse(payload);
+    expect(rows[0].total_chamados).toBe(8);
+    expect(rows[0].tma_minutos).toBeCloseTo(2, 5);
+    expect(rows[0].primeira_espera_minutos).toBeCloseTo(1, 5);
+  });
+
+  it("stats aninhado sobrescreve zeros no nível raiz (contagem / TMA)", () => {
+    const payload = {
+      items: [
+        {
+          userId: "x2",
+          userName: "Ana",
+          closedTicketsCount: 0,
+          openedTicketsCount: 0,
+          ticketTime: 0,
+          stats: {
+            closedTicketsCount: 5,
+            openedTicketsCount: 2,
+            ticketTime: 180,
+            waitingTime: 90,
+          },
+        },
+      ],
+    };
+    const rows = normalizeAnalistasResponse(payload);
+    expect(rows[0].total_chamados).toBe(7);
+    expect(rows[0].tma_minutos).toBeCloseTo(3, 5);
+    expect(rows[0].primeira_espera_minutos).toBeCloseTo(1.5, 5);
   });
 
   it("total por analista usa fechados+abertos quando vierem explícitos", () => {

@@ -176,15 +176,51 @@ const firstArray = (payload: any, keys: string[]) => {
 const mapGeneralPayload = (payload: any) => {
   const totals = payload?.totals ?? payload?.data?.totals ?? payload?.data ?? payload ?? {};
   console.log("[Digisac] mapGeneralPayload keys:", Object.keys(totals || {}));
-  const totalChamados = pickByKeys(totals, ["totalTicketsCount", "totalTickets", "total_chamados", "ticketsTotal", "total", "attendanceCount"]);
-  const totalFechados = pickByKeys(totals, ["closedTicketsCount", "closedTickets", "total_fechados", "finishedTickets", "closed"]);
-  const totalAbertos = pickByKeys(totals, ["openedTicketsCount", "openTickets", "total_abertos", "openedTickets", "open"]);
-  const totalMensagens = pickByKeys(totals, ["totalMessagesCount", "totalMessages", "total_mensagens", "messagesTotal", "messages"]);
+  const totalFechados = pickByKeys(totals, [
+    "closedTicketsCount",
+    "closedTickets",
+    "closed_tickets_count",
+    "total_fechados",
+    "finishedTickets",
+    "closed",
+  ]);
+  const totalAbertos = pickByKeys(totals, [
+    "openedTicketsCount",
+    "openTickets",
+    "opened_tickets_count",
+    "openTicketsCount",
+    "total_abertos",
+    "openedTickets",
+    "open",
+  ]);
+  const hasBreakdown = ["closedTicketsCount", "closedTickets", "closed", "openedTicketsCount", "openTickets", "opened", "open"].some((k) => k in totals);
+  const totalChamados = hasBreakdown
+    ? totalFechados + totalAbertos
+    : pickByKeys(totals, ["totalTicketsCount", "totalTickets", "total_chamados", "ticketsTotal", "total", "attendanceCount"]);
+  const hasMsgBreakdown = "sentMessagesCount" in totals || "receivedMessagesCount" in totals;
+  const totalMensagens = hasMsgBreakdown
+    ? pickByKeys(totals, ["sentMessagesCount", "sentMessages"]) + pickByKeys(totals, ["receivedMessagesCount", "receivedMessages"])
+    : pickByKeys(totals, ["totalMessagesCount", "totalMessages", "total_mensagens", "messagesTotal", "messages"]);
   const totalContatos = pickByKeys(totals, ["contactsCount", "totalContacts", "total_contatos", "contactsTotal", "contacts"]);
 
   const ticketTimeMinutes = minutesFromSeconds(pickByKeys(totals, ["ticketTime", "avgTicketTime", "averageTicketTime", "tma"]));
-  const waitingTimeMinutes = minutesFromSeconds(pickByKeys(totals, ["waitingTimeAvg", "waitingTime", "avgWaitingTime", "averageWaitingTime"]));
-  const firstWaitingMinutes = minutesFromSeconds(pickByKeys(totals, ["firstWaitingTime", "avgFirstWaitingTime", "averageFirstWaitingTime", "firstResponseTime", "waitingTimeAfterBot"]));
+  const waitingTimeMinutes = minutesFromSeconds(pickByKeys(totals, ["waitingTimeAvg", "avgWaitingTime", "averageWaitingTime", "totalWaitingTime"]));
+  const firstWaitingExplicit = pickByKeys(totals, [
+    "firstWaitingTimeMinutes",
+    "averageFirstWaitingTimeMinutes",
+    "firstResponseTimeMinutes",
+  ]);
+  const firstWaitingMinutes = firstWaitingExplicit > 0
+    ? firstWaitingExplicit
+    : ("waitingTime" in totals && asNumber(totals.waitingTime) > 0)
+    ? minutesFromSeconds(asNumber(totals.waitingTime))
+    : minutesFromSeconds(pickByKeys(totals, [
+      "firstWaitingTime",
+      "avgFirstWaitingTime",
+      "averageFirstWaitingTime",
+      "firstResponseTime",
+      "waitingTimeAfterBot",
+    ]));
 
   return {
     total_chamados: totalChamados,
