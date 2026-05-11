@@ -867,10 +867,18 @@ const KanbanDev = () => {
                                     <span className="text-[10px] text-muted-foreground">{card.developer.name}</span>
                                   </div>
                                 )}
-                                <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 ml-auto" title={isDoneSlug(card.status) ? "Data de conclusão" : "Data de criação"}>
-                                  {isDoneSlug(card.status) && card.completed_at ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <Calendar className="h-3 w-3" />}
-                                  {format(new Date((isDoneSlug(card.status) && card.completed_at) ? card.completed_at : card.created_at), 'dd/MM HH:mm')}
-                                </span>
+                                <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
+                                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5" title="Data de criação">
+                                    <Calendar className="h-3 w-3" />
+                                    Criado em {format(new Date(card.created_at), 'dd/MM HH:mm')}
+                                  </span>
+                                  {isDoneSlug(card.status) && card.completed_at && (
+                                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5" title="Data de conclusão">
+                                      <CheckCircle2 className="h-3 w-3" />
+                                      Concluído em {format(new Date(card.completed_at), 'dd/MM HH:mm')}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           )}
