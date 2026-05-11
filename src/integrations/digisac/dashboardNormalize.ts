@@ -86,14 +86,9 @@ export function totalsPrimeiraRespostaMinutes(totals: Record<string, unknown>) {
     "averageFirstWaitingTime",
     "avgFirstHumanWaitingTime",
     "firstHumanWaitingTime",
-    "firstResponseTime",
-    "averageFirstResponseTime",
-    "avgFirstResponseTime",
     "waitingTimeBeforeFirstHumanResponse",
     "averageWaitingTimeUntilFirstHumanResponse",
-    "firstResponseWaitingTime",
     "waitingTimeAfterBot",
-    "firstResponseTimeMinutes",
   ]);
   return timeRawToAverageMinutes(raw);
 }
@@ -288,15 +283,10 @@ export function rowPrimeiraEsperaMinutes(item: Record<string, unknown>): number 
     "averageFirstWaitingTime",
     "avgFirstHumanWaitingTime",
     "firstHumanWaitingTime",
-    "firstResponseTime",
-    "averageFirstResponseTime",
-    "avgFirstResponseTime",
     "waitingTimeBeforeFirstHumanResponse",
     "averageWaitingTimeUntilFirstHumanResponse",
-    "firstResponseWaitingTime",
     "waiting_time",
     "waitingTimeAfterBot",
-    "firstResponseTimeMinutes",
   ]);
   return timeRawToAverageMinutes(raw);
 }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -29,13 +29,13 @@ const getTodayDateStringBrazil = () => {
 };
 
 export default function DigisacDashboard() {
-  const queryClient = useQueryClient();
   const today = getTodayDateStringBrazil();
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
   const [departmentId, setDepartmentId] = useState<string>("all");
   const [analystId, setAnalystId] = useState<string>("all");
   const [filters, setFilters] = useState({ start: today, end: today, departmentId: "all", analystId: "all" });
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const { data: departments } = useQuery({
     queryKey: ['digisac-departments'],
@@ -52,7 +52,7 @@ export default function DigisacDashboard() {
   const shouldLoadDashboard = true;
 
   const { data: geral, isLoading: isLoadingGeral, isError: isErrorGeral, error: errorGeral } = useQuery({
-    queryKey: ['digisac-geral', filters.start, filters.end, filters.departmentId, filters.analystId],
+    queryKey: ['digisac-geral', filters.start, filters.end, filters.departmentId, filters.analystId, refreshTick],
     queryFn: () => digisacApi.getDashboardGeral(filters.start || undefined, filters.end || undefined, filters.departmentId, filters.analystId),
     enabled: shouldLoadDashboard,
     staleTime: 0,
@@ -61,7 +61,7 @@ export default function DigisacDashboard() {
   });
 
   const { data: analistas, isLoading: isLoadingAnalistas, isError: isErrorAnalistas, error: errorAnalistas } = useQuery({
-    queryKey: ['digisac-analistas', filters.start, filters.end, filters.departmentId, filters.analystId],
+    queryKey: ['digisac-analistas', filters.start, filters.end, filters.departmentId, filters.analystId, refreshTick],
     queryFn: () => digisacApi.getDashboardAnalistas(filters.start || undefined, filters.end || undefined, filters.departmentId, filters.analystId),
     enabled: shouldLoadDashboard,
     staleTime: 0,
@@ -70,8 +70,8 @@ export default function DigisacDashboard() {
   });
 
   const refreshDigisacDashboard = () => {
-    void queryClient.invalidateQueries({ queryKey: ["digisac-geral"] });
-    void queryClient.invalidateQueries({ queryKey: ["digisac-analistas"] });
+    setFilters({ start: startDate, end: endDate, departmentId, analystId });
+    setRefreshTick((prev) => prev + 1);
   };
 
   const applyFilters = () => {
@@ -117,8 +117,6 @@ export default function DigisacDashboard() {
   const hasData =
     (geral?.total_chamados || 0) > 0 ||
     (geral?.total_mensagens || 0) > 0 ||
-    (geral?.mensagens_enviadas || 0) > 0 ||
-    (geral?.mensagens_recebidas || 0) > 0 ||
     analistasList.length > 0;
   const showEmptyState = !hasError && !isLoadingGeral && !isLoadingAnalistas && !hasData;
 
@@ -285,26 +283,9 @@ export default function DigisacDashboard() {
             <CardTitle className="text-sm font-medium">Mensagens</CardTitle>
             <MessageSquare className="h-4 w-4 text-primary" />
           </CardHeader>
-          <CardContent className="space-y-3">
-            {isLoadingGeral ? (
-              <div className="text-2xl font-bold">...</div>
-            ) : (
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Enviadas</p>
-                  <p className="text-lg font-bold tabular-nums">{geral?.mensagens_enviadas ?? 0}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Recebidas</p>
-                  <p className="text-lg font-bold tabular-nums">{geral?.mensagens_recebidas ?? 0}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Total</p>
-                  <p className="text-lg font-bold tabular-nums">{geral?.total_mensagens ?? 0}</p>
-                </div>
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">Mesmos totais da tela de estatísticas Digisac</p>
+          <CardContent>
+            <div className="text-2xl font-bold">{isLoadingGeral ? "..." : geral?.total_mensagens || 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">Total de mensagens do período</p>
           </CardContent>
         </Card>
       </div>
@@ -406,9 +387,6 @@ export default function DigisacDashboard() {
                       <TableHead className="h-9 px-1 text-right w-[7%]">Fech.</TableHead>
                       <TableHead className="h-9 px-1 text-right w-[7%]">Aber.</TableHead>
                       <TableHead className="h-9 px-1 text-right w-[8%]">Cont.</TableHead>
-                      <TableHead className="h-9 px-1 text-right w-[8%]" title="Mensagens enviadas">Env.</TableHead>
-                      <TableHead className="h-9 px-1 text-right w-[8%]" title="Mensagens recebidas">Rec.</TableHead>
-                      <TableHead className="h-9 px-1 text-right w-[8%]" title="Total de mensagens">Msg.</TableHead>
                       <TableHead className="h-9 px-1 text-right w-[9%]">1º esp.</TableHead>
                       <TableHead className="h-9 px-2 text-right w-[10%]">TMA</TableHead>
                     </TableRow>
@@ -426,15 +404,12 @@ export default function DigisacDashboard() {
                         <TableCell className="text-right px-2 py-2 tabular-nums">{analyst.chamados_fechados ?? 0}</TableCell>
                         <TableCell className="text-right px-2 py-2 tabular-nums">{analyst.chamados_abertos ?? 0}</TableCell>
                         <TableCell className="text-right px-2 py-2 tabular-nums">{analyst.total_contatos ?? 0}</TableCell>
-                        <TableCell className="text-right px-1 py-2 tabular-nums">{analyst.mensagens_enviadas ?? 0}</TableCell>
-                        <TableCell className="text-right px-1 py-2 tabular-nums">{analyst.mensagens_recebidas ?? 0}</TableCell>
-                        <TableCell className="text-right px-1 py-2 tabular-nums">{analyst.total_mensagens ?? 0}</TableCell>
                         <TableCell className="text-right px-2 py-2 tabular-nums">{formatTma(analyst.primeira_espera_minutos ?? 0)}</TableCell>
                         <TableCell className="text-right px-3 py-2 tabular-nums font-semibold">{formatTma(analyst.tma_minutos)}</TableCell>
                       </TableRow>
                     )) : (
                       <TableRow>
-                        <TableCell colSpan={10} className="text-center py-6 text-muted-foreground">
+                        <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
                            Nenhum dado encontrado para o período selecionado.
                         </TableCell>
                       </TableRow>

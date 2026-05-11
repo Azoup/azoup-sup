@@ -226,7 +226,6 @@ const mapGeneralPayload = (payload: any) => {
         "firstWaitingTime",
         "avgFirstWaitingTime",
         "averageFirstWaitingTime",
-        "firstResponseTime",
         "waitingTimeAfterBot",
       ]));
     })();
