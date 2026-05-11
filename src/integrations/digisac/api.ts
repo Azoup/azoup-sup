@@ -63,6 +63,47 @@ function minutesFromSeconds(value: number) {
   return value > 0 ? value / 60 : 0;
 }
 
+/** Converte campo numérico de TMA/tempo: em geral segundos; valores muito altos costumam ser ms. */
+function timeRawToAverageMinutes(raw: number): number {
+  if (!(raw > 0) || !Number.isFinite(raw)) return 0;
+  if (raw >= 10_000_000) return minutesFromSeconds(raw / 1000);
+  return minutesFromSeconds(raw);
+}
+
+function rowMessagesTotal(item: Record<string, any>): number {
+  const aggregate = pickByKeys(item, [
+    'totalMessagesCount',
+    'totalMessages',
+    'messagesTotal',
+    'messagesCount',
+    'messages',
+  ]);
+  if (aggregate > 0) return aggregate;
+  const sent = asNumber(item.sentMessagesCount, item.sentMessages);
+  const received = asNumber(item.receivedMessagesCount, item.receivedMessages);
+  return sent + received;
+}
+
+function rowTicketTimeMinutes(item: Record<string, any>): number {
+  const explicitMinutes = asNumber(
+    item.ticketTimeMinutes,
+    item.averageTicketTimeMinutes,
+    item.avgTicketTimeMinutes,
+    item.tmaMinutes,
+    item.averageTmaMinutes,
+  );
+  if (explicitMinutes > 0) return explicitMinutes;
+  const raw = asNumber(
+    item.ticketTime,
+    item.averageTicketTime,
+    item.avgTicketTime,
+    item.totalTicketTime,
+    item.ticketsTime,
+    item.tma,
+  );
+  return timeRawToAverageMinutes(raw);
+}
+
 const INVALID_DIGISAC_USER_NAMES = new Set([
   'sem atendente',
   'mandeumzap dev',
@@ -115,7 +156,13 @@ function normalizeGeralResponse(payload: any): DigisacGeralResponse {
     total_abertos: pickByKeys(totals, ['openedTicketsCount', 'openTickets', 'total_abertos', 'openedTickets', 'open']),
     total_mensagens: pickByKeys(totals, ['totalMessagesCount', 'totalMessages', 'total_mensagens', 'messagesTotal', 'messages']),
     total_contatos: pickByKeys(totals, ['contactsCount', 'totalContacts', 'total_contatos', 'contactsTotal', 'contacts']),
-    tma_geral_minutos: minutesFromSeconds(pickByKeys(totals, ['ticketTime', 'avgTicketTime', 'averageTicketTime', 'tma'])),
+    tma_geral_minutos: (() => {
+      const explicitMin = pickByKeys(totals, ['ticketTimeMinutes', 'averageTicketTimeMinutes', 'tmaMinutes']);
+      if (explicitMin > 0) return explicitMin;
+      return timeRawToAverageMinutes(
+        pickByKeys(totals, ['ticketTime', 'avgTicketTime', 'averageTicketTime', 'tma']),
+      );
+    })(),
     tempo_espera_minutos: minutesFromSeconds(pickByKeys(totals, ['waitingTimeAvg', 'waitingTime', 'avgWaitingTime', 'averageWaitingTime'])),
     primeira_resposta_minutos: minutesFromSeconds(pickByKeys(totals, ['firstWaitingTime', 'avgFirstWaitingTime', 'averageFirstWaitingTime', 'firstResponseTime', 'waitingTimeAfterBot'])),
   };
@@ -129,20 +176,23 @@ function normalizeAnalistasResponse(payload: any): DigisacAnalystStats[] {
     .map((item: any) => {
     const closed = asNumber(item.closedTicketsCount, item.closedTickets, item.closed);
     const opened = asNumber(item.openedTicketsCount, item.openTickets, item.opened);
-    const ticketTimeSeconds = asNumber(item.ticketTime, item.totalTicketTime, item.ticketsTime);
-    const sent = asNumber(item.sentMessagesCount, item.sentMessages);
-    const received = asNumber(item.receivedMessagesCount, item.receivedMessages);
 
     return {
       analyst_id: String(item.userId ?? item.id ?? item.user?.id ?? item.name ?? ''),
       name: item.userName ?? item.name ?? item.user?.name ?? 'Sem nome',
       mapped: typeof item.mapped === 'boolean' ? item.mapped : undefined,
-      total_chamados: asNumber(item.totalTicketsCount, item.totalTickets, closed + opened),
+      total_chamados: asNumber(
+        item.totalTicketsCount,
+        item.totalTickets,
+        item.attendanceCount,
+        item.ticketsTotal,
+        closed + opened,
+      ),
       chamados_fechados: closed,
       chamados_abertos: opened,
-      total_contatos: asNumber(item.contactsCount, item.totalContacts),
-      total_mensagens: sent + received,
-      tma_minutos: minutesFromSeconds(ticketTimeSeconds),
+      total_contatos: asNumber(item.contactsCount, item.totalContacts, item.uniqueContactsCount),
+      total_mensagens: rowMessagesTotal(item),
+      tma_minutos: rowTicketTimeMinutes(item),
     };
   });
 }

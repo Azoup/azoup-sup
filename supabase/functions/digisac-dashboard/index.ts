@@ -280,6 +280,21 @@ const resolveAnalystUserIds = (
   return validUsers.map((user) => user.id);
 };
 
+/**
+ * Participação do atendente / andamento no departamento (mesmos filtros da tela Digisac).
+ * Padrão `all` = contar chamados em que houve participação (não só como último responsável).
+ * Se a API da sua instância exigir outro valor, defina DIGISAC_USER_PARTICIPATION / DIGISAC_DEPARTMENT_PARTICIPATION (ex.: last).
+ */
+const dashboardUserParticipation = () => {
+  const v = Deno.env.get("DIGISAC_USER_PARTICIPATION")?.trim();
+  return v && v.length > 0 ? v : "all";
+};
+
+const dashboardDepartmentParticipation = () => {
+  const v = Deno.env.get("DIGISAC_DEPARTMENT_PARTICIPATION")?.trim();
+  return v && v.length > 0 ? v : "all";
+};
+
 const buildGeneralDashboardParams = (
   startPeriod: string,
   endPeriod: string,
@@ -290,8 +305,8 @@ const buildGeneralDashboardParams = (
     startPeriod,
     endPeriod,
     periodType: "openDate",
-    userParticipation: "last",
-    departmentParticipation: "last",
+    userParticipation: dashboardUserParticipation(),
+    departmentParticipation: dashboardDepartmentParticipation(),
     status: "all",
     userStatus: "all",
     withTotals: "true",
@@ -315,8 +330,8 @@ const buildAnalystsDashboardParams = (
     startPeriod,
     endPeriod,
     periodType: "openDate",
-    userParticipation: "last",
-    departmentParticipation: "last",
+    userParticipation: dashboardUserParticipation(),
+    departmentParticipation: dashboardDepartmentParticipation(),
     status: "all",
     userStatus: "all",
     withTotals: "true",
