@@ -18,10 +18,16 @@ export function minutesFromSeconds(value: number) {
   return value > 0 ? value / 60 : 0;
 }
 
-/** Segundos ou ms (valores muito altos) → minutos médios. */
+/**
+ * Converte valores de tempo vindos da Digisac para minutos exibidos no app.
+ * - Grandes inteiros: milissegundos (>= 10M).
+ * - Decimais pequenos (ex.: 3.82): já vêm em minutos (média), não dividir por 60 de novo.
+ * - Inteiros típicos: segundos (ex.: 229 → ~3,82 min de 1ª espera).
+ */
 export function timeRawToAverageMinutes(raw: number): number {
   if (!(raw > 0) || !Number.isFinite(raw)) return 0;
   if (raw >= 10_000_000) return minutesFromSeconds(raw / 1000);
+  if (raw < 72 && !Number.isInteger(raw)) return raw;
   return minutesFromSeconds(raw);
 }
 
@@ -57,23 +63,28 @@ export function totalsTmaMinutes(totals: Record<string, unknown>) {
   );
 }
 
-/** Média do 1º tempo de espera (humano); ignora chaves presentes mas zeradas se houver outra métrica > 0. */
+/** Média do 1º tempo de espera (cartão "Média do 1º tempo de espera" — humano, não o "após bot"). */
 export function totalsPrimeiraRespostaMinutes(totals: Record<string, unknown>) {
   const explicitMin = pickFirstPositiveByKeys(totals, [
     "firstWaitingTimeMinutes",
     "averageFirstWaitingTimeMinutes",
     "avgFirstWaitingTimeMinutes",
     "firstResponseTimeMinutes",
+    "avgFirstHumanWaitingTimeMinutes",
   ]);
   if (explicitMin > 0) return explicitMin;
   const raw = pickFirstPositiveByKeys(totals, [
     "firstWaitingTime",
     "avgFirstWaitingTime",
     "averageFirstWaitingTime",
+    "avgFirstHumanWaitingTime",
+    "firstHumanWaitingTime",
     "firstResponseTime",
     "averageFirstResponseTime",
     "avgFirstResponseTime",
     "waitingTimeBeforeFirstHumanResponse",
+    "averageWaitingTimeUntilFirstHumanResponse",
+    "firstResponseWaitingTime",
     "waitingTimeAfterBot",
   ]);
   return timeRawToAverageMinutes(raw);
@@ -156,6 +167,10 @@ function isInvalidDigisacUserName(value?: string) {
 }
 
 export function rowMessagesTotal(item: Record<string, unknown>): number {
+  if (recordHasMessageBreakdown(item)) {
+    return pickByKeys(item, ["sentMessagesCount", "sentMessages"]) +
+      pickByKeys(item, ["receivedMessagesCount", "receivedMessages"]);
+  }
   const aggregate = pickByKeys(item, [
     "totalMessagesCount",
     "totalMessages",
@@ -196,29 +211,72 @@ export function rowPrimeiraEsperaMinutes(item: Record<string, unknown>): number 
     "averageFirstWaitingTimeMinutes",
     "avgFirstWaitingTimeMinutes",
     "firstResponseTimeMinutes",
+    "avgFirstHumanWaitingTimeMinutes",
   ]);
   if (explicitMin > 0) return explicitMin;
   const raw = pickFirstPositiveByKeys(item, [
     "firstWaitingTime",
     "avgFirstWaitingTime",
     "averageFirstWaitingTime",
+    "avgFirstHumanWaitingTime",
+    "firstHumanWaitingTime",
     "firstResponseTime",
     "averageFirstResponseTime",
     "avgFirstResponseTime",
     "waitingTimeBeforeFirstHumanResponse",
+    "averageWaitingTimeUntilFirstHumanResponse",
+    "firstResponseWaitingTime",
     "waitingTimeAfterBot",
   ]);
   return timeRawToAverageMinutes(raw);
 }
 
+const TICKET_BREAKDOWN_KEYS = [
+  "closedTicketsCount",
+  "closedTickets",
+  "closed",
+  "openedTicketsCount",
+  "openTickets",
+  "opened",
+  "open",
+] as const;
+
+export function recordHasTicketBreakdown(row: Record<string, unknown>): boolean {
+  return TICKET_BREAKDOWN_KEYS.some((k) => k in row);
+}
+
+export function recordHasMessageBreakdown(row: Record<string, unknown>): boolean {
+  return "sentMessagesCount" in row || "receivedMessagesCount" in row || "sentMessages" in row || "receivedMessages" in row;
+}
+
+export function totalsHasTicketBreakdown(totals: Record<string, unknown>): boolean {
+  return TICKET_BREAKDOWN_KEYS.some((k) => k in totals);
+}
+
+export function totalsHasMessageBreakdown(totals: Record<string, unknown>): boolean {
+  return "sentMessagesCount" in totals || "receivedMessagesCount" in totals;
+}
+
 export function normalizeGeralResponse(payload: unknown): DigisacGeralResponse {
   const p = payload as Record<string, unknown>;
   const totals = (p?.totals ?? (p?.data as Record<string, unknown>)?.totals ?? p?.data ?? p ?? {}) as Record<string, unknown>;
+
+  const total_fechados = pickByKeys(totals, ["closedTicketsCount", "closedTickets", "total_fechados", "finishedTickets", "closed"]);
+  const total_abertos = pickByKeys(totals, ["openedTicketsCount", "openTickets", "total_abertos", "openedTickets", "open"]);
+
+  const total_chamados = totalsHasTicketBreakdown(totals)
+    ? total_fechados + total_abertos
+    : pickByKeys(totals, ["totalTicketsCount", "totalTickets", "total_chamados", "ticketsTotal", "total", "attendanceCount"]);
+
+  const total_mensagens = totalsHasMessageBreakdown(totals)
+    ? pickByKeys(totals, ["sentMessagesCount", "sentMessages"]) + pickByKeys(totals, ["receivedMessagesCount", "receivedMessages"])
+    : pickByKeys(totals, ["totalMessagesCount", "totalMessages", "total_mensagens", "messagesTotal", "messages"]);
+
   return {
-    total_chamados: pickByKeys(totals, ["totalTicketsCount", "totalTickets", "total_chamados", "ticketsTotal", "total", "attendanceCount"]),
-    total_fechados: pickByKeys(totals, ["closedTicketsCount", "closedTickets", "total_fechados", "finishedTickets", "closed"]),
-    total_abertos: pickByKeys(totals, ["openedTicketsCount", "openTickets", "total_abertos", "openedTickets", "open"]),
-    total_mensagens: pickByKeys(totals, ["totalMessagesCount", "totalMessages", "total_mensagens", "messagesTotal", "messages"]),
+    total_chamados,
+    total_fechados,
+    total_abertos,
+    total_mensagens,
     total_contatos: pickByKeys(totals, ["contactsCount", "totalContacts", "total_contatos", "contactsTotal", "contacts"]),
     tma_geral_minutos: totalsTmaMinutes(totals),
     tempo_espera_minutos: totalsTempoEsperaMinutes(totals),
@@ -236,17 +294,21 @@ export function normalizeAnalistasResponse(payload: unknown): DigisacAnalystStat
       const opened = asNumber(item.openedTicketsCount, item.openTickets, item.opened);
       const user = item.user as Record<string, unknown> | undefined;
 
+      const total_chamados = recordHasTicketBreakdown(item)
+        ? closed + opened
+        : asNumber(
+            item.totalTicketsCount,
+            item.totalTickets,
+            item.attendanceCount,
+            item.ticketsTotal,
+            closed + opened,
+          );
+
       return {
         analyst_id: String(item.userId ?? item.id ?? user?.id ?? item.name ?? ""),
         name: (item.userName ?? item.name ?? user?.name ?? "Sem nome") as string,
         mapped: typeof item.mapped === "boolean" ? item.mapped : undefined,
-        total_chamados: asNumber(
-          item.totalTicketsCount,
-          item.totalTickets,
-          item.attendanceCount,
-          item.ticketsTotal,
-          closed + opened,
-        ),
+        total_chamados,
         chamados_fechados: closed,
         chamados_abertos: opened,
         total_contatos: asNumber(item.contactsCount, item.totalContacts, item.uniqueContactsCount),

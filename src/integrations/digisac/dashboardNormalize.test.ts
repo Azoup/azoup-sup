@@ -47,6 +47,36 @@ describe("normalizeGeralResponse", () => {
     expect(g.tma_geral_minutos).toBeCloseTo(10, 5);
     expect(g.primeira_resposta_minutos).toBeCloseTo(3, 5);
   });
+
+  it("total de chamados = fechados + abertos quando a API manda os dois (ex.: 244 vs totalTicketsCount 237)", () => {
+    const payload = {
+      totals: {
+        totalTicketsCount: 237,
+        closedTicketsCount: 244,
+        openedTicketsCount: 0,
+        sentMessagesCount: 3071,
+        receivedMessagesCount: 3939,
+        ticketTime: 3819,
+        averageFirstWaitingTime: 229,
+      },
+    };
+    const g = normalizeGeralResponse(payload);
+    expect(g.total_chamados).toBe(244);
+    expect(g.total_mensagens).toBe(7010);
+    expect(g.primeira_resposta_minutos).toBeCloseTo(229 / 60, 4);
+  });
+
+  it("aceita média do 1º tempo já em minutos decimais", () => {
+    const payload = {
+      totals: {
+        closedTicketsCount: 1,
+        openedTicketsCount: 0,
+        averageFirstWaitingTime: 3.82,
+      },
+    };
+    const g = normalizeGeralResponse(payload);
+    expect(g.primeira_resposta_minutos).toBeCloseTo(3.82, 4);
+  });
 });
 
 describe("normalizeAnalistasResponse", () => {
@@ -71,5 +101,23 @@ describe("normalizeAnalistasResponse", () => {
     expect(rows[0].analyst_id).toBe("u1");
     expect(rows[0].primeira_espera_minutos).toBeCloseTo(2, 5);
     expect(rows[0].tma_minutos).toBeCloseTo(5, 5);
+    expect(rows[0].total_chamados).toBe(5);
+  });
+
+  it("total por analista usa fechados+abertos quando vierem explícitos", () => {
+    const payload = {
+      items: [
+        {
+          userId: "u2",
+          userName: "Anna",
+          totalTicketsCount: 10,
+          closedTicketsCount: 12,
+          openedTicketsCount: 0,
+          ticketTime: 60,
+        },
+      ],
+    };
+    const rows = normalizeAnalistasResponse(payload);
+    expect(rows[0].total_chamados).toBe(12);
   });
 });
