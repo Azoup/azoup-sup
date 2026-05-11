@@ -214,13 +214,17 @@ const KanbanDev = () => {
     for (const file of files) {
       try {
         const ext = file.name.split('.').pop() || 'bin';
-        const isRar = ext.toLowerCase() === 'rar';
+        const lowerExt = ext.toLowerCase();
+        const isCompressedFile = lowerExt === 'rar' || lowerExt === 'zip' || file.type === 'application/x-compressed';
         const path = `${cardId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-        const contentType = isRar ? 'application/octet-stream' : (file.type || 'application/octet-stream');
+        const contentType = isCompressedFile ? 'application/octet-stream' : (file.type || 'application/octet-stream');
+        const uploadFile = isCompressedFile
+          ? new File([file], file.name, { type: 'application/octet-stream', lastModified: file.lastModified })
+          : file;
         
         const { error: upErr } = await supabase.storage
           .from('dev-kanban-files')
-          .upload(path, file, { contentType, upsert: false });
+          .upload(path, uploadFile, { contentType, upsert: false });
         if (upErr) throw upErr;
         const { data: urlData } = supabase.storage.from('dev-kanban-files').getPublicUrl(path);
         const { error: fileInsertError } = await supabase.from('dev_kanban_card_files').insert({
@@ -530,21 +534,50 @@ const KanbanDev = () => {
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
     const movedCard = cards.find((c: any) => c.id === draggableId);
     const statusChanged = source.droppableId !== destination.droppableId;
+    const wasDone = isDoneSlug(source.droppableId);
+    const willBeDone = isDoneSlug(destination.droppableId);
 
     queryClient.setQueryData(['dev-kanban-cards'], (old: any[] | undefined) => {
       if (!old) return old;
       return old.map(card =>
         card.id === draggableId
-          ? { ...card, status: destination.droppableId, position: destination.index }
+          ? {
+              ...card,
+              status: destination.droppableId,
+              position: destination.index,
+              completed_at: statusChanged && willBeDone
+                ? new Date().toISOString()
+                : statusChanged && wasDone && !willBeDone
+                ? null
+                : card.completed_at,
+            }
           : card
       );
     });
-    const movePayload = { status: destination.droppableId, position: destination.index };
+    const movePayload = {
+      status: destination.droppableId,
+      position: destination.index,
+      ...(statusChanged && willBeDone ? { completed_at: new Date().toISOString() } : {}),
+      ...(statusChanged && wasDone && !willBeDone ? { completed_at: null } : {}),
+    };
     supabase.from('dev_kanban_cards')
       .update(movePayload)
       .eq('id', draggableId)
       .then(async ({ error }) => {
-        if (error) {
+        let finalError = error;
+        if (
+          finalError &&
+          'completed_at' in movePayload &&
+          `${finalError.message || ''}`.toLowerCase().includes('completed_at')
+        ) {
+          const retry = await supabase
+            .from('dev_kanban_cards')
+            .update({ status: destination.droppableId, position: destination.index })
+            .eq('id', draggableId);
+          finalError = retry.error;
+        }
+
+        if (finalError) {
           queryClient.invalidateQueries({ queryKey: ['dev-kanban-cards'] });
           toast.error('Erro ao mover card.');
           return;
@@ -560,12 +593,15 @@ const KanbanDev = () => {
         }
         if (statusChanged && movedCard) {
           const colTitle = sortedColumns.find((c: any) => c.slug === destination.droppableId)?.title || destination.droppableId;
+          const isMoveToDone = !isDoneSlug(source.droppableId) && isDoneSlug(destination.droppableId);
           await notifyDevAndAnalyst({
             cardId: movedCard.id, cardTitle: movedCard.title,
             developerId: movedCard.developer_id || null,
             analystId: movedCard.analyst_id || null,
             actionType: 'status', actorId: user?.id, actorName,
-            message: `${actorName} moveu "${movedCard.title}" para "${colTitle}"`,
+            message: isMoveToDone
+              ? `${actorName} concluiu o ticket "${movedCard.title}" em ${new Date().toLocaleString('pt-BR')}`
+              : `${actorName} moveu "${movedCard.title}" para "${colTitle}"`,
           });
         }
       });
@@ -905,6 +941,12 @@ const KanbanDev = () => {
                   <Calendar className="h-4 w-4" />
                   <span>Criado em: {format(new Date(viewingCard.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
                 </div>
+                {viewingCard.completed_at && (
+                  <div className="flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>Concluído em: {format(new Date(viewingCard.completed_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
+                  </div>
+                )}
               </div>
               <CardChecklist cardId={viewingCard.id} cardType="dev" description={viewingCard.description} />
               <DevCardFiles cardId={viewingCard.id} />
