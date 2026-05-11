@@ -465,6 +465,12 @@ const KanbanDev = () => {
     return s.includes('conclu') || s.includes('final') || s.includes('done');
   };
 
+  const getCardCompletedAt = useCallback((card: any): string | null => {
+    if (!card || !isDoneSlug(card.status)) return null;
+    // Fallback for older completed cards that still don't have completed_at.
+    return card.completed_at || card.updated_at || null;
+  }, []);
+
   // Helper: garante existência da etiqueta "Concluído" e retorna seu id
   const ensureDoneLabel = useCallback(async (): Promise<string | null> => {
     const existing = (labels as any[]).find((l: any) => (l.name || '').toLowerCase().includes('conclu'));
@@ -872,10 +878,10 @@ const KanbanDev = () => {
                                     <Calendar className="h-3 w-3" />
                                     Criado em {format(new Date(card.created_at), 'dd/MM HH:mm')}
                                   </span>
-                                  {isDoneSlug(card.status) && card.completed_at && (
+                                  {getCardCompletedAt(card) && (
                                     <span className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5" title="Data de conclusão">
                                       <CheckCircle2 className="h-3 w-3" />
-                                      Concluído em {format(new Date(card.completed_at), 'dd/MM HH:mm')}
+                                      Concluído em {format(new Date(getCardCompletedAt(card)!), 'dd/MM HH:mm')}
                                     </span>
                                   )}
                                 </div>
@@ -949,10 +955,10 @@ const KanbanDev = () => {
                   <Calendar className="h-4 w-4" />
                   <span>Criado em: {format(new Date(viewingCard.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
                 </div>
-                {viewingCard.completed_at && (
+                {getCardCompletedAt(viewingCard) && (
                   <div className="flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-400">
                     <CheckCircle2 className="h-4 w-4" />
-                    <span>Concluído em: {format(new Date(viewingCard.completed_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
+                    <span>Concluído em: {format(new Date(getCardCompletedAt(viewingCard)!), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
                   </div>
                 )}
               </div>
