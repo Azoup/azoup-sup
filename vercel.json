@@ -1,4 +1,9 @@
 {
+  "build": {
+    "env": {
+      "VITE_SITE_URL": "https://azoup-sup.vercel.app"
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",

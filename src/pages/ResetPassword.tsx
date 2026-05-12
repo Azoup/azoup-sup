@@ -7,23 +7,83 @@ import { toast } from 'sonner';
 import { Headset, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
+function hashIndicatesRecovery(): boolean {
+  const raw = window.location.hash.replace(/^#/, '');
+  const params = new URLSearchParams(raw);
+  return params.get('type') === 'recovery';
+}
+
+function searchIndicatesRecovery(): boolean {
+  return new URLSearchParams(window.location.search).get('type') === 'recovery';
+}
+
+/** PKCE / fluxo por código: troca o código na URL pela sessão de recuperação. */
+async function exchangeRecoveryCodeIfPresent(): Promise<void> {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  if (!code) return;
+  try {
+    await supabase.auth.exchangeCodeForSession(code);
+  } catch {
+    // Falha silenciosa; getSession / onAuthStateChange tratam o estado final.
+  }
+}
+
 const ResetPassword = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [isRecovery, setIsRecovery] = useState(false);
+  const [verifying, setVerifying] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const hash = window.location.hash;
-    if (hash.includes('type=recovery')) {
-      setIsRecovery(true);
-    }
-    supabase.auth.onAuthStateChange((event) => {
+    let cancelled = false;
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (cancelled) return;
       if (event === 'PASSWORD_RECOVERY') {
         setIsRecovery(true);
+        setVerifying(false);
       }
     });
+
+    (async () => {
+      if (hashIndicatesRecovery() || searchIndicatesRecovery()) {
+        setIsRecovery(true);
+        setVerifying(false);
+        return;
+      }
+
+      await exchangeRecoveryCodeIfPresent();
+      await supabase.auth.getSession();
+
+      if (cancelled) return;
+
+      if (hashIndicatesRecovery() || searchIndicatesRecovery()) {
+        setIsRecovery(true);
+        setVerifying(false);
+        return;
+      }
+
+      // Permite tempo para implicit/PKCE processar o fragmento ou o código.
+      await new Promise((r) => setTimeout(r, 400));
+      if (cancelled) return;
+
+      await supabase.auth.getSession();
+      if (cancelled) return;
+
+      if (hashIndicatesRecovery() || searchIndicatesRecovery()) {
+        setIsRecovery(true);
+      }
+
+      setVerifying(false);
+    })();
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -47,12 +107,26 @@ const ResetPassword = () => {
     setLoading(false);
   };
 
+  if (verifying) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm">Verificando link de redefinição…</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!isRecovery) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <Card className="w-full max-w-md">
-          <CardContent className="py-8 text-center">
+          <CardContent className="py-8 text-center space-y-2">
             <p className="text-muted-foreground">Link inválido ou expirado.</p>
+            <p className="text-xs text-muted-foreground">
+              Peça um novo link em Esqueci minha senha na tela de login e confira se este site está nas URLs permitidas no Supabase.
+            </p>
             <Button className="mt-4" onClick={() => navigate('/auth')}>Voltar ao login</Button>
           </CardContent>
         </Card>
