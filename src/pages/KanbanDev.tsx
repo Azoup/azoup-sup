@@ -977,11 +977,16 @@ const KanbanDev = () => {
 
       {/* Create Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-md" onPointerDownOutside={e => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle>Novo Card</DialogTitle>
-            <DialogDescription>Preencha os dados do card.</DialogDescription>
-          </DialogHeader>
+        <DialogContent
+          className="max-w-md flex min-h-0 flex-col max-h-[min(90vh,calc(100dvh-2rem))] overflow-hidden gap-0 p-0"
+          onPointerDownOutside={e => e.preventDefault()}
+        >
+          <div className="shrink-0 px-6 pt-6 pb-2 pr-14">
+            <DialogHeader>
+              <DialogTitle>Novo Card</DialogTitle>
+              <DialogDescription>Preencha os dados do card.</DialogDescription>
+            </DialogHeader>
+          </div>
           <DevCardFormContent
             title={title} setTitle={setTitle}
             description={description} setDescription={setDescription}
@@ -999,11 +1004,16 @@ const KanbanDev = () => {
 
       {/* Edit Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-lg sm:max-w-2xl max-h-[85vh] overflow-y-auto" onPointerDownOutside={e => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle>Editar Card</DialogTitle>
-            <DialogDescription>Altere os dados do card.</DialogDescription>
-          </DialogHeader>
+        <DialogContent
+          className="max-w-lg sm:max-w-2xl flex min-h-0 flex-col max-h-[min(90vh,calc(100dvh-2rem))] overflow-hidden gap-0 p-0"
+          onPointerDownOutside={e => e.preventDefault()}
+        >
+          <div className="shrink-0 px-6 pt-6 pb-2 pr-14">
+            <DialogHeader>
+              <DialogTitle>Editar Card</DialogTitle>
+              <DialogDescription>Altere os dados do card.</DialogDescription>
+            </DialogHeader>
+          </div>
           <DevCardFormContent
             title={title} setTitle={setTitle}
             description={description} setDescription={setDescription}
@@ -1200,9 +1210,16 @@ function DevCardFormContent({
   };
 
   return (
-    <div className="space-y-3" onPaste={handlePaste}>
+    <div className="flex min-h-0 flex-1 flex-col px-6 pb-6" onPaste={handlePaste}>
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain pr-1 [-webkit-overflow-scrolling:touch]">
       <Input placeholder="Título" value={title} onChange={e => setTitle(e.target.value)} autoComplete="off" />
-      <Textarea placeholder="Observações (use CTRL+V para colar imagens)" value={description} onChange={e => setDescription(e.target.value)} rows={8} className="resize-y min-h-[150px]" />
+      <Textarea
+        placeholder="Observações (use CTRL+V para colar imagens)"
+        value={description}
+        onChange={e => setDescription(e.target.value)}
+        rows={8}
+        className="min-h-[120px] max-h-[min(40vh,320px)] resize-y overflow-y-auto"
+      />
       <Select value={analystId} onValueChange={setAnalystId}>
         <SelectTrigger><SelectValue placeholder="Analista responsável" /></SelectTrigger>
         <SelectContent>
@@ -1289,8 +1306,9 @@ function DevCardFormContent({
         </label>
         <span className="text-[10px] text-muted-foreground">ou CTRL+V para colar</span>
       </div>
+      </div>
 
-      <Button onClick={onSubmit} disabled={loading || !title.trim()} className="w-full">
+      <Button onClick={onSubmit} disabled={loading || !title.trim()} className="mt-4 w-full shrink-0">
         {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Salvar
       </Button>
     </div>
