@@ -15,7 +15,6 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
 import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar, Search } from 'lucide-react';
@@ -698,11 +697,9 @@ const KanbanDev = () => {
     setFilterDevIds(prev => prev.includes(dId) ? prev.filter(id => id !== dId) : [...prev, dId]);
   }, []);
 
-  const gridCols = sortedColumns.length <= 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-4';
-
   return (
-    <div className="space-y-4 animate-fade-in">
-      <div className="flex items-center justify-between">
+    <div className="flex h-[calc(100dvh-7.5rem)] max-h-[calc(100dvh-7.5rem)] min-h-0 flex-col gap-4 overflow-hidden animate-fade-in md:h-[calc(100dvh-8rem)] md:max-h-[calc(100dvh-8rem)]">
+      <div className="flex shrink-0 items-center justify-between">
         <h1 className="text-2xl font-heading font-bold">Kanban DEV</h1>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => setLabelOpen(true)}>
@@ -715,7 +712,7 @@ const KanbanDev = () => {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[220px] max-w-sm">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
@@ -799,12 +796,21 @@ const KanbanDev = () => {
       </div>
 
       {isLoading ? (
-        <div className="px-2"><KanbanSkeleton columns={Math.max(sortedColumns.length, 4)} /></div>
+        <div className="min-h-0 flex-1 overflow-hidden px-2">
+          <KanbanSkeleton columns={Math.max(sortedColumns.length, 4)} />
+        </div>
       ) : (
         <DragDropContext onDragEnd={onDragEnd}>
-          <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 ${gridCols} gap-3 sm:gap-4`} style={sortedColumns.length > 4 ? { gridTemplateColumns: `repeat(${sortedColumns.length}, minmax(260px, 1fr))`, overflowX: 'auto' } : undefined}>
+          <div
+            className="flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden pb-1 sm:gap-4 [scrollbar-gutter:stable]"
+            role="region"
+            aria-label="Listas do Kanban"
+          >
             {sortedColumns.map((col: any, colIdx: number) => (
-              <div key={col.id} className={`bg-muted/30 rounded-lg p-3 border-t-4 ${col.color} min-h-[300px] flex flex-col`}>
+              <div
+                key={col.id}
+                className={`flex h-full min-h-0 w-[min(92vw,300px)] shrink-0 flex-col rounded-lg border-t-4 bg-muted/30 p-3 sm:w-72 ${col.color}`}
+              >
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-semibold text-sm">{col.title}</h3>
                   <div className="flex items-center gap-1">
@@ -826,8 +832,7 @@ const KanbanDev = () => {
                     <div
                       ref={provided.innerRef}
                       {...provided.droppableProps}
-                      className={`flex-1 overflow-y-auto space-y-2 min-h-[100px] pr-1 transition-colors ${dropSnapshot.isDraggingOver ? 'bg-muted/40 rounded-md' : ''}`}
-                      style={{ maxHeight: '400px' }}
+                      className={`min-h-[120px] flex-1 space-y-2 overflow-y-auto overflow-x-hidden pr-1 transition-colors ${dropSnapshot.isDraggingOver ? 'rounded-md bg-muted/40' : ''}`}
                     >
                       {(cardsByColumn[col.slug] || []).map((card: any, index: number) => (
                         <Draggable key={card.id} draggableId={card.id} index={index}>
@@ -1210,8 +1215,8 @@ function DevCardFormContent({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col px-6 pb-6" onPaste={handlePaste}>
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain pr-1 [-webkit-overflow-scrolling:touch]">
+    <div className="flex min-h-0 flex-1 flex-col" onPaste={handlePaste}>
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain px-6 pb-28 pr-7 [-webkit-overflow-scrolling:touch]">
       <Input placeholder="Título" value={title} onChange={e => setTitle(e.target.value)} autoComplete="off" />
       <Textarea
         placeholder="Observações (use CTRL+V para colar imagens)"
@@ -1308,9 +1313,11 @@ function DevCardFormContent({
       </div>
       </div>
 
-      <Button onClick={onSubmit} disabled={loading || !title.trim()} className="mt-4 w-full shrink-0">
-        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Salvar
-      </Button>
+      <div className="shrink-0 border-t border-border bg-background px-6 pb-5 pt-3">
+        <Button onClick={onSubmit} disabled={loading || !title.trim()} className="w-full">
+          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Salvar
+        </Button>
+      </div>
     </div>
   );
 }
