@@ -698,7 +698,7 @@ const KanbanDev = () => {
   }, []);
 
   return (
-    <div className="flex h-[calc(100dvh-7.5rem)] max-h-[calc(100dvh-7.5rem)] min-h-0 flex-col gap-4 overflow-hidden animate-fade-in md:h-[calc(100dvh-8rem)] md:max-h-[calc(100dvh-8rem)]">
+    <div className="flex h-[calc(100dvh-5.5rem)] max-h-[calc(100dvh-5.5rem)] min-h-0 flex-col gap-3 overflow-hidden animate-fade-in md:h-[calc(100dvh-6.5rem)] md:max-h-[calc(100dvh-6.5rem)]">
       <div className="flex shrink-0 items-center justify-between">
         <h1 className="text-2xl font-heading font-bold">Kanban DEV</h1>
         <div className="flex gap-2">
@@ -802,7 +802,7 @@ const KanbanDev = () => {
       ) : (
         <DragDropContext onDragEnd={onDragEnd}>
           <div
-            className="flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden pb-1 sm:gap-4 [scrollbar-gutter:stable]"
+            className="flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden sm:gap-4 [scrollbar-gutter:stable]"
             role="region"
             aria-label="Listas do Kanban"
           >
@@ -1216,14 +1216,20 @@ function DevCardFormContent({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" onPaste={handlePaste}>
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain px-6 pb-28 pr-7 [-webkit-overflow-scrolling:touch]">
-      <Input placeholder="Título" value={title} onChange={e => setTitle(e.target.value)} autoComplete="off" />
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden overscroll-y-contain px-6 pb-28 pt-4 [-webkit-overflow-scrolling:touch]">
+      <Input
+        placeholder="Título"
+        value={title}
+        onChange={e => setTitle(e.target.value)}
+        autoComplete="off"
+        className="focus-visible:ring-offset-0"
+      />
       <Textarea
         placeholder="Observações (use CTRL+V para colar imagens)"
         value={description}
         onChange={e => setDescription(e.target.value)}
         rows={8}
-        className="min-h-[120px] max-h-[min(40vh,320px)] resize-y overflow-y-auto"
+        className="min-h-[120px] max-h-[min(40vh,320px)] resize-y overflow-y-auto focus-visible:ring-offset-0"
       />
       <Select value={analystId} onValueChange={setAnalystId}>
         <SelectTrigger><SelectValue placeholder="Analista responsável" /></SelectTrigger>
@@ -1313,7 +1319,7 @@ function DevCardFormContent({
       </div>
       </div>
 
-      <div className="shrink-0 border-t border-border bg-background px-6 pb-5 pt-3">
+      <div className="shrink-0 border-t border-border bg-background px-6 pb-3 pt-3">
         <Button onClick={onSubmit} disabled={loading || !title.trim()} className="w-full">
           {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Salvar
         </Button>
