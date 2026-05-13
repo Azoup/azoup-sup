@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  /** `true` = recuperação de senha via Edge Function + EmailJS (ver supabase/functions/password-reset-email). */
+  /** `true` = recuperação por código (EmailJS + funções password-reset-*-code). */
   readonly VITE_PASSWORD_RESET_VIA_EMAILJS?: string;
 }

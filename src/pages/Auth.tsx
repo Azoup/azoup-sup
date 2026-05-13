@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { getPasswordResetRedirectUrl, getSiteUrl } from '@/lib/siteUrl';
 import { logActivity } from '@/hooks/useActivityLog';
@@ -9,6 +10,7 @@ import { toast } from 'sonner';
 import { Headset, Loader2 } from 'lucide-react';
 
 const Auth = () => {
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
@@ -23,8 +25,8 @@ const Auth = () => {
     const useEmailJs = import.meta.env.VITE_PASSWORD_RESET_VIA_EMAILJS === 'true';
 
     if (useEmailJs) {
-      const { data, error } = await supabase.functions.invoke('password-reset-email', {
-        body: { email: email.trim(), redirect_to: redirectTo },
+      const { data, error } = await supabase.functions.invoke('password-reset-request-code', {
+        body: { email: email.trim() },
       });
       setLoading(false);
       if (error) {
@@ -35,7 +37,9 @@ const Auth = () => {
         toast.error('Não foi possível enviar o e-mail. Tente novamente mais tarde.');
         return;
       }
-      toast.success('Se existir uma conta com este e-mail, você receberá o link de redefinição.');
+      toast.success('Se existir uma conta com este e-mail, você receberá um código de 6 dígitos.');
+      navigate('/reset-password-code', { state: { email: email.trim().toLowerCase() } });
+      setForgotMode(false);
       return;
     }
 
@@ -95,7 +99,7 @@ const Auth = () => {
                 <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Enviar Link de Redefinição
+                  {import.meta.env.VITE_PASSWORD_RESET_VIA_EMAILJS === 'true' ? 'Enviar código por e-mail' : 'Enviar link de redefinição'}
                 </Button>
               </form>
               <button onClick={() => setForgotMode(false)} className="w-full text-center mt-4 text-sm text-muted-foreground hover:text-primary transition-colors">
