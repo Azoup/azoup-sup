@@ -19,8 +19,28 @@ const Auth = () => {
     e.preventDefault();
     if (!email) { toast.error('Informe seu email.'); return; }
     setLoading(true);
+    const redirectTo = getPasswordResetRedirectUrl();
+    const useEmailJs = import.meta.env.VITE_PASSWORD_RESET_VIA_EMAILJS === 'true';
+
+    if (useEmailJs) {
+      const { data, error } = await supabase.functions.invoke('password-reset-email', {
+        body: { email: email.trim(), redirect_to: redirectTo },
+      });
+      setLoading(false);
+      if (error) {
+        toast.error(error.message || 'Não foi possível enviar o e-mail.');
+        return;
+      }
+      if (data && typeof data === 'object' && 'error' in data && (data as { error?: string }).error) {
+        toast.error('Não foi possível enviar o e-mail. Tente novamente mais tarde.');
+        return;
+      }
+      toast.success('Se existir uma conta com este e-mail, você receberá o link de redefinição.');
+      return;
+    }
+
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: getPasswordResetRedirectUrl(),
+      redirectTo,
     });
     if (error) {
       toast.error(error.message);

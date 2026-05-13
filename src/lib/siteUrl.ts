@@ -12,6 +12,10 @@
  * 3) Authentication → Email Templates → “Reset password”: o botão deve usar {{ .ConfirmationURL }} (padrão).
  *    Se alguém trocou por {{ .SiteURL }}, o link ignora o redirect do app e volta ao Site URL antigo — corrija o template.
  *
+ * Remetente ainda como no-reply@auth.lovable.cloud? Isso vem do SMTP padrão do projeto Supabase da Lovable.
+ * Corrija no MESMO projeto do VITE_SUPABASE_URL: Authentication → SMTP Settings → ativar SMTP customizado
+ * (ex.: Resend, SendGrid) e “Sender email” com o seu domínio verificado. Guia: https://supabase.com/docs/guides/auth/auth-smtp
+ *
  * Defina VITE_SITE_URL no arquivo `.env` na raiz do projeto (domínio público do app, sem barra final).
  * Em produção na Vercel: inclua a mesma variável em Environment Variables **ou** faça commit do `.env`
  * se a equipe aceitar esse fluxo (cuidado: `.env` costuma conter outros segredos).
@@ -22,13 +26,27 @@ function trimTrailingSlash(url: string): string {
   return url.replace(/\/$/, '');
 }
 
+/** Preview/editor Lovable: usar origem do browser mandaria o link do e-mail para *.lovable.* */
+function isLovableHostedHostname(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  return (
+    h.endsWith('.lovable.app') ||
+    h.endsWith('.lovable.dev') ||
+    h === 'lovable.app' ||
+    h === 'lovable.dev'
+  );
+}
+
 /** Origem pública do app (sem barra final). */
 export function getSiteUrl(): string {
   const fromEnv = (import.meta.env.VITE_SITE_URL as string | undefined)?.trim();
   if (fromEnv) return trimTrailingSlash(fromEnv);
 
   if (typeof window !== 'undefined' && window.location?.origin) {
-    return trimTrailingSlash(window.location.origin);
+    const { hostname } = window.location;
+    if (!isLovableHostedHostname(hostname)) {
+      return trimTrailingSlash(window.location.origin);
+    }
   }
 
   return DEFAULT_PUBLIC_ORIGIN;
