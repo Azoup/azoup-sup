@@ -17,7 +17,8 @@ async function assertCallerIsAdmin(req: Request): Promise<
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim();
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")?.trim();
+  const anonKey =
+    Deno.env.get("SUPABASE_ANON_KEY")?.trim() ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY")?.trim();
   const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim();
   if (!supabaseUrl || !anonKey || !serviceRole) {
     console.error("admin-user-actions: missing Supabase env");
@@ -29,7 +30,8 @@ async function assertCallerIsAdmin(req: Request): Promise<
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const { data: { user: caller }, error: authErr } = await userClient.auth.getUser();
+  const jwt = authHeader.slice(7).trim();
+  const { data: { user: caller }, error: authErr } = await userClient.auth.getUser(jwt);
   if (authErr || !caller?.id) {
     return { ok: false, response: json({ error: "unauthorized" }, 401) };
   }

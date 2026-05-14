@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { FunctionsFetchError, FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
@@ -107,6 +108,39 @@ const Profile = () => {
       missing_target_user_id: 'Dados inválidos.',
     };
     toast.error(err && map[err] ? map[err] : 'Não foi possível concluir a operação.');
+  };
+
+  const formatFunctionsInvokeError = (error: unknown): string => {
+    if (error instanceof FunctionsFetchError) {
+      const ctx = (error as FunctionsFetchError).context;
+      const detail = ctx instanceof Error ? ` (${ctx.message})` : '';
+      return `Não foi possível contactar a Edge Function "admin-user-actions".${detail} Confirme no Supabase que a função está publicada no mesmo projeto do VITE_SUPABASE_URL, que o URL está correto e que não há bloqueio de rede/CORS.`;
+    }
+    if (error instanceof FunctionsHttpError) {
+      return 'A Edge Function devolveu um erro HTTP. Consulte os logs da função "admin-user-actions" no painel do Supabase.';
+    }
+    return error instanceof Error ? error.message : 'Erro desconhecido.';
+  };
+
+  const resolveSessionAccessToken = async (): Promise<string | null> => {
+    let { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      const { data: ref } = await supabase.auth.refreshSession();
+      session = ref.session ?? null;
+    }
+    return session?.access_token ?? null;
+  };
+
+  const invokeAdminUserActions = async (body: Record<string, unknown>) => {
+    const token = await resolveSessionAccessToken();
+    if (!token) {
+      toast.error('Sessão expirada. Faça login novamente.');
+      return null;
+    }
+    return supabase.functions.invoke('admin-user-actions', {
+      body,
+      headers: { Authorization: `Bearer ${token}` },
+    });
   };
 
   const { data: profile } = useQuery({
@@ -255,12 +289,15 @@ const Profile = () => {
   const confirmAdminDeleteUser = async () => {
     if (!deleteTarget) return;
     setDeleteLoading(true);
-    const { data, error } = await supabase.functions.invoke('admin-user-actions', {
-      body: { action: 'delete_user', target_user_id: deleteTarget.id },
+    const res = await invokeAdminUserActions({
+      action: 'delete_user',
+      target_user_id: deleteTarget.id,
     });
     setDeleteLoading(false);
+    if (!res) return;
+    const { data, error } = res;
     if (error) {
-      toast.error(error.message);
+      toast.error(formatFunctionsInvokeError(error));
       return;
     }
     if (data && typeof data === 'object' && 'error' in data) {
@@ -284,12 +321,16 @@ const Profile = () => {
       return;
     }
     setResetPwdLoading(true);
-    const { data, error } = await supabase.functions.invoke('admin-user-actions', {
-      body: { action: 'set_user_password', target_user_id: resetTarget.id, new_password: adminNewPwd },
+    const res = await invokeAdminUserActions({
+      action: 'set_user_password',
+      target_user_id: resetTarget.id,
+      new_password: adminNewPwd,
     });
     setResetPwdLoading(false);
+    if (!res) return;
+    const { data, error } = res;
     if (error) {
-      toast.error(error.message);
+      toast.error(formatFunctionsInvokeError(error));
       return;
     }
     if (data && typeof data === 'object' && 'error' in data) {
