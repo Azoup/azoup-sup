@@ -52,7 +52,7 @@ function normalizeDateOnly(date: string | undefined): string | undefined {
  * Helper que invoca a edge function `digisac-dashboard`.
  * IMPORTANTE: chamamos via edge function (não direto na API Digisac)
  * porque o servidor Digisac só libera CORS para o domínio publicado,
- * bloqueando todas as chamadas no preview do Lovable.
+ * bloqueando chamadas diretas do browser em previews e ambientes não listados.
  */
 async function invokeDigisac<T>(action: string, payload: Record<string, any> = {}): Promise<T> {
   const { data: sessionData } = await supabase.auth.getSession();

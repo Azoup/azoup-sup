@@ -1,3 +1,5 @@
-# Welcome to your Lovable project
+# azoup-sup
 
-TODO: Document your project here
+Aplicação de suporte (Vite + React + Supabase).
+
+Consulte `.env.example` para variáveis de ambiente e scripts em `package.json` para desenvolvimento e deploy das Edge Functions.
