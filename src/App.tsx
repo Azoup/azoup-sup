@@ -19,8 +19,6 @@ import KanbanDev from "./pages/KanbanDev";
 import DashboardDev from "./pages/DashboardDev";
 import Developers from "./pages/Developers";
 import Profile from "./pages/Profile";
-import ResetPassword from "./pages/ResetPassword";
-import ResetPasswordCode from "./pages/ResetPasswordCode";
 import NotFound from "./pages/NotFound";
 import DigisacDashboard from "./pages/DigisacDashboard";
 import { Loader2 } from "lucide-react";
@@ -86,8 +84,6 @@ const App = () => (
             <Route path="/dashboard-dev" element={<ProtectedRoute screen="dashboard_dev"><DashboardDev /></ProtectedRoute>} />
             <Route path="/developers" element={<ProtectedRoute screen="developers"><Developers /></ProtectedRoute>} />
             <Route path="/digisac-dashboard" element={<ProtectedRoute screen="digisac_dashboard"><DigisacDashboard /></ProtectedRoute>} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/reset-password-code" element={<ResetPasswordCode />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
