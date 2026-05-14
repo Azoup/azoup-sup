@@ -10,10 +10,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
-import { Loader2, KeyRound, User, Shield, ScrollText, Filter, Camera, Trash2 } from 'lucide-react';
+import { Loader2, KeyRound, User, Shield, ScrollText, Filter, Camera, Trash2, UserX } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const PERMISSION_SCREENS = [
   { screen: 'kanban', label: 'Kanban Pendências' },
@@ -71,6 +81,33 @@ const Profile = () => {
   const [permsDraft, setPermsDraft] = useState<Record<string, boolean>>({});
   const [permsSaving, setPermsSaving] = useState(false);
   const [showAllUsers, setShowAllUsers] = useState(false);
+
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [resetTarget, setResetTarget] = useState<{ id: string; label: string } | null>(null);
+  const [adminNewPwd, setAdminNewPwd] = useState('');
+  const [adminNewPwd2, setAdminNewPwd2] = useState('');
+  const [resetPwdLoading, setResetPwdLoading] = useState(false);
+
+  const toastAdminActionError = (payload: unknown) => {
+    const err = typeof payload === 'object' && payload !== null && 'error' in payload
+      ? (payload as { error?: string; message?: string }).error
+      : undefined;
+    const msg = typeof payload === 'object' && payload !== null && 'message' in payload
+      ? String((payload as { message?: string }).message || '')
+      : '';
+    const map: Record<string, string> = {
+      cannot_delete_self: 'Não é possível excluir a própria conta.',
+      cannot_delete_last_admin: 'Não é possível excluir o último administrador.',
+      delete_failed: msg ? `Falha ao excluir: ${msg}` : 'Não foi possível excluir o cadastro.',
+      weak_password: 'A nova senha deve ter pelo menos 6 caracteres.',
+      update_failed: msg ? `Falha ao definir senha: ${msg}` : 'Não foi possível definir a senha.',
+      forbidden: 'Sem permissão.',
+      unauthorized: 'Sessão inválida. Faça login novamente.',
+      missing_target_user_id: 'Dados inválidos.',
+    };
+    toast.error(err && map[err] ? map[err] : 'Não foi possível concluir a operação.');
+  };
 
   const { data: profile } = useQuery({
     queryKey: ['profile', user?.id],
@@ -215,6 +252,56 @@ const Profile = () => {
     onError: () => toast.error('Erro ao atualizar permissão.'),
   });
 
+  const confirmAdminDeleteUser = async () => {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
+    const { data, error } = await supabase.functions.invoke('admin-user-actions', {
+      body: { action: 'delete_user', target_user_id: deleteTarget.id },
+    });
+    setDeleteLoading(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    if (data && typeof data === 'object' && 'error' in data) {
+      toastAdminActionError(data);
+      return;
+    }
+    setDeleteTarget(null);
+    toast.success('Cadastro do usuário removido.');
+    queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
+  };
+
+  const confirmAdminSetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetTarget) return;
+    if (adminNewPwd !== adminNewPwd2) {
+      toast.error('As senhas não coincidem.');
+      return;
+    }
+    if (adminNewPwd.length < 6) {
+      toast.error('Mínimo 6 caracteres.');
+      return;
+    }
+    setResetPwdLoading(true);
+    const { data, error } = await supabase.functions.invoke('admin-user-actions', {
+      body: { action: 'set_user_password', target_user_id: resetTarget.id, new_password: adminNewPwd },
+    });
+    setResetPwdLoading(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    if (data && typeof data === 'object' && 'error' in data) {
+      toastAdminActionError(data);
+      return;
+    }
+    toast.success('Nova senha definida. Informe o usuário com segurança.');
+    setResetTarget(null);
+    setAdminNewPwd('');
+    setAdminNewPwd2('');
+  };
+
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPassword !== confirmPassword) { toast.error('As senhas não coincidem.'); return; }
@@ -323,7 +410,9 @@ const Profile = () => {
             <CardTitle className="text-lg flex items-center gap-2">
               <Shield className="h-5 w-5 text-primary" /> Gerenciar Permissões
             </CardTitle>
-            <CardDescription>Altere o tipo de perfil e permissões granulares dos usuários.</CardDescription>
+            <CardDescription>
+              Altere o tipo de perfil, permissões e foto. Como administrador, use Excluir para remover cadastro duplicado ou Nova senha para definir uma senha ao usuário.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {allUsers.length === 0 ? (
@@ -382,6 +471,30 @@ const Profile = () => {
                             <SelectItem value="user">Padrão</SelectItem>
                           </SelectContent>
                         </Select>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="shrink-0 whitespace-nowrap"
+                          onClick={() => {
+                            setResetTarget({ id: ur.user_id, label: String(ur.email) });
+                            setAdminNewPwd('');
+                            setAdminNewPwd2('');
+                          }}
+                        >
+                          <KeyRound className="h-3.5 w-3.5 mr-1" />
+                          Nova senha
+                        </Button>
+                        {ur.user_id !== user?.id && (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="shrink-0"
+                            onClick={() => setDeleteTarget({ id: ur.user_id, label: String(ur.email) })}
+                          >
+                            <UserX className="h-3.5 w-3.5 mr-1" />
+                            Excluir
+                          </Button>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"
@@ -509,6 +622,82 @@ const Profile = () => {
           </CardContent>
         </Card>
       )}
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir cadastro?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Remove permanentemente o usuário <strong>{deleteTarget?.label}</strong>
+              {deleteTarget?.id ? ` (${deleteTarget.id})` : ''}. Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteLoading}>Cancelar</AlertDialogCancel>
+            <Button type="button" variant="destructive" onClick={confirmAdminDeleteUser} disabled={deleteLoading}>
+              {deleteLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Excluir cadastro
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog
+        open={!!resetTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setResetTarget(null);
+            setAdminNewPwd('');
+            setAdminNewPwd2('');
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Definir nova senha</DialogTitle>
+            <DialogDescription>
+              Nova senha para <strong>{resetTarget?.label}</strong>. Informe o usuário por um canal seguro.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={confirmAdminSetPassword} className="space-y-3">
+            <Input
+              type="password"
+              placeholder="Nova senha (mín. 6 caracteres)"
+              value={adminNewPwd}
+              onChange={(e) => setAdminNewPwd(e.target.value)}
+              minLength={6}
+              required
+              autoComplete="new-password"
+            />
+            <Input
+              type="password"
+              placeholder="Confirmar nova senha"
+              value={adminNewPwd2}
+              onChange={(e) => setAdminNewPwd2(e.target.value)}
+              minLength={6}
+              required
+              autoComplete="new-password"
+            />
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setResetTarget(null);
+                  setAdminNewPwd('');
+                  setAdminNewPwd2('');
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={resetPwdLoading}>
+                {resetPwdLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Salvar senha
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
