@@ -25,6 +25,11 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  formatSupabaseProjectMismatchMessage,
+  projectRefFromAccessToken,
+  projectRefFromSupabaseUrl,
+} from '@/lib/supabaseProject';
 
 const PERMISSION_SCREENS = [
   { screen: 'kanban', label: 'Kanban Pendências' },
@@ -135,6 +140,12 @@ const Profile = () => {
     const token = await resolveSessionAccessToken();
     if (!token) {
       toast.error('Sessão expirada. Faça login novamente.');
+      return null;
+    }
+    const urlRef = projectRefFromSupabaseUrl(import.meta.env.VITE_SUPABASE_URL as string | undefined);
+    const tokenRef = projectRefFromAccessToken(token);
+    if (urlRef && tokenRef && urlRef !== tokenRef) {
+      toast.error(formatSupabaseProjectMismatchMessage(urlRef, tokenRef));
       return null;
     }
     return supabase.functions.invoke('admin-user-actions', {
@@ -452,7 +463,7 @@ const Profile = () => {
               <Shield className="h-5 w-5 text-primary" /> Gerenciar Permissões
             </CardTitle>
             <CardDescription>
-              Altere o tipo de perfil, permissões e foto. Como administrador, use Excluir para remover cadastro duplicado ou Nova senha para definir uma senha ao usuário.
+              Altere o tipo de perfil, permissões e foto. Como administrador, use Excluir para remover cadastro duplicado ou Definir senha para criar uma nova senha (não é possível ver a senha atual — o Supabase guarda apenas um hash).
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -523,7 +534,7 @@ const Profile = () => {
                           }}
                         >
                           <KeyRound className="h-3.5 w-3.5 mr-1" />
-                          Nova senha
+                          Definir senha
                         </Button>
                         {ur.user_id !== user?.id && (
                           <Button
@@ -697,7 +708,8 @@ const Profile = () => {
           <DialogHeader>
             <DialogTitle>Definir nova senha</DialogTitle>
             <DialogDescription>
-              Nova senha para <strong>{resetTarget?.label}</strong>. Informe o usuário por um canal seguro.
+              A senha atual de <strong>{resetTarget?.label}</strong> não pode ser exibida (é armazenada de forma irreversível).
+              Defina uma nova senha abaixo e informe o usuário por um canal seguro (telefone, presencial, etc.).
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={confirmAdminSetPassword} className="space-y-3">
