@@ -21,7 +21,29 @@ export function projectRefFromAccessToken(accessToken: string): string | null {
 export function formatSupabaseProjectMismatchMessage(urlRef: string, tokenRef: string): string {
   return (
     `O app está ligado ao projeto Supabase "${urlRef}", mas a sua sessão é do projeto "${tokenRef}". ` +
-    'Faça logout, confirme VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY (e as mesmas variáveis na Vercel) ' +
-    'para o projeto onde a Edge Function "admin-user-actions" está publicada, e entre novamente.'
+    'A sessão antiga foi limpa — faça login novamente. Confirme que VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY ' +
+    '(e as mesmas variáveis na Vercel) apontam para o projeto onde a sua conta existe.'
   );
+}
+
+const AUTH_STORAGE_PREFIXES = ['sb-', 'supabase.auth.'];
+
+/** Remove sessões guardadas de outros projetos Supabase (evita logout/login instável ao mudar .env). */
+export function clearSupabaseAuthStorageExcept(activeProjectRef: string | null): void {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  const keepSuffix = activeProjectRef ? `-${activeProjectRef}-` : null;
+  const keysToRemove: string[] = [];
+  for (let i = 0; i < window.localStorage.length; i++) {
+    const key = window.localStorage.key(i);
+    if (!key) continue;
+    const isAuthKey = AUTH_STORAGE_PREFIXES.some((p) => key.startsWith(p) || key.includes('auth-token'));
+    if (!isAuthKey) continue;
+    if (keepSuffix && key.includes(keepSuffix)) continue;
+    keysToRemove.push(key);
+  }
+  keysToRemove.forEach((k) => window.localStorage.removeItem(k));
+}
+
+export function getConfiguredSupabaseProjectRef(): string | null {
+  return projectRefFromSupabaseUrl(import.meta.env.VITE_SUPABASE_URL as string | undefined);
 }

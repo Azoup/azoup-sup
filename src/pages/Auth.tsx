@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { getSiteUrl } from '@/lib/siteUrl';
+import { formatAuthErrorMessage } from '@/lib/authErrors';
+import { clearSupabaseAuthStorageExcept, getConfiguredSupabaseProjectRef } from '@/lib/supabaseProject';
 import { logActivity } from '@/hooks/useActivityLog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +16,10 @@ const Auth = () => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    clearSupabaseAuthStorageExcept(getConfiguredSupabaseProjectRef());
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -25,14 +31,19 @@ const Auth = () => {
         options: { emailRedirectTo: getSiteUrl() },
       });
       if (error) {
-        toast.error(error.message);
+        toast.error(formatAuthErrorMessage(error));
       } else {
         toast.success('Conta criada! Verifique seu email para confirmar.');
       }
     } else {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
       if (error) {
-        toast.error('Email ou senha incorretos.');
+        toast.error(formatAuthErrorMessage(error));
+      } else if (!data.session) {
+        toast.error('Sessão não iniciada. Confirme o email ou tente novamente.');
       } else {
         logActivity('Login no sistema');
       }

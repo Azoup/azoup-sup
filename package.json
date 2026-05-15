@@ -17,7 +17,7 @@
     "test:watch": "vitest",
     "supabase:login": "supabase login",
     "supabase:link": "supabase link",
-    "supabase:deploy-admin-user-actions": "supabase functions deploy admin-user-actions"
+    "supabase:deploy-admin-user-actions": "supabase functions deploy admin-user-actions --project-ref ffvgrvrkuiypjzfdcfyw"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
