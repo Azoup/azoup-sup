@@ -4,7 +4,7 @@
 -- PARA: d32a6840-3715-4c40-93e5-269317f3609d
 --
 -- https://supabase.com/dashboard/project/ittmglvkympbyeowgucl/sql/new
--- Só atualiza tabelas/colunas que existem no seu banco.
+-- Compatível com colunas uuid, text e varchar.
 -- =============================================================================
 
 BEGIN;
@@ -27,13 +27,14 @@ BEGIN
   IF to_regclass('public.user_roles') IS NOT NULL THEN
     EXECUTE $q$
       DELETE FROM public.user_roles ur_old
-      WHERE ur_old.user_id = $1
+      WHERE ur_old.user_id = $1::uuid
         AND EXISTS (
           SELECT 1 FROM public.user_roles ur_new
-          WHERE ur_new.user_id = $2 AND ur_new.role = ur_old.role
+          WHERE ur_new.user_id = $2::uuid AND ur_new.role = ur_old.role
         )
     $q$ USING old_id, new_id;
-    EXECUTE 'UPDATE public.user_roles SET user_id = $2 WHERE user_id = $1' USING old_id, new_id;
+    EXECUTE 'UPDATE public.user_roles SET user_id = $2::uuid WHERE user_id = $1::uuid'
+      USING old_id, new_id;
     GET DIAGNOSTICS n = ROW_COUNT;
     RAISE NOTICE 'user_roles: % linha(s)', n;
   END IF;
@@ -42,18 +43,19 @@ BEGIN
   IF to_regclass('public.user_permissions') IS NOT NULL THEN
     EXECUTE $q$
       DELETE FROM public.user_permissions up_old
-      WHERE up_old.user_id = $1
+      WHERE up_old.user_id = $1::uuid
         AND EXISTS (
           SELECT 1 FROM public.user_permissions up_new
-          WHERE up_new.user_id = $2 AND up_new.permission_key = up_old.permission_key
+          WHERE up_new.user_id = $2::uuid AND up_new.permission_key = up_old.permission_key
         )
     $q$ USING old_id, new_id;
-    EXECUTE 'UPDATE public.user_permissions SET user_id = $2 WHERE user_id = $1' USING old_id, new_id;
+    EXECUTE 'UPDATE public.user_permissions SET user_id = $2::uuid WHERE user_id = $1::uuid'
+      USING old_id, new_id;
     GET DIAGNOSTICS n = ROW_COUNT;
     RAISE NOTICE 'user_permissions: % linha(s)', n;
   END IF;
 
-  -- profiles
+  -- profiles (sempre uuid)
   IF to_regclass('public.profiles') IS NOT NULL THEN
     IF EXISTS (SELECT 1 FROM public.profiles WHERE id = new_id) THEN
       DELETE FROM public.profiles WHERE id = old_id;
@@ -65,83 +67,34 @@ BEGIN
     END IF;
   END IF;
 
-  -- public: todas as colunas uuid de referência a utilizador
+  -- public + auth + storage: colunas de referência (uuid, text ou varchar)
   FOR r IN
-    SELECT c.table_schema, c.table_name, c.column_name
+    SELECT c.table_schema, c.table_name, c.column_name, c.udt_name
     FROM information_schema.columns c
-    WHERE c.table_schema = 'public'
-      AND c.udt_name = 'uuid'
+    WHERE c.table_schema IN ('public', 'auth', 'storage')
       AND c.column_name IN (
-        'user_id', 'created_by', 'uploaded_by', 'actor_id', 'recipient_id', 'owner_id'
+        'user_id', 'created_by', 'uploaded_by', 'actor_id', 'recipient_id', 'owner_id', 'owner'
       )
+      AND c.udt_name IN ('uuid', 'text', 'character varying', 'varchar')
       AND to_regclass(format('%I.%I', c.table_schema, c.table_name)) IS NOT NULL
-      AND NOT (c.table_name = 'profiles' AND c.column_name = 'id')
+      AND NOT (c.table_schema = 'public' AND c.table_name IN ('user_roles', 'user_permissions', 'profiles'))
   LOOP
-    sql := format(
-      'UPDATE %I.%I SET %I = $1 WHERE %I = $2',
-      r.table_schema, r.table_name, r.column_name, r.column_name
-    );
-    EXECUTE sql USING new_id, old_id;
-    GET DIAGNOSTICS n = ROW_COUNT;
-    IF n > 0 THEN
-      RAISE NOTICE '%.%: % linha(s)', r.table_schema, r.table_name || '.' || r.column_name, n;
-    END IF;
-  END LOOP;
-
-  -- storage.objects (owner / owner_id podem ser uuid ou text)
-  IF to_regclass('storage.objects') IS NOT NULL THEN
-    FOR r IN
-      SELECT column_name, udt_name
-      FROM information_schema.columns
-      WHERE table_schema = 'storage'
-        AND table_name = 'objects'
-        AND column_name IN ('owner', 'owner_id')
-    LOOP
-      IF r.udt_name = 'uuid' THEN
-        sql := format(
-          'UPDATE storage.objects SET %I = $1::uuid WHERE %I = $2::uuid',
-          r.column_name, r.column_name
-        );
-        EXECUTE sql USING new_id, old_id;
-      ELSE
-        sql := format(
-          'UPDATE storage.objects SET %I = $1::text WHERE %I = $2::text',
-          r.column_name, r.column_name
-        );
-        EXECUTE sql USING new_id::text, old_id::text;
-      END IF;
-      GET DIAGNOSTICS n = ROW_COUNT;
-      IF n > 0 THEN
-        RAISE NOTICE 'storage.objects.% (%): % linha(s)', r.column_name, r.udt_name, n;
-      END IF;
-    END LOOP;
-  END IF;
-
-  -- auth (só tabelas que existem)
-  FOR r IN
-    SELECT t.table_schema, t.table_name
-    FROM information_schema.tables t
-    WHERE t.table_schema = 'auth'
-      AND t.table_name IN (
-        'identities', 'sessions', 'refresh_tokens', 'mfa_factors', 'one_time_tokens'
-      )
-      AND to_regclass(format('%I.%I', t.table_schema, t.table_name)) IS NOT NULL
-  LOOP
-    IF EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_schema = r.table_schema
-        AND table_name = r.table_name
-        AND column_name = 'user_id'
-    ) THEN
+    IF r.udt_name = 'uuid' THEN
       sql := format(
-        'UPDATE %I.%I SET user_id = $1 WHERE user_id = $2',
-        r.table_schema, r.table_name
+        'UPDATE %I.%I SET %I = $1::uuid WHERE %I = $2::uuid',
+        r.table_schema, r.table_name, r.column_name, r.column_name
       );
       EXECUTE sql USING new_id, old_id;
-      GET DIAGNOSTICS n = ROW_COUNT;
-      IF n > 0 THEN
-        RAISE NOTICE '%.%: % linha(s)', r.table_schema, r.table_name, n;
-      END IF;
+    ELSE
+      sql := format(
+        'UPDATE %I.%I SET %I = $1::text WHERE %I = $2::text',
+        r.table_schema, r.table_name, r.column_name, r.column_name
+      );
+      EXECUTE sql USING new_id::text, old_id::text;
+    END IF;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    IF n > 0 THEN
+      RAISE NOTICE '%.% (%): % linha(s)', r.table_schema, r.table_name || '.' || r.column_name, r.udt_name, n;
     END IF;
   END LOOP;
 
@@ -155,7 +108,7 @@ END $$;
 
 COMMIT;
 
--- Verificação (ignora tabelas inexistentes)
+-- Verificação
 DO $$
 DECLARE
   old_id uuid := 'ef06b578-6d1c-477c-9d14-5f969d1800e2';
@@ -172,16 +125,10 @@ BEGIN
     SELECT c.table_schema, c.table_name, c.column_name, c.udt_name
     FROM information_schema.columns c
     WHERE c.table_schema IN ('public', 'auth', 'storage')
-      AND c.udt_name IN ('uuid', 'text')
-      AND (
-        (c.table_schema = 'storage' AND c.table_name = 'objects' AND c.column_name IN ('owner', 'owner_id'))
-        OR (
-          c.table_schema IN ('public', 'auth')
-          AND c.column_name IN (
-            'user_id', 'created_by', 'uploaded_by', 'actor_id', 'recipient_id', 'owner_id', 'id'
-          )
-        )
+      AND c.column_name IN (
+        'user_id', 'created_by', 'uploaded_by', 'actor_id', 'recipient_id', 'owner_id', 'owner', 'id'
       )
+      AND c.udt_name IN ('uuid', 'text', 'character varying', 'varchar')
       AND to_regclass(format('%I.%I', c.table_schema, c.table_name)) IS NOT NULL
   LOOP
     IF r.udt_name = 'uuid' THEN
