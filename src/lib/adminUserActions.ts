@@ -1,5 +1,8 @@
 import { supabase } from '@/integrations/supabase/client';
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+
 export type AdminUserActionBody =
   | { action: 'delete_user'; target_user_id: string }
   | { action: 'set_user_password'; target_user_id: string; new_password: string };
@@ -99,68 +102,131 @@ async function invokeLocalOrVercelApi(
       return null;
     }
 
-    return mapResponseToResult(response.status, payload);
+    const result = mapResponseToResult(response.status, payload);
+    if (!result.ok && result.code === 'server_misconfigured') {
+      return null;
+    }
+    return result;
   } catch {
     return null;
   }
 }
 
-async function invokeEdgeFunction(
-  functionName: string,
+let adminUsersEdgeAvailable: boolean | null = null;
+
+async function isAdminUsersEdgeAvailable(): Promise<boolean> {
+  if (adminUsersEdgeAvailable !== null) return adminUsersEdgeAvailable;
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    adminUsersEdgeAvailable = false;
+    return false;
+  }
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-users`, {
+      method: 'OPTIONS',
+      headers: { apikey: SUPABASE_ANON_KEY, Origin: window.location.origin },
+    });
+    adminUsersEdgeAvailable = res.ok;
+  } catch {
+    adminUsersEdgeAvailable = false;
+  }
+  return adminUsersEdgeAvailable;
+}
+
+async function invokeAdminUsersEdge(
   token: string,
   body: AdminUserActionBody,
 ): Promise<AdminUserActionResult | null> {
-  const { data, error } = await supabase.functions.invoke(functionName, {
-    body: {
-      action: body.action,
-      target_user_id: body.target_user_id,
-      ...(body.action === 'set_user_password' ? { new_password: body.new_password } : {}),
-    },
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
 
-  if (error) {
-    const msg = error.message ?? '';
-    if (/not found|404|failed to fetch|non-2xx|function not found/i.test(msg)) {
+  try {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/admin-users`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        apikey: SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({
+        action: body.action,
+        target_user_id: body.target_user_id,
+        ...(body.action === 'set_user_password' ? { new_password: body.new_password } : {}),
+      }),
+    });
+
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.includes('application/json')) return null;
+
+    return mapResponseToResult(response.status, await response.json());
+  } catch {
+    return null;
+  }
+}
+
+/** Edge digisac-dashboard (já publicada no ffvgrvrk). */
+async function invokeDigisacAdmin(
+  token: string,
+  body: AdminUserActionBody,
+): Promise<AdminUserActionResult | null> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/digisac-dashboard`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        apikey: SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({
+        action: body.action,
+        target_user_id: body.target_user_id,
+        ...(body.action === 'set_user_password' ? { new_password: body.new_password } : {}),
+      }),
+    });
+
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.includes('application/json')) {
       return null;
     }
-    if (/jwt|unauthorized|401/i.test(msg)) {
-      return { ok: false, code: 'unauthorized' };
+
+    const payload = (await response.json()) as Record<string, unknown>;
+
+    if (payload.ok === true) {
+      return { ok: true };
     }
-    if (/forbidden|403/i.test(msg)) {
-      return { ok: false, code: 'forbidden' };
+
+    const errKey = typeof payload.error === 'string' ? payload.error.trim() : '';
+    if (KNOWN_CODES.has(errKey as AdminUserActionErrorCode)) {
+      return {
+        ok: false,
+        code: errKey as AdminUserActionErrorCode,
+        message: typeof payload.message === 'string' ? payload.message : undefined,
+      };
     }
-    return { ok: false, code: 'server_error', message: msg };
-  }
 
-  const row = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
-  if (row.ok === true) {
-    return { ok: true };
-  }
-
-  const errKey = typeof row.error === 'string' ? row.error.trim() : '';
-  if (KNOWN_CODES.has(errKey as AdminUserActionErrorCode)) {
-    return {
-      ok: false,
-      code: errKey as AdminUserActionErrorCode,
-      message: typeof row.message === 'string' ? row.message : undefined,
-    };
-  }
-
-  if (row.error === true) {
-    const msg = typeof row.message === 'string' ? row.message : '';
-    if (/CONFIG_MISSING|Digisac/i.test(msg)) {
-      return null;
+    if (payload.error === true || payload.code === 'CONFIG_MISSING') {
+      const msg = typeof payload.message === 'string' ? payload.message : '';
+      if (/CONFIG_MISSING|Digisac|configuração do Digisac/i.test(msg)) {
+        return {
+          ok: false,
+          code: 'server_misconfigured',
+          message: 'digisac_sem_admin',
+        };
+      }
     }
-    return { ok: false, code: 'server_error', message: msg || undefined };
-  }
 
-  return null;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Ordem: API (.env / Vercel) → Edge admin-users → digisac-dashboard.
- * Não usa RPC (evita erro PGRST202 / NOTIFY).
+ * 1) digisac-dashboard (Edge já no ar, CORS ok)
+ * 2) /api/admin-user-action (.env local ou mesma variável na Vercel)
+ * Não chama admin-users (404 → erro CORS no browser).
  */
 export async function runAdminUserAction(body: AdminUserActionBody): Promise<AdminUserActionResult> {
   const token = await getAccessToken();
@@ -168,26 +234,28 @@ export async function runAdminUserAction(body: AdminUserActionBody): Promise<Adm
     return { ok: false, code: 'unauthorized' };
   }
 
-  const viaApi = await invokeLocalOrVercelApi(token, body);
-  if (viaApi?.ok) {
-    return viaApi;
-  }
-  if (viaApi && !viaApi.ok && viaApi.code !== 'server_misconfigured') {
-    return viaApi;
-  }
-
-  const viaAdminUsers = await invokeEdgeFunction('admin-users', token, body);
-  if (viaAdminUsers) {
-    return viaAdminUsers;
+  if (await isAdminUsersEdgeAvailable()) {
+    const viaAdminUsers = await invokeAdminUsersEdge(token, body);
+    if (viaAdminUsers) {
+      return viaAdminUsers;
+    }
   }
 
-  const viaDigisac = await invokeEdgeFunction('digisac-dashboard', token, body);
-  if (viaDigisac) {
+  const viaDigisac = await invokeDigisacAdmin(token, body);
+  if (viaDigisac?.ok) {
+    return viaDigisac;
+  }
+  if (viaDigisac && !viaDigisac.ok && viaDigisac.code !== 'server_misconfigured') {
     return viaDigisac;
   }
 
-  if (viaApi && !viaApi.ok) {
+  const viaApi = await invokeLocalOrVercelApi(token, body);
+  if (viaApi) {
     return viaApi;
+  }
+
+  if (viaDigisac?.code === 'server_misconfigured') {
+    return viaDigisac;
   }
 
   return { ok: false, code: 'server_misconfigured' };
@@ -198,13 +266,27 @@ export function formatAdminActionErrorMessage(
   detail?: string,
 ): string {
   if (code === 'server_misconfigured') {
+    if (detail === 'digisac_sem_admin' || detail?.includes('digisac_sem_admin')) {
+      return (
+        'A função digisac-dashboard no Supabase ainda não tem o módulo de administração. ' +
+        'Crie a Edge Function admin-users: abra https://supabase.com/dashboard/project/ffvgrvrkuiypjzfdcfyw/functions, ' +
+        'Deploy new function → nome admin-users → cole todo o ficheiro supabase/functions/admin-users/COLE_NO_PAINEL_index.ts → Deploy.'
+      );
+    }
     if (detail?.includes('ittmglvk') || detail?.includes('ffvgrvrk')) {
       return detail;
     }
+    const isProd = typeof window !== 'undefined' && !window.location.hostname.includes('localhost');
+    if (isProd) {
+      return (
+        'Em produção, copie do seu .env para a Vercel (Settings → Environment Variables) a variável ' +
+        'SUPABASE_SERVICE_ROLE_KEY do projeto ffvgrvrkuiypjzfdcfyw e faça Redeploy. ' +
+        'Ou publique a Edge Function admin-users no Supabase (COLE_NO_PAINEL_index.ts).'
+      );
+    }
     return (
-      'Não foi possível alterar a senha. No .env, use SUPABASE_SERVICE_ROLE_KEY do projeto ffvgrvrkuiypjzfdcfyw ' +
-      '(Supabase → Settings → API → service_role). Ou crie a Edge Function admin-users no Supabase ' +
-      '(ficheiro COLE_NO_PAINEL_index.ts).'
+      'No .env, defina SUPABASE_SERVICE_ROLE_KEY com a service_role do projeto ffvgrvrkuiypjzfdcfyw ' +
+      '(não use a chave do projeto ittmglvk). Reinicie npm run dev.'
     );
   }
 

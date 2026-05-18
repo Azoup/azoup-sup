@@ -2,6 +2,10 @@
  * Cole TODO este ficheiro no editor da Edge Function "admin-users"
  * Projeto: ffvgrvrkuiypjzfdcfyw (NÃO use ittmglvkympbyeowgucl)
  * URL final: https://ffvgrvrkuiypjzfdcfyw.supabase.co/functions/v1/admin-users
+ *
+ * Passos: Supabase → Edge Functions → Deploy a new function → nome: admin-users
+ * → apagar código default → colar ESTE ficheiro inteiro → Deploy
+ * → JWT verification: ON
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.100.1";
 
