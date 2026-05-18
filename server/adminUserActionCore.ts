@@ -1,0 +1,122 @@
+import { createClient } from "@supabase/supabase-js";
+
+export type AdminBody = {
+  action?: string;
+  target_user_id?: string;
+  new_password?: string;
+};
+
+export type AdminConfig = {
+  supabaseUrl: string;
+  anonKey: string;
+  serviceRole: string;
+};
+
+export async function runAdminUserActionCore(
+  authHeader: string,
+  body: AdminBody,
+  config: AdminConfig,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const action = typeof body.action === "string" ? body.action.trim() : "";
+  const targetId = typeof body.target_user_id === "string" ? body.target_user_id.trim() : "";
+
+  if (!targetId) {
+    return { status: 400, body: { error: "missing_target_user_id" } };
+  }
+
+  const userClient = createClient(config.supabaseUrl, config.anonKey, {
+    global: { headers: { Authorization: authHeader } },
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const jwt = authHeader.slice(7).trim();
+  const { data: { user: caller }, error: authErr } = await userClient.auth.getUser(jwt);
+  if (authErr || !caller?.id) {
+    return { status: 401, body: { error: "unauthorized" } };
+  }
+
+  const { data: roleRow, error: roleErr } = await userClient
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", caller.id)
+    .maybeSingle();
+
+  if (roleErr || roleRow?.role !== "admin") {
+    return { status: 403, body: { error: "forbidden" } };
+  }
+
+  const admin = createClient(config.supabaseUrl, config.serviceRole, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  if (action === "delete_user") {
+    if (targetId === caller.id) {
+      return { status: 400, body: { error: "cannot_delete_self" } };
+    }
+
+    const { data: targetRole } = await admin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", targetId)
+      .maybeSingle();
+
+    if (targetRole?.role === "admin") {
+      const { count, error: cErr } = await admin
+        .from("user_roles")
+        .select("id", { count: "exact", head: true })
+        .eq("role", "admin");
+      if (cErr) {
+        return { status: 500, body: { error: "server_error" } };
+      }
+      if ((count ?? 0) <= 1) {
+        return { status: 400, body: { error: "cannot_delete_last_admin" } };
+      }
+    }
+
+    const { error: delErr } = await admin.auth.admin.deleteUser(targetId);
+    if (delErr) {
+      return { status: 400, body: { error: "delete_failed", message: delErr.message } };
+    }
+
+    return { status: 200, body: { ok: true } };
+  }
+
+  if (action === "set_user_password") {
+    const pw = typeof body.new_password === "string" ? body.new_password : "";
+    if (pw.length < 6) {
+      return { status: 400, body: { error: "weak_password" } };
+    }
+
+    const { error: updErr } = await admin.auth.admin.updateUserById(targetId, { password: pw });
+    if (updErr) {
+      return { status: 400, body: { error: "update_failed", message: updErr.message } };
+    }
+
+    return { status: 200, body: { ok: true } };
+  }
+
+  return { status: 400, body: { error: "unknown_action" } };
+}
+
+/** Lê credenciais do process.env (ficheiro .env na raiz). */
+export function adminConfigFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): AdminConfig | { error: string } {
+  const supabaseUrl =
+    env.VITE_SUPABASE_URL?.trim() || env.SUPABASE_URL?.trim() || "";
+  const anonKey =
+    env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ||
+    env.SUPABASE_ANON_KEY?.trim() ||
+    env.SUPABASE_PUBLISHABLE_KEY?.trim() ||
+    "";
+  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY?.trim() || "";
+
+  if (!supabaseUrl || !anonKey || !serviceRole) {
+    return {
+      error:
+        "Defina SUPABASE_SERVICE_ROLE_KEY no ficheiro .env (e confirme VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY do projeto ffvgrvrkuiypjzfdcfyw).",
+    };
+  }
+
+  return { supabaseUrl, anonKey, serviceRole };
+}

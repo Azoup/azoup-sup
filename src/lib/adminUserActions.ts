@@ -193,36 +193,14 @@ async function invokeRpcAdmin(body: AdminUserActionBody): Promise<AdminUserActio
   return null;
 }
 
-async function invokeDigisacAdmin(
-  token: string,
-  body: AdminUserActionBody,
-): Promise<AdminUserActionResult> {
-  const digisac = await invokeEdgeFunction('digisac-dashboard', token, body);
-  if (digisac) {
-    return digisac;
-  }
-
-  return {
-    ok: false,
-    code: 'server_misconfigured',
-    message:
-      'Configure SUPABASE_SERVICE_ROLE_KEY na Vercel ou publique a função admin-users no Supabase (ffvgrvrkuiypjzfdcfyw).',
-  };
-}
-
 /**
- * 1) API Vercel (/api/admin-user-action) — preferida após SUPABASE_SERVICE_ROLE_KEY na Vercel.
- * 2) Edge digisac-dashboard — fallback no mesmo projeto Supabase.
+ * 1) Edge admin-users / RPC / digisac-dashboard (produção — sem chave no browser)
+ * 2) Em desenvolvimento: /api/admin-user-action lê SUPABASE_SERVICE_ROLE_KEY do .env
  */
 export async function runAdminUserAction(body: AdminUserActionBody): Promise<AdminUserActionResult> {
   const token = await getAccessToken();
   if (!token) {
     return { ok: false, code: 'unauthorized' };
-  }
-
-  const viaApi = await invokeVercelApi(token, body);
-  if (viaApi) {
-    return viaApi;
   }
 
   const viaAdminUsers = await invokeEdgeFunction('admin-users', token, body);
@@ -235,7 +213,17 @@ export async function runAdminUserAction(body: AdminUserActionBody): Promise<Adm
     return viaRpc;
   }
 
-  return invokeDigisacAdmin(token, body);
+  const viaDigisac = await invokeEdgeFunction('digisac-dashboard', token, body);
+  if (viaDigisac) {
+    return viaDigisac;
+  }
+
+  const viaApi = await invokeVercelApi(token, body);
+  if (viaApi) {
+    return viaApi;
+  }
+
+  return { ok: false, code: 'server_misconfigured' };
 }
 
 export function formatAdminActionErrorMessage(
@@ -244,9 +232,9 @@ export function formatAdminActionErrorMessage(
 ): string {
   if (code === 'server_misconfigured') {
     return (
-      'Falta configurar o backend de administração. Na Vercel (azoup-sup) → Settings → Environment Variables, ' +
-      'adicione SUPABASE_SERVICE_ROLE_KEY com a chave service_role do projeto ffvgrvrkuiypjzfdcfyw ' +
-      '(Supabase → Project Settings → API) e faça Redeploy. Alternativa: criar a Edge Function admin-users no mesmo projeto Supabase.'
+      'Backend de administração indisponível. Em desenvolvimento: adicione SUPABASE_SERVICE_ROLE_KEY ao ficheiro .env ' +
+      '(chave service_role do projeto ffvgrvrkuiypjzfdcfyw). Em produção: execute supabase/scripts/APLICAR_EM_ffvgrvrkuiypjzfdcfyw.sql ' +
+      'ou publique a Edge Function admin-users no Supabase (COLE_NO_PAINEL_index.ts).'
     );
   }
 
