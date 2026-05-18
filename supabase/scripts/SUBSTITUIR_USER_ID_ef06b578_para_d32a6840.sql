@@ -88,24 +88,33 @@ BEGIN
     END IF;
   END LOOP;
 
-  -- storage.objects
+  -- storage.objects (owner / owner_id podem ser uuid ou text)
   IF to_regclass('storage.objects') IS NOT NULL THEN
-    IF EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_schema = 'storage' AND table_name = 'objects' AND column_name = 'owner'
-    ) THEN
-      EXECUTE 'UPDATE storage.objects SET owner = $1 WHERE owner = $2' USING new_id, old_id;
+    FOR r IN
+      SELECT column_name, udt_name
+      FROM information_schema.columns
+      WHERE table_schema = 'storage'
+        AND table_name = 'objects'
+        AND column_name IN ('owner', 'owner_id')
+    LOOP
+      IF r.udt_name = 'uuid' THEN
+        sql := format(
+          'UPDATE storage.objects SET %I = $1::uuid WHERE %I = $2::uuid',
+          r.column_name, r.column_name
+        );
+        EXECUTE sql USING new_id, old_id;
+      ELSE
+        sql := format(
+          'UPDATE storage.objects SET %I = $1::text WHERE %I = $2::text',
+          r.column_name, r.column_name
+        );
+        EXECUTE sql USING new_id::text, old_id::text;
+      END IF;
       GET DIAGNOSTICS n = ROW_COUNT;
-      IF n > 0 THEN RAISE NOTICE 'storage.objects.owner: % linha(s)', n; END IF;
-    END IF;
-    IF EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_schema = 'storage' AND table_name = 'objects' AND column_name = 'owner_id'
-    ) THEN
-      EXECUTE 'UPDATE storage.objects SET owner_id = $1 WHERE owner_id = $2' USING new_id, old_id;
-      GET DIAGNOSTICS n = ROW_COUNT;
-      IF n > 0 THEN RAISE NOTICE 'storage.objects.owner_id: % linha(s)', n; END IF;
-    END IF;
+      IF n > 0 THEN
+        RAISE NOTICE 'storage.objects.% (%): % linha(s)', r.column_name, r.udt_name, n;
+      END IF;
+    END LOOP;
   END IF;
 
   -- auth (só tabelas que existem)
@@ -160,20 +169,34 @@ BEGIN
     RAISE NOTICE 'auth.users: %', cnt;
   END IF;
   FOR r IN
-    SELECT c.table_schema, c.table_name, c.column_name
+    SELECT c.table_schema, c.table_name, c.column_name, c.udt_name
     FROM information_schema.columns c
-    WHERE c.table_schema IN ('public', 'auth')
-      AND c.udt_name = 'uuid'
-      AND c.column_name IN (
-        'user_id', 'created_by', 'uploaded_by', 'actor_id', 'recipient_id', 'owner_id', 'id'
+    WHERE c.table_schema IN ('public', 'auth', 'storage')
+      AND c.udt_name IN ('uuid', 'text')
+      AND (
+        (c.table_schema = 'storage' AND c.table_name = 'objects' AND c.column_name IN ('owner', 'owner_id'))
+        OR (
+          c.table_schema IN ('public', 'auth')
+          AND c.column_name IN (
+            'user_id', 'created_by', 'uploaded_by', 'actor_id', 'recipient_id', 'owner_id', 'id'
+          )
+        )
       )
       AND to_regclass(format('%I.%I', c.table_schema, c.table_name)) IS NOT NULL
   LOOP
-    sql := format(
-      'SELECT count(*) FROM %I.%I WHERE %I = $1',
-      r.table_schema, r.table_name, r.column_name
-    );
-    EXECUTE sql INTO cnt USING old_id;
+    IF r.udt_name = 'uuid' THEN
+      sql := format(
+        'SELECT count(*) FROM %I.%I WHERE %I = $1::uuid',
+        r.table_schema, r.table_name, r.column_name
+      );
+      EXECUTE sql INTO cnt USING old_id;
+    ELSE
+      sql := format(
+        'SELECT count(*) FROM %I.%I WHERE %I = $1::text',
+        r.table_schema, r.table_name, r.column_name
+      );
+      EXECUTE sql INTO cnt USING old_id::text;
+    END IF;
     IF cnt > 0 THEN
       RAISE NOTICE '%.%: % restante(s)', r.table_schema, r.table_name || '.' || r.column_name, cnt;
     END IF;
