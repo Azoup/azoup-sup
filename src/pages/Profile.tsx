@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { FunctionsFetchError, FunctionsHttpError, type PostgrestError } from '@supabase/supabase-js';
+import {
+  ADMIN_ACTION_ERROR_MESSAGES,
+  runAdminUserAction,
+  type AdminUserActionBody,
+} from '@/lib/adminUserActions';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
@@ -25,11 +29,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import {
-  formatSupabaseProjectMismatchMessage,
-  projectRefFromAccessToken,
-  projectRefFromSupabaseUrl,
-} from '@/lib/supabaseProject';
 
 const PERMISSION_SCREENS = [
   { screen: 'kanban', label: 'Kanban Pendências' },
@@ -95,111 +94,11 @@ const Profile = () => {
   const [adminNewPwd2, setAdminNewPwd2] = useState('');
   const [resetPwdLoading, setResetPwdLoading] = useState(false);
 
-  const toastAdminActionError = (payload: unknown) => {
-    const err = typeof payload === 'object' && payload !== null && 'error' in payload
-      ? (payload as { error?: string; message?: string }).error
-      : undefined;
-    const msg = typeof payload === 'object' && payload !== null && 'message' in payload
-      ? String((payload as { message?: string }).message || '')
-      : '';
-    const map: Record<string, string> = {
-      cannot_delete_self: 'Não é possível excluir a própria conta.',
-      cannot_delete_last_admin: 'Não é possível excluir o último administrador.',
-      delete_failed: msg ? `Falha ao excluir: ${msg}` : 'Não foi possível excluir o cadastro.',
-      weak_password: 'A nova senha deve ter pelo menos 6 caracteres.',
-      update_failed: msg ? `Falha ao definir senha: ${msg}` : 'Não foi possível definir a senha.',
-      forbidden: 'Sem permissão.',
-      unauthorized: 'Sessão inválida. Faça login novamente.',
-      missing_target_user_id: 'Dados inválidos.',
-      rpc_not_deployed: 'Recurso de administração não configurado na base de dados. Contacte o suporte técnico.',
-      user_not_found: 'Utilizador não encontrado.',
-      server_error: 'Não foi possível concluir a operação. Tente novamente.',
-    };
-    toast.error(err && map[err] ? map[err] : 'Não foi possível concluir a operação.');
-  };
-
-  const mapRpcAdminErrorKey = (message: string): string => {
-    const key = message.trim();
-    const known = [
-      'unauthorized', 'forbidden', 'weak_password', 'cannot_delete_self',
-      'cannot_delete_last_admin', 'user_not_found', 'delete_failed', 'update_failed',
-    ];
-    if (known.includes(key)) return key;
-    if (key.includes('Could not find the function')) return 'rpc_not_deployed';
-    return 'server_error';
-  };
-
-  const formatAdminActionError = (error: unknown): string => {
-    if (error instanceof FunctionsFetchError) {
-      return 'Não foi possível contactar o servidor. Verifique a ligação e tente novamente.';
-    }
-    if (error instanceof FunctionsHttpError) {
-      return 'O servidor devolveu um erro. Tente novamente.';
-    }
-    const pg = error as PostgrestError;
-    if (pg?.message) {
-      const key = mapRpcAdminErrorKey(pg.message);
-      if (key === 'rpc_not_deployed') {
-        return 'Função de administração ainda não está ativa na base de dados. Aplique a migration mais recente no Supabase (SQL Editor) ou contacte o suporte.';
-      }
-    }
-    return error instanceof Error ? error.message : 'Erro desconhecido.';
-  };
-
-  const resolveSessionAccessToken = async (): Promise<string | null> => {
-    let { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) {
-      const { data: ref } = await supabase.auth.refreshSession();
-      session = ref.session ?? null;
-    }
-    return session?.access_token ?? null;
-  };
-
-  const invokeAdminUserActions = async (
-    body: Record<string, unknown>,
-  ): Promise<{ data: unknown; error: PostgrestError | FunctionsFetchError | FunctionsHttpError | null } | null> => {
-    const token = await resolveSessionAccessToken();
-    if (!token) {
-      toast.error('Sessão expirada. Faça login novamente.');
-      return null;
-    }
-    const urlRef = projectRefFromSupabaseUrl(import.meta.env.VITE_SUPABASE_URL as string | undefined);
-    const tokenRef = projectRefFromAccessToken(token);
-    if (urlRef && tokenRef && urlRef !== tokenRef) {
-      toast.error(formatSupabaseProjectMismatchMessage(urlRef, tokenRef));
-      return null;
-    }
-
-    const action = typeof body.action === 'string' ? body.action : '';
-    const targetUserId = typeof body.target_user_id === 'string' ? body.target_user_id : '';
-
-    if (action === 'delete_user') {
-      const { data, error } = await supabase.rpc('admin_delete_auth_user', {
-        target_user_id: targetUserId,
-      });
-      if (!error) return { data, error: null };
-      if (mapRpcAdminErrorKey(error.message) !== 'rpc_not_deployed') {
-        return { data: { error: mapRpcAdminErrorKey(error.message) }, error: null };
-      }
-    } else if (action === 'set_user_password') {
-      const { data, error } = await supabase.rpc('admin_set_user_password', {
-        target_user_id: targetUserId,
-        new_password: typeof body.new_password === 'string' ? body.new_password : '',
-      });
-      if (!error) return { data, error: null };
-      if (mapRpcAdminErrorKey(error.message) !== 'rpc_not_deployed') {
-        return { data: { error: mapRpcAdminErrorKey(error.message) }, error: null };
-      }
-    } else {
-      return { data: { error: 'unknown_action' }, error: null };
-    }
-
-    // Fallback: Edge Function no projeto (após deploy de digisac-dashboard com ações admin).
-    const fn = await supabase.functions.invoke('digisac-dashboard', {
-      body,
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    return { data: fn.data, error: fn.error };
+  const handleAdminActionResult = (result: Awaited<ReturnType<typeof runAdminUserAction>>) => {
+    if (result.ok) return true;
+    const msg = ADMIN_ACTION_ERROR_MESSAGES[result.code] ?? 'Não foi possível concluir a operação.';
+    toast.error(msg);
+    return false;
   };
 
   const { data: profile } = useQuery({
@@ -348,21 +247,12 @@ const Profile = () => {
   const confirmAdminDeleteUser = async () => {
     if (!deleteTarget) return;
     setDeleteLoading(true);
-    const res = await invokeAdminUserActions({
+    const result = await runAdminUserAction({
       action: 'delete_user',
       target_user_id: deleteTarget.id,
-    });
+    } satisfies AdminUserActionBody);
     setDeleteLoading(false);
-    if (!res) return;
-    const { data, error } = res;
-    if (error) {
-      toast.error(formatAdminActionError(error));
-      return;
-    }
-    if (data && typeof data === 'object' && 'error' in data && (data as { error?: unknown }).error) {
-      toastAdminActionError(data);
-      return;
-    }
+    if (!handleAdminActionResult(result)) return;
     setDeleteTarget(null);
     toast.success('Cadastro do usuário removido.');
     queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
@@ -380,22 +270,13 @@ const Profile = () => {
       return;
     }
     setResetPwdLoading(true);
-    const res = await invokeAdminUserActions({
+    const result = await runAdminUserAction({
       action: 'set_user_password',
       target_user_id: resetTarget.id,
       new_password: adminNewPwd,
-    });
+    } satisfies AdminUserActionBody);
     setResetPwdLoading(false);
-    if (!res) return;
-    const { data, error } = res;
-    if (error) {
-      toast.error(formatAdminActionError(error));
-      return;
-    }
-    if (data && typeof data === 'object' && 'error' in data && (data as { error?: unknown }).error) {
-      toastAdminActionError(data);
-      return;
-    }
+    if (!handleAdminActionResult(result)) return;
     toast.success('Nova senha definida. Informe o usuário com segurança.');
     setResetTarget(null);
     setAdminNewPwd('');
