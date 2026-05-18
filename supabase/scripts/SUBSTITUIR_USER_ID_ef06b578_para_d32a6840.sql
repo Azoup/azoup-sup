@@ -55,15 +55,28 @@ BEGIN
     RAISE NOTICE 'user_permissions: % linha(s)', n;
   END IF;
 
-  -- profiles (sempre uuid)
+  -- profiles: fundir nome/foto (não apagar dados do perfil antigo)
   IF to_regclass('public.profiles') IS NOT NULL THEN
-    IF EXISTS (SELECT 1 FROM public.profiles WHERE id = new_id) THEN
+    INSERT INTO public.profiles (id, display_name, photo_url)
+    SELECT new_id, p.display_name, p.photo_url
+    FROM public.profiles p
+    WHERE p.id = old_id
+    ON CONFLICT (id) DO UPDATE SET
+      display_name = COALESCE(NULLIF(EXCLUDED.display_name, ''), public.profiles.display_name),
+      photo_url = COALESCE(EXCLUDED.photo_url, public.profiles.photo_url),
+      updated_at = now();
+
+    IF EXISTS (SELECT 1 FROM public.profiles WHERE id = old_id) THEN
+      UPDATE public.profiles new_p
+      SET
+        display_name = COALESCE(NULLIF(new_p.display_name, ''), old_p.display_name),
+        photo_url = COALESCE(new_p.photo_url, old_p.photo_url),
+        updated_at = now()
+      FROM public.profiles old_p
+      WHERE new_p.id = new_id AND old_p.id = old_id;
+
       DELETE FROM public.profiles WHERE id = old_id;
-      RAISE NOTICE 'profiles: perfil antigo removido (novo já existe)';
-    ELSE
-      UPDATE public.profiles SET id = new_id WHERE id = old_id;
-      GET DIAGNOSTICS n = ROW_COUNT;
-      RAISE NOTICE 'profiles: % linha(s) atualizada(s)', n;
+      RAISE NOTICE 'profiles: fundido para o ID novo';
     END IF;
   END IF;
 
