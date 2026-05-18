@@ -1,6 +1,12 @@
 import "https://deno.land/x/xhr@0.3.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 import { corsHeaders } from "../_shared/cors.ts";
+import {
+  ADMIN_USER_ACTIONS,
+  assertCallerIsAdmin,
+  normalizeAdminBody,
+  runAdminUserAction,
+} from "../_shared/adminUserActions.ts";
 
 interface CacheItem { data: any; timestamp: number; }
 const cache: Record<string, CacheItem> = {};
@@ -507,6 +513,7 @@ Deno.serve(async (req) => {
     const isTestRoute = req.method === "GET" && url.pathname.replace(/\/+$/, "").endsWith("/test-digisac");
 
     let payload: Record<string, unknown> = {};
+    let rawBody: Record<string, unknown> = {};
     if (isTestRoute) {
       action = "test_digisac";
     } else if (req.method === "GET") {
@@ -518,6 +525,7 @@ Deno.serve(async (req) => {
     } else {
       try {
         const body = await req.json();
+        rawBody = body && typeof body === "object" ? body : {};
         action = body?.action;
         payload = body?.payload && typeof body.payload === "object" ? body.payload : {};
       } catch {
@@ -544,8 +552,25 @@ Deno.serve(async (req) => {
         return handledErrorResponse(action, "Usuário não autenticado.", { code: "UNAUTHORIZED" });
       }
 
-      // Permission check (digisac_dashboard) — admins always allowed
       const userId = user.id;
+
+      // Ações de administração de utilizadores (mesmo projeto que o app — evita função inexistente).
+      if (ADMIN_USER_ACTIONS.has(action ?? "")) {
+        const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim() ?? "";
+        const anonKey =
+          Deno.env.get("SUPABASE_ANON_KEY")?.trim() ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY")?.trim() ?? "";
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim() ?? "";
+        if (!supabaseUrl || !anonKey || !serviceRole) {
+          return jsonResponse({ error: "server_misconfigured" }, 500);
+        }
+        const gate = await assertCallerIsAdmin(authHeader, supabaseUrl, anonKey, serviceRole);
+        if (!gate.ok) return jsonResponse(gate.body, gate.status);
+        const adminBody = normalizeAdminBody(action, payload, rawBody);
+        const result = await runAdminUserAction(gate, adminBody);
+        return jsonResponse(result.body, result.status);
+      }
+
+      // Permission check (digisac_dashboard) — admins always allowed
       const protectedActions = new Set(["geral", "analistas", "listar_departments", "listar_digisac_users", "listar_analysts"]);
       if (protectedActions.has(action ?? "")) {
         const adminClient = createClient(
