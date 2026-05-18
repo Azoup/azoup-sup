@@ -1,6 +1,4 @@
 import { supabase } from '@/integrations/supabase/client';
-import { FunctionsFetchError, FunctionsHttpError, type PostgrestError } from '@supabase/supabase-js';
-import { getConfiguredSupabaseProjectRef } from '@/lib/supabaseProject';
 
 export type AdminUserActionBody =
   | { action: 'delete_user'; target_user_id: string }
@@ -16,11 +14,10 @@ export type AdminUserActionErrorCode =
   | 'delete_failed'
   | 'update_failed'
   | 'unknown_action'
-  | 'rpc_not_deployed'
-  | 'edge_not_deployed'
+  | 'server_misconfigured'
   | 'server_error';
 
-const KNOWN_CODES: AdminUserActionErrorCode[] = [
+const KNOWN_CODES = new Set<AdminUserActionErrorCode>([
   'unauthorized',
   'forbidden',
   'weak_password',
@@ -29,46 +26,13 @@ const KNOWN_CODES: AdminUserActionErrorCode[] = [
   'user_not_found',
   'delete_failed',
   'update_failed',
-];
+  'unknown_action',
+  'server_misconfigured',
+]);
 
-const EXPECTED_PROJECT_REF = 'ffvgrvrkuiypjzfdcfyw';
-
-function isRpcMissing(error: PostgrestError): boolean {
-  return error.code === 'PGRST202';
-}
-
-function extractKnownCode(text: string): AdminUserActionErrorCode | null {
-  const lower = text.toLowerCase();
-  for (const code of KNOWN_CODES) {
-    if (lower.includes(code)) return code;
-  }
-  return null;
-}
-
-function mapPostgrestToCode(error: PostgrestError): AdminUserActionErrorCode {
-  if (isRpcMissing(error)) return 'rpc_not_deployed';
-  const parts = [error.message, error.details, error.hint].filter(Boolean).join(' ');
-  return extractKnownCode(parts) ?? 'server_error';
-}
-
-function parseEdgePayload(data: unknown): AdminUserActionResult | null {
-  if (!data || typeof data !== 'object') return null;
-  const row = data as Record<string, unknown>;
-  if (row.ok === true) return { ok: true };
-  if (typeof row.error === 'string') {
-    const code = extractKnownCode(row.error);
-    if (code) return { ok: false, code, message: row.error };
-    return { ok: false, code: 'server_error', message: row.error };
-  }
-  if (row.error === true && typeof row.message === 'string') {
-    if (row.code === 'UNAUTHORIZED') return { ok: false, code: 'unauthorized', message: row.message };
-    if (row.code === 'FORBIDDEN') return { ok: false, code: 'forbidden', message: row.message };
-    const known = extractKnownCode(row.message);
-    if (known) return { ok: false, code: known, message: row.message };
-    return { ok: false, code: 'server_error', message: row.message };
-  }
-  return null;
-}
+export type AdminUserActionResult =
+  | { ok: true }
+  | { ok: false; code: AdminUserActionErrorCode; message?: string };
 
 async function getAccessToken(): Promise<string | null> {
   let { data: { session } } = await supabase.auth.getSession();
@@ -79,98 +43,73 @@ async function getAccessToken(): Promise<string | null> {
   return session?.access_token ?? null;
 }
 
-function rpcPayload(body: AdminUserActionBody): Record<string, string> {
-  if (body.action === 'delete_user') {
-    return { target_user_id: body.target_user_id };
-  }
-  return { target_user_id: body.target_user_id, new_password: body.new_password };
-}
+function mapResponseToResult(status: number, payload: unknown): AdminUserActionResult {
+  const row =
+    payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
 
-async function invokeAdminViaJsonRpc(body: AdminUserActionBody): Promise<AdminUserActionResult> {
-  const rpcName = body.action === 'delete_user' ? 'rpc_admin_delete_user' : 'rpc_admin_set_password';
-  const { data, error } = await supabase.rpc(rpcName, { params: rpcPayload(body) });
-  if (error) {
-    return { ok: false, code: mapPostgrestToCode(error), message: error.message };
-  }
-  if (data && typeof data === 'object' && (data as { ok?: boolean }).ok === true) {
+  if (status >= 200 && status < 300 && row.ok === true) {
     return { ok: true };
   }
-  return { ok: true };
+
+  const errKey = typeof row.error === 'string' ? row.error.trim() : '';
+  if (KNOWN_CODES.has(errKey as AdminUserActionErrorCode)) {
+    return {
+      ok: false,
+      code: errKey as AdminUserActionErrorCode,
+      message: typeof row.message === 'string' ? row.message : undefined,
+    };
+  }
+
+  if (status === 401) return { ok: false, code: 'unauthorized' };
+  if (status === 403) return { ok: false, code: 'forbidden' };
+  if (status === 500 && errKey === 'server_misconfigured') {
+    return { ok: false, code: 'server_misconfigured', message: String(row.message ?? '') };
+  }
+
+  return {
+    ok: false,
+    code: 'server_error',
+    message: typeof row.message === 'string' ? row.message : `HTTP ${status}`,
+  };
 }
 
-async function invokeAdminViaEdge(
-  functionName: 'admin-users' | 'digisac-dashboard',
-  body: AdminUserActionBody,
-): Promise<AdminUserActionResult> {
+/**
+ * Ações de admin via API na Vercel (service role no servidor).
+ * Não depende de Edge Function nem RPC no Supabase.
+ */
+export async function runAdminUserAction(body: AdminUserActionBody): Promise<AdminUserActionResult> {
   const token = await getAccessToken();
   if (!token) {
     return { ok: false, code: 'unauthorized' };
   }
 
-  const { data, error } = await supabase.functions.invoke(functionName, {
-    body,
-    headers: { Authorization: `Bearer ${token}` },
+  const response = await fetch('/api/admin-user-action', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
   });
 
-  if (error) {
-    if (error instanceof FunctionsFetchError) {
-      if (functionName === 'admin-users') {
-        return { ok: false, code: 'edge_not_deployed', message: error.message };
-      }
-      return { ok: false, code: 'server_error', message: error.message };
-    }
-    return { ok: false, code: 'server_error', message: error.message };
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
   }
 
-  const parsed = parseEdgePayload(data);
-  if (parsed) return parsed;
-
-  return { ok: false, code: 'server_error', message: 'Resposta inesperada do servidor.' };
-}
-
-export type AdminUserActionResult =
-  | { ok: true }
-  | { ok: false; code: AdminUserActionErrorCode; message?: string };
-
-export async function runAdminUserAction(body: AdminUserActionBody): Promise<AdminUserActionResult> {
-  // 1) Edge Function dedicada (recomendado após deploy no painel Supabase)
-  const edgeAdmin = await invokeAdminViaEdge('admin-users', body);
-  if (edgeAdmin.ok) return edgeAdmin;
-  if (edgeAdmin.code !== 'edge_not_deployed') return edgeAdmin;
-
-  // 2) RPC jsonb (execute APLICAR_EM_ffvgrvrkuiypjzfdcfyw.sql)
-  const rpcResult = await invokeAdminViaJsonRpc(body);
-  if (rpcResult.ok || rpcResult.code !== 'rpc_not_deployed') {
-    return rpcResult;
-  }
-
-  // 3) Edge digisac-dashboard (se tiver versão com ações admin)
-  const edgeDigisac = await invokeAdminViaEdge('digisac-dashboard', body);
-  if (edgeDigisac.ok) return edgeDigisac;
-
-  return rpcResult;
+  return mapResponseToResult(response.status, payload);
 }
 
 export function formatAdminActionErrorMessage(
   code: AdminUserActionErrorCode,
   detail?: string,
 ): string {
-  const projectRef = getConfiguredSupabaseProjectRef() ?? EXPECTED_PROJECT_REF;
-
-  if (code === 'rpc_not_deployed') {
+  if (code === 'server_misconfigured') {
     return (
-      `A API ainda não expõe as funções no projeto ${projectRef}. ` +
-      `Execute de novo (query nova, só isto) no SQL Editor: NOTIFY pgrst, 'reload schema'; ` +
-      `e confirme que rodou o script atualizado supabase/scripts/APLICAR_EM_ffvgrvrkuiypjzfdcfyw.sql ` +
-      `(funções rpc_admin_set_password e rpc_admin_delete_user).`
-    );
-  }
-
-  if (code === 'edge_not_deployed') {
-    return (
-      `Publique a Edge Function "admin-users" no Supabase (projeto ${projectRef}): ` +
-      `Edge Functions → Create → nome admin-users → cole o código de supabase/functions/admin-users/index.ts → Deploy. ` +
-      `Enquanto isso, execute o SQL atualizado acima.`
+      'Servidor sem SUPABASE_SERVICE_ROLE_KEY. Na Vercel → Settings → Environment Variables, ' +
+      'adicione SUPABASE_SERVICE_ROLE_KEY (chave service_role do projeto ffvgrvrkuiypjzfdcfyw) e faça redeploy.'
     );
   }
 
@@ -184,14 +123,13 @@ export function formatAdminActionErrorMessage(
     delete_failed: 'Não foi possível excluir o cadastro.',
     update_failed: 'Não foi possível definir a senha.',
     unknown_action: 'Operação inválida.',
-    rpc_not_deployed: '',
-    edge_not_deployed: '',
+    server_misconfigured: '',
     server_error: 'Não foi possível concluir a operação.',
   };
 
   const msg = base[code] ?? base.server_error;
   if ((code === 'server_error' || code === 'delete_failed' || code === 'update_failed') && detail?.trim()) {
-    const short = detail.length > 160 ? `${detail.slice(0, 160)}…` : detail;
+    const short = detail.length > 140 ? `${detail.slice(0, 140)}…` : detail;
     return `${msg} (${short})`;
   }
   return msg;
