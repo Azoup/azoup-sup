@@ -1,17 +1,15 @@
 -- =============================================================================
--- ATENÇÃO: Este script era para o projeto ffvgrvrkuiypjzfdcfyw.
--- O app usa ittmglvkympbyeowgucl — use: APLICAR_EM_ittmglvkympbyeowgucl.sql
+-- PROJETO: ittmglvkympbyeowgucl
+-- https://supabase.com/dashboard/project/ittmglvkympbyeowgucl/sql/new
 -- =============================================================================
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- Remove versões antigas (parâmetros uuid+text que a API REST pode não expor)
 DROP FUNCTION IF EXISTS public.admin_set_user_password(uuid, text);
 DROP FUNCTION IF EXISTS public.admin_delete_auth_user(uuid);
 DROP FUNCTION IF EXISTS public.rpc_admin_set_password(jsonb);
 DROP FUNCTION IF EXISTS public.rpc_admin_delete_user(jsonb);
 
--- Versão compatível com PostgREST: um único parâmetro jsonb "params"
 CREATE OR REPLACE FUNCTION public.rpc_admin_set_password(params jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -102,9 +100,3 @@ GRANT EXECUTE ON FUNCTION public.rpc_admin_set_password(jsonb) TO anon, authenti
 GRANT EXECUTE ON FUNCTION public.rpc_admin_delete_user(jsonb) TO anon, authenticated, service_role;
 
 NOTIFY pgrst, 'reload schema';
-
--- Verificação (aba Results): deve listar 2 linhas
--- SELECT proname FROM pg_proc p
--- JOIN pg_namespace n ON n.oid = p.pronamespace
--- WHERE n.nspname = 'public'
---   AND proname IN ('rpc_admin_set_password', 'rpc_admin_delete_user');

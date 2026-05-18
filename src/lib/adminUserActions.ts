@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { getConfiguredSupabaseProjectRef } from '@/lib/supabaseProject';
 
 export type AdminUserActionBody =
   | { action: 'delete_user'; target_user_id: string }
@@ -33,6 +34,11 @@ const KNOWN_CODES = new Set<AdminUserActionErrorCode>([
 export type AdminUserActionResult =
   | { ok: true }
   | { ok: false; code: AdminUserActionErrorCode; message?: string };
+
+function projectDashboardUrl(path = ''): string {
+  const ref = getConfiguredSupabaseProjectRef() ?? 'ittmglvkympbyeowgucl';
+  return `https://supabase.com/dashboard/project/${ref}${path}`;
+}
 
 async function getAccessToken(): Promise<string | null> {
   let { data: { session } } = await supabase.auth.getSession();
@@ -69,12 +75,12 @@ function mapPayload(payload: unknown): AdminUserActionResult | null {
   return null;
 }
 
-/** Edge digisac-dashboard — única função publicada no projeto (nunca chama admin-users). */
-async function invokeDigisacAdmin(
+async function invokeEdgeFunction(
+  functionName: string,
   token: string,
   body: AdminUserActionBody,
 ): Promise<AdminUserActionResult | null> {
-  const { data, error } = await supabase.functions.invoke('digisac-dashboard', {
+  const { data, error } = await supabase.functions.invoke(functionName, {
     body: {
       action: body.action,
       target_user_id: body.target_user_id,
@@ -85,8 +91,8 @@ async function invokeDigisacAdmin(
 
   if (error) {
     const msg = error.message ?? '';
-    if (/failed to fetch|network|CORS/i.test(msg)) {
-      return { ok: false, code: 'server_error', message: msg };
+    if (/not found|404|failed to fetch|non-2xx|function not found/i.test(msg)) {
+      return null;
     }
     if (/jwt|unauthorized|401/i.test(msg)) {
       return { ok: false, code: 'unauthorized' };
@@ -153,8 +159,9 @@ async function invokeLocalOrVercelApi(
 }
 
 /**
- * 1) digisac-dashboard (Edge no Supabase, service_role automático)
- * 2) /api/admin-user-action (requer SUPABASE_SERVICE_ROLE_KEY no .env ou na Vercel)
+ * 1) Edge admin-users (projeto ittmglvk)
+ * 2) digisac-dashboard
+ * 3) /api/admin-user-action (.env / Vercel)
  */
 export async function runAdminUserAction(body: AdminUserActionBody): Promise<AdminUserActionResult> {
   const token = await getAccessToken();
@@ -162,7 +169,12 @@ export async function runAdminUserAction(body: AdminUserActionBody): Promise<Adm
     return { ok: false, code: 'unauthorized' };
   }
 
-  const viaDigisac = await invokeDigisacAdmin(token, body);
+  const viaAdminUsers = await invokeEdgeFunction('admin-users', token, body);
+  if (viaAdminUsers) {
+    return viaAdminUsers;
+  }
+
+  const viaDigisac = await invokeEdgeFunction('digisac-dashboard', token, body);
   if (viaDigisac?.ok) {
     return viaDigisac;
   }
@@ -192,31 +204,29 @@ export function formatAdminActionErrorMessage(
   code: AdminUserActionErrorCode,
   detail?: string,
 ): string {
+  const ref = getConfiguredSupabaseProjectRef() ?? 'ittmglvkympbyeowgucl';
+  const url = import.meta.env.VITE_SUPABASE_URL ?? `https://${ref}.supabase.co`;
+
   if (code === 'server_misconfigured') {
     if (detail === 'digisac_sem_admin' || detail?.includes('digisac_sem_admin')) {
       return (
-        'Atualize a Edge Function no Supabase: crie admin-users em ' +
-        'https://supabase.com/dashboard/project/ffvgrvrkuiypjzfdcfyw/functions ' +
-        '(Deploy new function → nome admin-users → cole COLE_NO_PAINEL_index.ts → Deploy).'
+        `Atualize a Edge Function admin-users em ${projectDashboardUrl('/functions')} ` +
+        '(confirme que o código é o de COLE_NO_PAINEL_index.ts) e faça Deploy.'
       );
     }
-    if (detail?.includes('ittmglvk') || detail?.includes('ffvgrvrk')) {
-      return detail;
-    }
-    if (detail?.includes('SUPABASE_SERVICE_ROLE_KEY')) {
+    if (detail?.includes('SUPABASE_SERVICE_ROLE_KEY') || detail?.includes('projeto')) {
       return detail;
     }
     const isProd =
       typeof window !== 'undefined' && !/localhost|127\.0\.0\.1/.test(window.location.hostname);
     if (isProd) {
       return (
-        'Configure SUPABASE_SERVICE_ROLE_KEY na Vercel (mesmo valor do .env, projeto ffvgrvrkuiypjzfdcfyw) ' +
-        'e faça Redeploy — ou publique a Edge Function admin-users no Supabase.'
+        `Configure na Vercel as variáveis do projeto ${ref}: VITE_SUPABASE_URL, ` +
+        'VITE_SUPABASE_PUBLISHABLE_KEY e SUPABASE_SERVICE_ROLE_KEY (mesmos valores do .env). Depois Redeploy.'
       );
     }
     return (
-      'No .env: VITE_SUPABASE_URL=https://ffvgrvrkuiypjzfdcfyw.supabase.co e ' +
-      'SUPABASE_SERVICE_ROLE_KEY com a service_role desse mesmo projeto (não ittmglvk). Reinicie npm run dev.'
+      `No .env: VITE_SUPABASE_URL=${url} e SUPABASE_SERVICE_ROLE_KEY do mesmo projeto (${ref}). Reinicie npm run dev.`
     );
   }
 

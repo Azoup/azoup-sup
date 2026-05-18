@@ -1,5 +1,5 @@
 -- Gestão de utilizadores por administradores (sem Edge Function).
--- Aplica no mesmo projeto Supabase do VITE_SUPABASE_URL (ffvgrvrkuiypjzfdcfyw).
+-- Aplica no mesmo projeto Supabase do VITE_SUPABASE_URL (ex.: ittmglvkympbyeowgucl).
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
