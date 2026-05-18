@@ -73,9 +73,101 @@ function mapResponseToResult(status: number, payload: unknown): AdminUserActionR
   };
 }
 
+async function invokeVercelApi(
+  token: string,
+  body: AdminUserActionBody,
+): Promise<AdminUserActionResult | null> {
+  try {
+    const response = await fetch('/api/admin-user-action', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.includes('application/json')) {
+      return null;
+    }
+
+    let payload: unknown = null;
+    try {
+      payload = await response.json();
+    } catch {
+      return null;
+    }
+
+    const result = mapResponseToResult(response.status, payload);
+    if (!result.ok && result.code === 'server_misconfigured') {
+      return null;
+    }
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+async function invokeDigisacAdmin(
+  token: string,
+  body: AdminUserActionBody,
+): Promise<AdminUserActionResult> {
+  const { data, error } = await supabase.functions.invoke('digisac-dashboard', {
+    body: {
+      action: body.action,
+      target_user_id: body.target_user_id,
+      ...(body.action === 'set_user_password' ? { new_password: body.new_password } : {}),
+    },
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (error) {
+    const msg = error.message ?? '';
+    if (/not found|404|failed to fetch/i.test(msg)) {
+      return { ok: false, code: 'server_error', message: msg };
+    }
+    if (/jwt|unauthorized|401/i.test(msg)) {
+      return { ok: false, code: 'unauthorized' };
+    }
+    if (/forbidden|403/i.test(msg)) {
+      return { ok: false, code: 'forbidden' };
+    }
+    return { ok: false, code: 'server_error', message: msg };
+  }
+
+  const row = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+
+  if (row.ok === true) {
+    return { ok: true };
+  }
+
+  const errKey = typeof row.error === 'string' ? row.error.trim() : '';
+  if (KNOWN_CODES.has(errKey as AdminUserActionErrorCode)) {
+    return {
+      ok: false,
+      code: errKey as AdminUserActionErrorCode,
+      message: typeof row.message === 'string' ? row.message : undefined,
+    };
+  }
+
+  if (row.error === true || row.code === 'CONFIG_MISSING') {
+    return {
+      ok: false,
+      code: 'server_error',
+      message:
+        typeof row.message === 'string'
+          ? row.message
+          : 'Backend Digisac sem suporte a admin. Atualize a Edge Function digisac-dashboard no Supabase.',
+    };
+  }
+
+  return { ok: false, code: 'server_error', message: 'Resposta inesperada do servidor.' };
+}
+
 /**
- * Ações de admin via API na Vercel (service role no servidor).
- * Não depende de Edge Function nem RPC no Supabase.
+ * 1) API Vercel (/api/admin-user-action) — preferida após SUPABASE_SERVICE_ROLE_KEY na Vercel.
+ * 2) Edge digisac-dashboard — fallback no mesmo projeto Supabase.
  */
 export async function runAdminUserAction(body: AdminUserActionBody): Promise<AdminUserActionResult> {
   const token = await getAccessToken();
@@ -83,23 +175,12 @@ export async function runAdminUserAction(body: AdminUserActionBody): Promise<Adm
     return { ok: false, code: 'unauthorized' };
   }
 
-  const response = await fetch('/api/admin-user-action', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  let payload: unknown = null;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
+  const viaApi = await invokeVercelApi(token, body);
+  if (viaApi) {
+    return viaApi;
   }
 
-  return mapResponseToResult(response.status, payload);
+  return invokeDigisacAdmin(token, body);
 }
 
 export function formatAdminActionErrorMessage(
