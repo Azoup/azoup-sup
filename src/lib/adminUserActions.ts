@@ -1,8 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
-
 export type AdminUserActionBody =
   | { action: 'delete_user'; target_user_id: string }
   | { action: 'set_user_password'; target_user_id: string; new_password: string };
@@ -46,11 +43,10 @@ async function getAccessToken(): Promise<string | null> {
   return session?.access_token ?? null;
 }
 
-function mapResponseToResult(status: number, payload: unknown): AdminUserActionResult {
-  const row =
-    payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+function mapPayload(payload: unknown): AdminUserActionResult | null {
+  const row = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
 
-  if (status >= 200 && status < 300 && row.ok === true) {
+  if (row.ok === true) {
     return { ok: true };
   }
 
@@ -63,17 +59,45 @@ function mapResponseToResult(status: number, payload: unknown): AdminUserActionR
     };
   }
 
-  if (status === 401) return { ok: false, code: 'unauthorized' };
-  if (status === 403) return { ok: false, code: 'forbidden' };
-  if (status === 500 && errKey === 'server_misconfigured') {
-    return { ok: false, code: 'server_misconfigured', message: String(row.message ?? '') };
+  if (row.error === true || row.code === 'CONFIG_MISSING') {
+    const msg = typeof row.message === 'string' ? row.message : '';
+    if (/CONFIG_MISSING|configuração do Digisac/i.test(msg)) {
+      return { ok: false, code: 'server_misconfigured', message: 'digisac_sem_admin' };
+    }
   }
 
-  return {
-    ok: false,
-    code: 'server_error',
-    message: typeof row.message === 'string' ? row.message : `HTTP ${status}`,
-  };
+  return null;
+}
+
+/** Edge digisac-dashboard — única função publicada no projeto (nunca chama admin-users). */
+async function invokeDigisacAdmin(
+  token: string,
+  body: AdminUserActionBody,
+): Promise<AdminUserActionResult | null> {
+  const { data, error } = await supabase.functions.invoke('digisac-dashboard', {
+    body: {
+      action: body.action,
+      target_user_id: body.target_user_id,
+      ...(body.action === 'set_user_password' ? { new_password: body.new_password } : {}),
+    },
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (error) {
+    const msg = error.message ?? '';
+    if (/failed to fetch|network|CORS/i.test(msg)) {
+      return { ok: false, code: 'server_error', message: msg };
+    }
+    if (/jwt|unauthorized|401/i.test(msg)) {
+      return { ok: false, code: 'unauthorized' };
+    }
+    if (/forbidden|403/i.test(msg)) {
+      return { ok: false, code: 'forbidden' };
+    }
+    return { ok: false, code: 'server_error', message: msg };
+  }
+
+  return mapPayload(data);
 }
 
 async function invokeLocalOrVercelApi(
@@ -95,127 +119,32 @@ async function invokeLocalOrVercelApi(
       return null;
     }
 
-    let payload: unknown = null;
-    try {
-      payload = await response.json();
-    } catch {
-      return null;
-    }
+    const payload = await response.json();
+    const row = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
 
-    const result = mapResponseToResult(response.status, payload);
-    if (!result.ok && result.code === 'server_misconfigured') {
-      return null;
-    }
-    return result;
-  } catch {
-    return null;
-  }
-}
-
-let adminUsersEdgeAvailable: boolean | null = null;
-
-async function isAdminUsersEdgeAvailable(): Promise<boolean> {
-  if (adminUsersEdgeAvailable !== null) return adminUsersEdgeAvailable;
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    adminUsersEdgeAvailable = false;
-    return false;
-  }
-  try {
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-users`, {
-      method: 'OPTIONS',
-      headers: { apikey: SUPABASE_ANON_KEY, Origin: window.location.origin },
-    });
-    adminUsersEdgeAvailable = res.ok;
-  } catch {
-    adminUsersEdgeAvailable = false;
-  }
-  return adminUsersEdgeAvailable;
-}
-
-async function invokeAdminUsersEdge(
-  token: string,
-  body: AdminUserActionBody,
-): Promise<AdminUserActionResult | null> {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
-
-  try {
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/admin-users`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-        apikey: SUPABASE_ANON_KEY,
-      },
-      body: JSON.stringify({
-        action: body.action,
-        target_user_id: body.target_user_id,
-        ...(body.action === 'set_user_password' ? { new_password: body.new_password } : {}),
-      }),
-    });
-
-    const contentType = response.headers.get('content-type') ?? '';
-    if (!contentType.includes('application/json')) return null;
-
-    return mapResponseToResult(response.status, await response.json());
-  } catch {
-    return null;
-  }
-}
-
-/** Edge digisac-dashboard (já publicada no ffvgrvrk). */
-async function invokeDigisacAdmin(
-  token: string,
-  body: AdminUserActionBody,
-): Promise<AdminUserActionResult | null> {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    return null;
-  }
-
-  try {
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/digisac-dashboard`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-        apikey: SUPABASE_ANON_KEY,
-      },
-      body: JSON.stringify({
-        action: body.action,
-        target_user_id: body.target_user_id,
-        ...(body.action === 'set_user_password' ? { new_password: body.new_password } : {}),
-      }),
-    });
-
-    const contentType = response.headers.get('content-type') ?? '';
-    if (!contentType.includes('application/json')) {
-      return null;
-    }
-
-    const payload = (await response.json()) as Record<string, unknown>;
-
-    if (payload.ok === true) {
+    if (response.ok && row.ok === true) {
       return { ok: true };
     }
 
-    const errKey = typeof payload.error === 'string' ? payload.error.trim() : '';
+    const errKey = typeof row.error === 'string' ? row.error.trim() : '';
+    if (errKey === 'server_misconfigured') {
+      return {
+        ok: false,
+        code: 'server_misconfigured',
+        message: typeof row.message === 'string' ? row.message : undefined,
+      };
+    }
+
     if (KNOWN_CODES.has(errKey as AdminUserActionErrorCode)) {
       return {
         ok: false,
         code: errKey as AdminUserActionErrorCode,
-        message: typeof payload.message === 'string' ? payload.message : undefined,
+        message: typeof row.message === 'string' ? row.message : undefined,
       };
     }
 
-    if (payload.error === true || payload.code === 'CONFIG_MISSING') {
-      const msg = typeof payload.message === 'string' ? payload.message : '';
-      if (/CONFIG_MISSING|Digisac|configuração do Digisac/i.test(msg)) {
-        return {
-          ok: false,
-          code: 'server_misconfigured',
-          message: 'digisac_sem_admin',
-        };
-      }
-    }
+    if (response.status === 401) return { ok: false, code: 'unauthorized' };
+    if (response.status === 403) return { ok: false, code: 'forbidden' };
 
     return null;
   } catch {
@@ -224,9 +153,8 @@ async function invokeDigisacAdmin(
 }
 
 /**
- * 1) digisac-dashboard (Edge já no ar, CORS ok)
- * 2) /api/admin-user-action (.env local ou mesma variável na Vercel)
- * Não chama admin-users (404 → erro CORS no browser).
+ * 1) digisac-dashboard (Edge no Supabase, service_role automático)
+ * 2) /api/admin-user-action (requer SUPABASE_SERVICE_ROLE_KEY no .env ou na Vercel)
  */
 export async function runAdminUserAction(body: AdminUserActionBody): Promise<AdminUserActionResult> {
   const token = await getAccessToken();
@@ -234,26 +162,25 @@ export async function runAdminUserAction(body: AdminUserActionBody): Promise<Adm
     return { ok: false, code: 'unauthorized' };
   }
 
-  if (await isAdminUsersEdgeAvailable()) {
-    const viaAdminUsers = await invokeAdminUsersEdge(token, body);
-    if (viaAdminUsers) {
-      return viaAdminUsers;
-    }
-  }
-
   const viaDigisac = await invokeDigisacAdmin(token, body);
   if (viaDigisac?.ok) {
     return viaDigisac;
   }
-  if (viaDigisac && !viaDigisac.ok && viaDigisac.code !== 'server_misconfigured') {
+  if (viaDigisac && viaDigisac.code !== 'server_misconfigured') {
     return viaDigisac;
   }
 
   const viaApi = await invokeLocalOrVercelApi(token, body);
-  if (viaApi) {
+  if (viaApi?.ok) {
+    return viaApi;
+  }
+  if (viaApi && viaApi.code !== 'server_misconfigured') {
     return viaApi;
   }
 
+  if (viaApi?.code === 'server_misconfigured') {
+    return viaApi;
+  }
   if (viaDigisac?.code === 'server_misconfigured') {
     return viaDigisac;
   }
@@ -268,25 +195,28 @@ export function formatAdminActionErrorMessage(
   if (code === 'server_misconfigured') {
     if (detail === 'digisac_sem_admin' || detail?.includes('digisac_sem_admin')) {
       return (
-        'A função digisac-dashboard no Supabase ainda não tem o módulo de administração. ' +
-        'Crie a Edge Function admin-users: abra https://supabase.com/dashboard/project/ffvgrvrkuiypjzfdcfyw/functions, ' +
-        'Deploy new function → nome admin-users → cole todo o ficheiro supabase/functions/admin-users/COLE_NO_PAINEL_index.ts → Deploy.'
+        'Atualize a Edge Function no Supabase: crie admin-users em ' +
+        'https://supabase.com/dashboard/project/ffvgrvrkuiypjzfdcfyw/functions ' +
+        '(Deploy new function → nome admin-users → cole COLE_NO_PAINEL_index.ts → Deploy).'
       );
     }
     if (detail?.includes('ittmglvk') || detail?.includes('ffvgrvrk')) {
       return detail;
     }
-    const isProd = typeof window !== 'undefined' && !window.location.hostname.includes('localhost');
+    if (detail?.includes('SUPABASE_SERVICE_ROLE_KEY')) {
+      return detail;
+    }
+    const isProd =
+      typeof window !== 'undefined' && !/localhost|127\.0\.0\.1/.test(window.location.hostname);
     if (isProd) {
       return (
-        'Em produção, copie do seu .env para a Vercel (Settings → Environment Variables) a variável ' +
-        'SUPABASE_SERVICE_ROLE_KEY do projeto ffvgrvrkuiypjzfdcfyw e faça Redeploy. ' +
-        'Ou publique a Edge Function admin-users no Supabase (COLE_NO_PAINEL_index.ts).'
+        'Configure SUPABASE_SERVICE_ROLE_KEY na Vercel (mesmo valor do .env, projeto ffvgrvrkuiypjzfdcfyw) ' +
+        'e faça Redeploy — ou publique a Edge Function admin-users no Supabase.'
       );
     }
     return (
-      'No .env, defina SUPABASE_SERVICE_ROLE_KEY com a service_role do projeto ffvgrvrkuiypjzfdcfyw ' +
-      '(não use a chave do projeto ittmglvk). Reinicie npm run dev.'
+      'No .env: VITE_SUPABASE_URL=https://ffvgrvrkuiypjzfdcfyw.supabase.co e ' +
+      'SUPABASE_SERVICE_ROLE_KEY com a service_role desse mesmo projeto (não ittmglvk). Reinicie npm run dev.'
     );
   }
 
