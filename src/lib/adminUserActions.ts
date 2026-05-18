@@ -18,7 +18,7 @@ export type AdminUserActionErrorCode =
   | 'rpc_not_deployed'
   | 'server_error';
 
-const KNOWN_CODES = new Set<string>([
+const KNOWN_CODES: AdminUserActionErrorCode[] = [
   'unauthorized',
   'forbidden',
   'weak_password',
@@ -27,25 +27,33 @@ const KNOWN_CODES = new Set<string>([
   'user_not_found',
   'delete_failed',
   'update_failed',
-]);
+];
 
+/** Só quando a RPC não existe no PostgREST (schema não recarregado ou SQL não aplicado). */
 function isRpcMissing(error: PostgrestError): boolean {
+  if (error.code === 'PGRST202') return true;
   const msg = (error.message ?? '').toLowerCase();
-  const details = (error.details ?? '').toLowerCase();
   return (
-    error.code === 'PGRST202' ||
-    msg.includes('could not find the function') ||
-    msg.includes('admin_delete_auth_user') ||
-    msg.includes('admin_set_user_password') ||
-    details.includes('admin_delete_auth_user') ||
-    details.includes('admin_set_user_password')
+    msg.includes('could not find the function') &&
+    (msg.includes('admin_delete_auth_user') || msg.includes('admin_set_user_password'))
   );
+}
+
+function extractKnownCode(text: string): AdminUserActionErrorCode | null {
+  const lower = text.toLowerCase();
+  for (const code of KNOWN_CODES) {
+    if (lower.includes(code)) return code;
+  }
+  return null;
 }
 
 function mapPostgrestToCode(error: PostgrestError): AdminUserActionErrorCode {
   if (isRpcMissing(error)) return 'rpc_not_deployed';
-  const key = (error.message ?? '').trim();
-  if (KNOWN_CODES.has(key)) return key as AdminUserActionErrorCode;
+
+  const parts = [error.message, error.details, error.hint].filter(Boolean).join(' ');
+  const known = extractKnownCode(parts);
+  if (known) return known;
+
   return 'server_error';
 }
 
@@ -85,17 +93,33 @@ export async function runAdminUserAction(body: AdminUserActionBody): Promise<Adm
   return { ok: false, code: 'unknown_action' };
 }
 
-export const ADMIN_ACTION_ERROR_MESSAGES: Record<AdminUserActionErrorCode, string> = {
-  unauthorized: 'Sessão inválida. Faça login novamente.',
-  forbidden: 'Sem permissão de administrador.',
-  weak_password: 'A nova senha deve ter pelo menos 6 caracteres.',
-  cannot_delete_self: 'Não é possível excluir a própria conta.',
-  cannot_delete_last_admin: 'Não é possível excluir o último administrador.',
-  user_not_found: 'Utilizador não encontrado.',
-  delete_failed: 'Não foi possível excluir o cadastro.',
-  update_failed: 'Não foi possível definir a senha.',
-  unknown_action: 'Operação inválida.',
-  rpc_not_deployed:
-    'As funções de administração ainda não foram criadas na base de dados. No Supabase (projeto ffvgrvrkuiypjzfdcfyw), abra SQL Editor e execute o ficheiro supabase/migrations/20260515120000_admin_user_management_rpc.sql',
-  server_error: 'Não foi possível concluir a operação. Tente novamente.',
-};
+export function formatAdminActionErrorMessage(
+  code: AdminUserActionErrorCode,
+  detail?: string,
+): string {
+  const base: Record<AdminUserActionErrorCode, string> = {
+    unauthorized: 'Sessão inválida. Faça login novamente.',
+    forbidden: 'Sem permissão de administrador.',
+    weak_password: 'A nova senha deve ter pelo menos 6 caracteres.',
+    cannot_delete_self: 'Não é possível excluir a própria conta.',
+    cannot_delete_last_admin: 'Não é possível excluir o último administrador.',
+    user_not_found: 'Utilizador não encontrado.',
+    delete_failed: 'Não foi possível excluir o cadastro.',
+    update_failed: 'Não foi possível definir a senha.',
+    unknown_action: 'Operação inválida.',
+    rpc_not_deployed:
+      'As funções de administração não estão visíveis para a API. No Supabase (projeto ffvgrvrkuiypjzfdcfyw), execute o SQL em supabase/migrations/20260515130000_fix_admin_user_management_rpc.sql e aguarde ~1 minuto.',
+    server_error: 'Não foi possível concluir a operação.',
+  };
+
+  const msg = base[code] ?? base.server_error;
+  if (code === 'server_error' && detail?.trim()) {
+    const short = detail.length > 180 ? `${detail.slice(0, 180)}…` : detail;
+    return `${msg} (${short})`;
+  }
+  if ((code === 'delete_failed' || code === 'update_failed') && detail?.trim()) {
+    const short = detail.length > 120 ? `${detail.slice(0, 120)}…` : detail;
+    return `${msg} Detalhe: ${short}`;
+  }
+  return msg;
+}

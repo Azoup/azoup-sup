@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ADMIN_ACTION_ERROR_MESSAGES,
+  formatAdminActionErrorMessage,
   runAdminUserAction,
   type AdminUserActionBody,
 } from '@/lib/adminUserActions';
@@ -96,8 +96,7 @@ const Profile = () => {
 
   const handleAdminActionResult = (result: Awaited<ReturnType<typeof runAdminUserAction>>) => {
     if (result.ok) return true;
-    const msg = ADMIN_ACTION_ERROR_MESSAGES[result.code] ?? 'Não foi possível concluir a operação.';
-    toast.error(msg);
+    toast.error(formatAdminActionErrorMessage(result.code, result.message));
     return false;
   };
 

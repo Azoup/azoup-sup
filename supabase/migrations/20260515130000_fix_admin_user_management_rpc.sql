@@ -1,5 +1,4 @@
--- Gestão de utilizadores por administradores (sem Edge Function).
--- Aplica no mesmo projeto Supabase do VITE_SUPABASE_URL (ffvgrvrkuiypjzfdcfyw).
+-- Correção: funções admin + reload do schema PostgREST (execute no SQL Editor se já correu a migration anterior).
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -14,19 +13,19 @@ SET search_path = public, auth, extensions
 AS $$
 BEGIN
   IF auth.uid() IS NULL THEN
-    RAISE EXCEPTION 'unauthorized';
+    RAISE EXCEPTION 'unauthorized' USING ERRCODE = 'P0001';
   END IF;
 
   IF NOT public.has_role(auth.uid(), 'admin'::public.app_role) THEN
-    RAISE EXCEPTION 'forbidden';
+    RAISE EXCEPTION 'forbidden' USING ERRCODE = 'P0001';
   END IF;
 
   IF new_password IS NULL OR length(new_password) < 6 THEN
-    RAISE EXCEPTION 'weak_password';
+    RAISE EXCEPTION 'weak_password' USING ERRCODE = 'P0001';
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM auth.users WHERE id = target_user_id) THEN
-    RAISE EXCEPTION 'user_not_found';
+    RAISE EXCEPTION 'user_not_found' USING ERRCODE = 'P0001';
   END IF;
 
   UPDATE auth.users
@@ -36,6 +35,13 @@ BEGIN
   WHERE id = target_user_id;
 
   RETURN jsonb_build_object('ok', true);
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLERRM LIKE '%unauthorized%' OR SQLERRM LIKE '%forbidden%' OR SQLERRM LIKE '%weak_password%'
+      OR SQLERRM LIKE '%user_not_found%' THEN
+      RAISE;
+    END IF;
+    RAISE EXCEPTION 'update_failed: %', SQLERRM USING ERRCODE = 'P0001';
 END;
 $$;
 
@@ -49,19 +55,19 @@ DECLARE
   admin_count integer;
 BEGIN
   IF auth.uid() IS NULL THEN
-    RAISE EXCEPTION 'unauthorized';
+    RAISE EXCEPTION 'unauthorized' USING ERRCODE = 'P0001';
   END IF;
 
   IF NOT public.has_role(auth.uid(), 'admin'::public.app_role) THEN
-    RAISE EXCEPTION 'forbidden';
+    RAISE EXCEPTION 'forbidden' USING ERRCODE = 'P0001';
   END IF;
 
   IF target_user_id = auth.uid() THEN
-    RAISE EXCEPTION 'cannot_delete_self';
+    RAISE EXCEPTION 'cannot_delete_self' USING ERRCODE = 'P0001';
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM auth.users WHERE id = target_user_id) THEN
-    RAISE EXCEPTION 'user_not_found';
+    RAISE EXCEPTION 'user_not_found' USING ERRCODE = 'P0001';
   END IF;
 
   IF public.has_role(target_user_id, 'admin'::public.app_role) THEN
@@ -70,13 +76,20 @@ BEGIN
     WHERE role = 'admin'::public.app_role;
 
     IF admin_count <= 1 THEN
-      RAISE EXCEPTION 'cannot_delete_last_admin';
+      RAISE EXCEPTION 'cannot_delete_last_admin' USING ERRCODE = 'P0001';
     END IF;
   END IF;
 
   DELETE FROM auth.users WHERE id = target_user_id;
 
   RETURN jsonb_build_object('ok', true);
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLERRM LIKE '%unauthorized%' OR SQLERRM LIKE '%forbidden%' OR SQLERRM LIKE '%cannot_delete%'
+      OR SQLERRM LIKE '%user_not_found%' THEN
+      RAISE;
+    END IF;
+    RAISE EXCEPTION 'delete_failed: %', SQLERRM USING ERRCODE = 'P0001';
 END;
 $$;
 
