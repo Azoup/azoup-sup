@@ -114,8 +114,25 @@ export function adminConfigFromEnv(
   if (!supabaseUrl || !anonKey || !serviceRole) {
     return {
       error:
-        "Defina SUPABASE_SERVICE_ROLE_KEY no ficheiro .env (e confirme VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY do projeto ffvgrvrkuiypjzfdcfyw).",
+        "Defina SUPABASE_SERVICE_ROLE_KEY no ficheiro .env (service_role do projeto ffvgrvrkuiypjzfdcfyw).",
     };
+  }
+
+  const urlRef = supabaseUrl.match(/https?:\/\/([^.]+)\.supabase\.co/i)?.[1];
+  try {
+    const part = serviceRole.split(".")[1];
+    const roleRef = part
+      ? (JSON.parse(
+          Buffer.from(part.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"),
+        ) as { ref?: string }).ref
+      : null;
+    if (urlRef && roleRef && urlRef !== roleRef) {
+      return {
+        error: `SUPABASE_SERVICE_ROLE_KEY é do projeto "${roleRef}" mas o app usa "${urlRef}". Troque pela service_role de ffvgrvrkuiypjzfdcfyw.`,
+      };
+    }
+  } catch {
+    /* ignore parse errors */
   }
 
   return { supabaseUrl, anonKey, serviceRole };

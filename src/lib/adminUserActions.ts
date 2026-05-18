@@ -73,7 +73,7 @@ function mapResponseToResult(status: number, payload: unknown): AdminUserActionR
   };
 }
 
-async function invokeVercelApi(
+async function invokeLocalOrVercelApi(
   token: string,
   body: AdminUserActionBody,
 ): Promise<AdminUserActionResult | null> {
@@ -99,11 +99,7 @@ async function invokeVercelApi(
       return null;
     }
 
-    const result = mapResponseToResult(response.status, payload);
-    if (!result.ok && result.code === 'server_misconfigured') {
-      return null;
-    }
-    return result;
+    return mapResponseToResult(response.status, payload);
   } catch {
     return null;
   }
@@ -125,7 +121,7 @@ async function invokeEdgeFunction(
 
   if (error) {
     const msg = error.message ?? '';
-    if (/not found|404|failed to fetch|non-2xx/i.test(msg)) {
+    if (/not found|404|failed to fetch|non-2xx|function not found/i.test(msg)) {
       return null;
     }
     if (/jwt|unauthorized|401/i.test(msg)) {
@@ -152,50 +148,19 @@ async function invokeEdgeFunction(
   }
 
   if (row.error === true) {
-    return {
-      ok: false,
-      code: 'server_error',
-      message: typeof row.message === 'string' ? row.message : undefined,
-    };
-  }
-
-  return null;
-}
-
-async function invokeRpcAdmin(body: AdminUserActionBody): Promise<AdminUserActionResult | null> {
-  const rpcName =
-    body.action === 'set_user_password' ? 'rpc_admin_set_password' : 'rpc_admin_delete_user';
-  const params =
-    body.action === 'set_user_password'
-      ? { target_user_id: body.target_user_id, new_password: body.new_password }
-      : { target_user_id: body.target_user_id };
-
-  const { data, error } = await supabase.rpc(rpcName, { params });
-
-  if (error) {
-    const msg = error.message ?? '';
-    if (/PGRST202|Could not find the function|404/i.test(msg)) {
+    const msg = typeof row.message === 'string' ? row.message : '';
+    if (/CONFIG_MISSING|Digisac/i.test(msg)) {
       return null;
     }
-    const code = msg.match(
-      /unauthorized|forbidden|weak_password|cannot_delete_self|cannot_delete_last_admin|user_not_found|delete_failed|update_failed/,
-    )?.[0] as AdminUserActionErrorCode | undefined;
-    if (code && KNOWN_CODES.has(code)) {
-      return { ok: false, code, message: msg };
-    }
-    return { ok: false, code: 'server_error', message: msg };
+    return { ok: false, code: 'server_error', message: msg || undefined };
   }
 
-  const row = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
-  if (row.ok === true) {
-    return { ok: true };
-  }
   return null;
 }
 
 /**
- * 1) Edge admin-users / RPC / digisac-dashboard (produção — sem chave no browser)
- * 2) Em desenvolvimento: /api/admin-user-action lê SUPABASE_SERVICE_ROLE_KEY do .env
+ * Ordem: API (.env / Vercel) → Edge admin-users → digisac-dashboard.
+ * Não usa RPC (evita erro PGRST202 / NOTIFY).
  */
 export async function runAdminUserAction(body: AdminUserActionBody): Promise<AdminUserActionResult> {
   const token = await getAccessToken();
@@ -203,14 +168,17 @@ export async function runAdminUserAction(body: AdminUserActionBody): Promise<Adm
     return { ok: false, code: 'unauthorized' };
   }
 
+  const viaApi = await invokeLocalOrVercelApi(token, body);
+  if (viaApi?.ok) {
+    return viaApi;
+  }
+  if (viaApi && !viaApi.ok && viaApi.code !== 'server_misconfigured') {
+    return viaApi;
+  }
+
   const viaAdminUsers = await invokeEdgeFunction('admin-users', token, body);
   if (viaAdminUsers) {
     return viaAdminUsers;
-  }
-
-  const viaRpc = await invokeRpcAdmin(body);
-  if (viaRpc) {
-    return viaRpc;
   }
 
   const viaDigisac = await invokeEdgeFunction('digisac-dashboard', token, body);
@@ -218,8 +186,7 @@ export async function runAdminUserAction(body: AdminUserActionBody): Promise<Adm
     return viaDigisac;
   }
 
-  const viaApi = await invokeVercelApi(token, body);
-  if (viaApi) {
+  if (viaApi && !viaApi.ok) {
     return viaApi;
   }
 
@@ -231,10 +198,13 @@ export function formatAdminActionErrorMessage(
   detail?: string,
 ): string {
   if (code === 'server_misconfigured') {
+    if (detail?.includes('ittmglvk') || detail?.includes('ffvgrvrk')) {
+      return detail;
+    }
     return (
-      'Backend de administração indisponível. Em desenvolvimento: adicione SUPABASE_SERVICE_ROLE_KEY ao ficheiro .env ' +
-      '(chave service_role do projeto ffvgrvrkuiypjzfdcfyw). Em produção: execute supabase/scripts/APLICAR_EM_ffvgrvrkuiypjzfdcfyw.sql ' +
-      'ou publique a Edge Function admin-users no Supabase (COLE_NO_PAINEL_index.ts).'
+      'Não foi possível alterar a senha. No .env, use SUPABASE_SERVICE_ROLE_KEY do projeto ffvgrvrkuiypjzfdcfyw ' +
+      '(Supabase → Settings → API → service_role). Ou crie a Edge Function admin-users no Supabase ' +
+      '(ficheiro COLE_NO_PAINEL_index.ts).'
     );
   }
 
