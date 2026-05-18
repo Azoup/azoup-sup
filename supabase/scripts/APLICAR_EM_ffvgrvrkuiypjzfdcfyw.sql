@@ -1,27 +1,26 @@
 -- =============================================================================
--- EXECUTE APENAS NO PROJETO: ffvgrvrkuiypjzfdcfyw
--- URL do painel: https://supabase.com/dashboard/project/ffvgrvrkuiypjzfdcfyw/sql/new
---
--- NÃO execute no projeto ittmglvkympbyeowgucl (é outro projeto / outra base).
--- O app (VITE_SUPABASE_URL) aponta para ffvgrvrkuiypjzfdcfyw.
+-- PROJETO OBRIGATÓRIO: ffvgrvrkuiypjzfdcfyw
+-- https://supabase.com/dashboard/project/ffvgrvrkuiypjzfdcfyw/sql/new
 -- =============================================================================
-
--- Verificação (opcional): depois de aplicar, deve listar 2 funções:
--- SELECT proname FROM pg_proc p
--- JOIN pg_namespace n ON n.oid = p.pronamespace
--- WHERE n.nspname = 'public' AND proname IN ('admin_set_user_password', 'admin_delete_auth_user');
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-CREATE OR REPLACE FUNCTION public.admin_set_user_password(
-  target_user_id uuid,
-  new_password text
-)
+-- Remove versões antigas (parâmetros uuid+text que a API REST pode não expor)
+DROP FUNCTION IF EXISTS public.admin_set_user_password(uuid, text);
+DROP FUNCTION IF EXISTS public.admin_delete_auth_user(uuid);
+DROP FUNCTION IF EXISTS public.rpc_admin_set_password(jsonb);
+DROP FUNCTION IF EXISTS public.rpc_admin_delete_user(jsonb);
+
+-- Versão compatível com PostgREST: um único parâmetro jsonb "params"
+CREATE OR REPLACE FUNCTION public.rpc_admin_set_password(params jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, auth, extensions
 AS $$
+DECLARE
+  target_user_id uuid := (params->>'target_user_id')::uuid;
+  new_password text := params->>'new_password';
 BEGIN
   IF auth.uid() IS NULL THEN
     RAISE EXCEPTION 'unauthorized' USING ERRCODE = 'P0001';
@@ -48,21 +47,18 @@ BEGIN
   RETURN jsonb_build_object('ok', true);
 EXCEPTION
   WHEN OTHERS THEN
-    IF SQLERRM LIKE '%unauthorized%' OR SQLERRM LIKE '%forbidden%' OR SQLERRM LIKE '%weak_password%'
-      OR SQLERRM LIKE '%user_not_found%' THEN
-      RAISE;
-    END IF;
     RAISE EXCEPTION 'update_failed: %', SQLERRM USING ERRCODE = 'P0001';
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.admin_delete_auth_user(target_user_id uuid)
+CREATE OR REPLACE FUNCTION public.rpc_admin_delete_user(params jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, auth, extensions
 AS $$
 DECLARE
+  target_user_id uuid := (params->>'target_user_id')::uuid;
   admin_count integer;
 BEGIN
   IF auth.uid() IS NULL THEN
@@ -96,17 +92,19 @@ BEGIN
   RETURN jsonb_build_object('ok', true);
 EXCEPTION
   WHEN OTHERS THEN
-    IF SQLERRM LIKE '%unauthorized%' OR SQLERRM LIKE '%forbidden%' OR SQLERRM LIKE '%cannot_delete%'
-      OR SQLERRM LIKE '%user_not_found%' THEN
-      RAISE;
-    END IF;
     RAISE EXCEPTION 'delete_failed: %', SQLERRM USING ERRCODE = 'P0001';
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.admin_set_user_password(uuid, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.admin_delete_auth_user(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.admin_set_user_password(uuid, text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.admin_delete_auth_user(uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.rpc_admin_set_password(jsonb) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.rpc_admin_delete_user(jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.rpc_admin_set_password(jsonb) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.rpc_admin_delete_user(jsonb) TO anon, authenticated, service_role;
 
 NOTIFY pgrst, 'reload schema';
+
+-- Verificação (aba Results): deve listar 2 linhas
+-- SELECT proname FROM pg_proc p
+-- JOIN pg_namespace n ON n.oid = p.pronamespace
+-- WHERE n.nspname = 'public'
+--   AND proname IN ('rpc_admin_set_password', 'rpc_admin_delete_user');

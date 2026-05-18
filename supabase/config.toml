@@ -3,3 +3,6 @@ project_id = "ittmglvkympbyeowgucl"
 # Garante que a função exige JWT de utilizador autenticado (admin).
 [functions.admin-user-actions]
 verify_jwt = true
+
+[functions.admin-users]
+verify_jwt = true
