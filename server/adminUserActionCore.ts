@@ -114,7 +114,7 @@ export function adminConfigFromEnv(
   if (!supabaseUrl || !anonKey || !serviceRole) {
     return {
       error:
-        "Defina SUPABASE_SERVICE_ROLE_KEY no ficheiro .env (service_role do mesmo projeto que VITE_SUPABASE_URL).",
+        "Defina SUPABASE_SERVICE_ROLE_KEY no ficheiro .env (service_role do projeto ffvgrvrkuiypjzfdcfyw).",
     };
   }
 
@@ -128,7 +128,7 @@ export function adminConfigFromEnv(
       : null;
     if (urlRef && roleRef && urlRef !== roleRef) {
       return {
-        error: `SUPABASE_SERVICE_ROLE_KEY é do projeto "${roleRef}" mas o app usa "${urlRef}". Use chaves do mesmo projeto.`,
+        error: `SUPABASE_SERVICE_ROLE_KEY é do projeto "${roleRef}" mas o app usa "${urlRef}". Troque pela service_role de ffvgrvrkuiypjzfdcfyw.`,
       };
     }
   } catch {

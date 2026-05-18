@@ -1,6 +1,6 @@
 -- =============================================================================
--- ATENÇÃO: Este script era para o projeto ffvgrvrkuiypjzfdcfyw.
--- O app usa ittmglvkympbyeowgucl — use: APLICAR_EM_ittmglvkympbyeowgucl.sql
+-- PROJETO OBRIGATÓRIO: ffvgrvrkuiypjzfdcfyw
+-- https://supabase.com/dashboard/project/ffvgrvrkuiypjzfdcfyw/sql/new
 -- =============================================================================
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
