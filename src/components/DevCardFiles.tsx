@@ -14,6 +14,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { QueryLoadState } from '@/components/QueryLoadState';
+import { runTimedQuery } from '@/lib/supabaseTimedQuery';
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
 
@@ -51,18 +53,20 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<any>(null);
 
-  const { data: files = [], isLoading } = useQuery({
+  const { data: files = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['dev-card-files', cardId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('dev_kanban_card_files')
-        .select('*')
-        .eq('card_id', cardId)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return data || [];
-    },
+    queryFn: async () =>
+      runTimedQuery(async () => {
+        const { data, error } = await supabase
+          .from('dev_kanban_card_files')
+          .select('*')
+          .eq('card_id', cardId)
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        return data || [];
+      }),
     enabled: !!cardId,
+    retry: 1,
   });
 
   const uploadFile = useCallback(async (file: File) => {
@@ -217,11 +221,8 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
         </div>
       )}
 
-      {isLoading ? (
-        <div className="flex items-center justify-center py-4 text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-        </div>
-      ) : files.length === 0 ? (
+      <QueryLoadState isLoading={isLoading} isError={isError} onRetry={() => refetch()}>
+      {files.length === 0 ? (
         <p className="text-xs text-muted-foreground italic">Nenhum arquivo anexado</p>
       ) : (
         <ul className="space-y-1.5">
@@ -275,6 +276,7 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
           })}
         </ul>
       )}
+      </QueryLoadState>
 
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
         <AlertDialogContent>

@@ -9,6 +9,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Trash2, Send, Loader2 } from 'lucide-react';
+import { QueryLoadState } from '@/components/QueryLoadState';
+import { runTimedQuery } from '@/lib/supabaseTimedQuery';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -23,40 +25,43 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
 
-  const { data: comments = [], isLoading } = useQuery({
+  const { data: comments = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['dev-card-comments', cardId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('dev_kanban_card_comments')
-        .select('*')
-        .eq('card_id', cardId)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
+    queryFn: async () =>
+      runTimedQuery(async () => {
+        const { data, error } = await supabase
+          .from('dev_kanban_card_comments')
+          .select('*')
+          .eq('card_id', cardId)
+          .order('created_at', { ascending: false });
+        if (error) throw error;
 
-      const userIds = [...new Set((data || []).map((c: any) => c.user_id))];
-      let profileMap: Record<string, { name: string; photo_url: string }> = {};
-      if (userIds.length > 0) {
-        const [{ data: profiles }, { data: analysts }, { data: developers }] = await Promise.all([
-          supabase.from('profiles').select('id, display_name, photo_url').in('id', userIds),
-          supabase.from('analysts').select('name, photo_url'),
-          supabase.from('developers').select('name, photo_url'),
-        ]);
-        const byName: Record<string, string> = {};
-        (analysts || []).forEach((a: any) => { if (a.name && a.photo_url) byName[a.name.toLowerCase()] = a.photo_url; });
-        (developers || []).forEach((d: any) => { if (d.name && d.photo_url) byName[d.name.toLowerCase()] = d.photo_url; });
-        (profiles || []).forEach((p: any) => {
-          const name = p.display_name || '';
-          const photo = p.photo_url || byName[name.toLowerCase()] || '';
-          profileMap[p.id] = { name, photo_url: photo };
-        });
-      }
+        const userIds = [...new Set((data || []).map((c: any) => c.user_id))];
+        let profileMap: Record<string, { name: string; photo_url: string }> = {};
+        if (userIds.length > 0) {
+          const [{ data: profiles }, { data: analysts }, { data: developers }] = await Promise.all([
+            supabase.from('profiles').select('id, display_name, photo_url').in('id', userIds),
+            supabase.from('analysts').select('name, photo_url'),
+            supabase.from('developers').select('name, photo_url'),
+          ]);
+          const byName: Record<string, string> = {};
+          (analysts || []).forEach((a: any) => { if (a.name && a.photo_url) byName[a.name.toLowerCase()] = a.photo_url; });
+          (developers || []).forEach((d: any) => { if (d.name && d.photo_url) byName[d.name.toLowerCase()] = d.photo_url; });
+          (profiles || []).forEach((p: any) => {
+            const name = p.display_name || '';
+            const photo = p.photo_url || byName[name.toLowerCase()] || '';
+            profileMap[p.id] = { name, photo_url: photo };
+          });
+        }
 
-      return (data || []).map((c: any) => ({
-        ...c,
-        display_name: profileMap[c.user_id]?.name || c.user_email?.split('@')[0] || '?',
-        photo_url: profileMap[c.user_id]?.photo_url || '',
-      }));
-    },
+        return (data || []).map((c: any) => ({
+          ...c,
+          display_name: profileMap[c.user_id]?.name || c.user_email?.split('@')[0] || '?',
+          photo_url: profileMap[c.user_id]?.photo_url || '',
+        }));
+      }),
+    enabled: !!cardId,
+    retry: 1,
   });
 
   useEffect(() => {
@@ -153,9 +158,8 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
         </Button>
       </div>
 
-      {isLoading ? (
-        <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-      ) : comments.length === 0 ? (
+      <QueryLoadState isLoading={isLoading} isError={isError} onRetry={() => refetch()}>
+      {comments.length === 0 ? (
         <p className="text-xs text-muted-foreground text-center py-2">Nenhum comentário ainda.</p>
       ) : (
         <ScrollArea className="max-h-60">
@@ -190,6 +194,7 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
           </div>
         </ScrollArea>
       )}
+      </QueryLoadState>
     </div>
   );
 }

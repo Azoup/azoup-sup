@@ -7,6 +7,11 @@ import {
   getConfiguredSupabaseProjectRef,
   projectRefFromAccessToken,
 } from '@/lib/supabaseProject';
+import { withTimeout } from '@/lib/withTimeout';
+
+const AUTH_INIT_TIMEOUT_MS = 10_000;
+const AUTH_GET_USER_TIMEOUT_MS = 8_000;
+const AUTH_LOADING_WATCHDOG_MS = 12_000;
 
 interface AuthContextType {
   session: Session | null;
@@ -22,9 +27,21 @@ const AuthContext = createContext<AuthContextType>({
   signOut: async () => {},
 });
 
+async function validateSessionUser(session: Session): Promise<boolean> {
+  try {
+    const { data: { user }, error } = await withTimeout(
+      supabase.auth.getUser(session.access_token),
+      AUTH_GET_USER_TIMEOUT_MS,
+      'Validação de sessão expirou',
+    );
+    return !error && !!user;
+  } catch {
+    return false;
+  }
+}
+
 async function resolveValidSession(): Promise<Session | null> {
   const urlRef = getConfiguredSupabaseProjectRef();
-  clearSupabaseAuthStorageExcept(urlRef);
 
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) return null;
@@ -33,16 +50,28 @@ async function resolveValidSession(): Promise<Session | null> {
   if (urlRef && tokenRef && urlRef !== tokenRef) {
     console.warn(formatSupabaseProjectMismatchMessage(urlRef, tokenRef));
     await supabase.auth.signOut({ scope: 'local' });
+    clearSupabaseAuthStorageExcept(urlRef);
     return null;
   }
 
-  const { data: { user }, error } = await supabase.auth.getUser(session.access_token);
-  if (error || !user) {
+  const valid = await validateSessionUser(session);
+  if (!valid) {
     await supabase.auth.signOut({ scope: 'local' });
+    clearSupabaseAuthStorageExcept(urlRef);
     return null;
   }
 
   return session;
+}
+
+async function resetAuthStateLocal(): Promise<void> {
+  const urlRef = getConfiguredSupabaseProjectRef();
+  clearSupabaseAuthStorageExcept(urlRef);
+  try {
+    await supabase.auth.signOut({ scope: 'local' });
+  } catch {
+    /* ignore */
+  }
 }
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
@@ -52,53 +81,73 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     let mounted = true;
 
-    resolveValidSession().then((validSession) => {
-      if (mounted) {
-        setSession(validSession);
-        setLoading(false);
-      }
-    });
+    clearSupabaseAuthStorageExcept(getConfiguredSupabaseProjectRef());
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
+    const finishLoading = () => {
+      if (mounted) setLoading(false);
+    };
+
+    const watchdog = window.setTimeout(() => {
+      if (!mounted) return;
+      console.warn('[auth] Watchdog: carregamento demorou demais — a limpar sessão local.');
+      void resetAuthStateLocal().finally(() => {
+        if (mounted) {
+          setSession(null);
+          setLoading(false);
+        }
+      });
+    }, AUTH_LOADING_WATCHDOG_MS);
+
+    withTimeout(resolveValidSession(), AUTH_INIT_TIMEOUT_MS, 'Inicialização de sessão expirou')
+      .then((validSession) => {
+        if (mounted) setSession(validSession);
+      })
+      .catch(() => {
+        if (mounted) {
+          void resetAuthStateLocal();
+          setSession(null);
+        }
+      })
+      .finally(() => {
+        window.clearTimeout(watchdog);
+        finishLoading();
+      });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (!mounted) return;
 
-      if (event === 'SIGNED_OUT' || !nextSession) {
+      if (!nextSession?.access_token) {
         setSession(null);
-        setLoading(false);
+        finishLoading();
         return;
       }
 
       const urlRef = getConfiguredSupabaseProjectRef();
       const tokenRef = projectRefFromAccessToken(nextSession.access_token);
       if (urlRef && tokenRef && urlRef !== tokenRef) {
-        await supabase.auth.signOut({ scope: 'local' });
-        setSession(null);
-        setLoading(false);
+        void resetAuthStateLocal().finally(() => {
+          if (mounted) {
+            setSession(null);
+            finishLoading();
+          }
+        });
         return;
       }
 
-      if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-        const { data: { user }, error } = await supabase.auth.getUser();
-        if (error || !user) {
-          await supabase.auth.signOut({ scope: 'local' });
-          setSession(null);
-        } else {
-          setSession(nextSession);
-        }
-      } else {
-        setSession(nextSession);
-      }
-      setLoading(false);
+      setSession(nextSession);
+      finishLoading();
     });
 
     return () => {
       mounted = false;
+      window.clearTimeout(watchdog);
       subscription.unsubscribe();
     };
   }, []);
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    clearSupabaseAuthStorageExcept(getConfiguredSupabaseProjectRef());
   };
 
   return (
