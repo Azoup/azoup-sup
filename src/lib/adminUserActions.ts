@@ -109,11 +109,12 @@ async function invokeVercelApi(
   }
 }
 
-async function invokeDigisacAdmin(
+async function invokeEdgeFunction(
+  functionName: string,
   token: string,
   body: AdminUserActionBody,
-): Promise<AdminUserActionResult> {
-  const { data, error } = await supabase.functions.invoke('digisac-dashboard', {
+): Promise<AdminUserActionResult | null> {
+  const { data, error } = await supabase.functions.invoke(functionName, {
     body: {
       action: body.action,
       target_user_id: body.target_user_id,
@@ -124,8 +125,8 @@ async function invokeDigisacAdmin(
 
   if (error) {
     const msg = error.message ?? '';
-    if (/not found|404|failed to fetch/i.test(msg)) {
-      return { ok: false, code: 'server_error', message: msg };
+    if (/not found|404|failed to fetch|non-2xx/i.test(msg)) {
+      return null;
     }
     if (/jwt|unauthorized|401/i.test(msg)) {
       return { ok: false, code: 'unauthorized' };
@@ -137,7 +138,6 @@ async function invokeDigisacAdmin(
   }
 
   const row = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
-
   if (row.ok === true) {
     return { ok: true };
   }
@@ -151,18 +151,63 @@ async function invokeDigisacAdmin(
     };
   }
 
-  if (row.error === true || row.code === 'CONFIG_MISSING') {
+  if (row.error === true) {
     return {
       ok: false,
       code: 'server_error',
-      message:
-        typeof row.message === 'string'
-          ? row.message
-          : 'Backend Digisac sem suporte a admin. Atualize a Edge Function digisac-dashboard no Supabase.',
+      message: typeof row.message === 'string' ? row.message : undefined,
     };
   }
 
-  return { ok: false, code: 'server_error', message: 'Resposta inesperada do servidor.' };
+  return null;
+}
+
+async function invokeRpcAdmin(body: AdminUserActionBody): Promise<AdminUserActionResult | null> {
+  const rpcName =
+    body.action === 'set_user_password' ? 'rpc_admin_set_password' : 'rpc_admin_delete_user';
+  const params =
+    body.action === 'set_user_password'
+      ? { target_user_id: body.target_user_id, new_password: body.new_password }
+      : { target_user_id: body.target_user_id };
+
+  const { data, error } = await supabase.rpc(rpcName, { params });
+
+  if (error) {
+    const msg = error.message ?? '';
+    if (/PGRST202|Could not find the function|404/i.test(msg)) {
+      return null;
+    }
+    const code = msg.match(
+      /unauthorized|forbidden|weak_password|cannot_delete_self|cannot_delete_last_admin|user_not_found|delete_failed|update_failed/,
+    )?.[0] as AdminUserActionErrorCode | undefined;
+    if (code && KNOWN_CODES.has(code)) {
+      return { ok: false, code, message: msg };
+    }
+    return { ok: false, code: 'server_error', message: msg };
+  }
+
+  const row = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+  if (row.ok === true) {
+    return { ok: true };
+  }
+  return null;
+}
+
+async function invokeDigisacAdmin(
+  token: string,
+  body: AdminUserActionBody,
+): Promise<AdminUserActionResult> {
+  const digisac = await invokeEdgeFunction('digisac-dashboard', token, body);
+  if (digisac) {
+    return digisac;
+  }
+
+  return {
+    ok: false,
+    code: 'server_misconfigured',
+    message:
+      'Configure SUPABASE_SERVICE_ROLE_KEY na Vercel ou publique a função admin-users no Supabase (ffvgrvrkuiypjzfdcfyw).',
+  };
 }
 
 /**
@@ -180,6 +225,16 @@ export async function runAdminUserAction(body: AdminUserActionBody): Promise<Adm
     return viaApi;
   }
 
+  const viaAdminUsers = await invokeEdgeFunction('admin-users', token, body);
+  if (viaAdminUsers) {
+    return viaAdminUsers;
+  }
+
+  const viaRpc = await invokeRpcAdmin(body);
+  if (viaRpc) {
+    return viaRpc;
+  }
+
   return invokeDigisacAdmin(token, body);
 }
 
@@ -189,8 +244,9 @@ export function formatAdminActionErrorMessage(
 ): string {
   if (code === 'server_misconfigured') {
     return (
-      'Servidor sem SUPABASE_SERVICE_ROLE_KEY. Na Vercel → Settings → Environment Variables, ' +
-      'adicione SUPABASE_SERVICE_ROLE_KEY (chave service_role do projeto ffvgrvrkuiypjzfdcfyw) e faça redeploy.'
+      'Falta configurar o backend de administração. Na Vercel (azoup-sup) → Settings → Environment Variables, ' +
+      'adicione SUPABASE_SERVICE_ROLE_KEY com a chave service_role do projeto ffvgrvrkuiypjzfdcfyw ' +
+      '(Supabase → Project Settings → API) e faça Redeploy. Alternativa: criar a Edge Function admin-users no mesmo projeto Supabase.'
     );
   }
 
