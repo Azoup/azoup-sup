@@ -16,7 +16,8 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { Loader2, KeyRound, User, Shield, ScrollText, Filter, Camera, Trash2, UserX } from 'lucide-react';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ProfileAvatar } from '@/components/ProfileAvatar';
+import { normalizeProfilePhotoUrl, profilePhotoSrc } from '@/lib/profilePhotoUrl';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
@@ -127,21 +128,83 @@ const Profile = () => {
     enabled: isAdmin,
   });
 
+  const syncLinkedAnalystPhoto = async (targetUserId: string, publicUrl: string) => {
+    const { data: profileRow } = await supabase
+      .from('profiles')
+      .select('display_name')
+      .eq('id', targetUserId)
+      .maybeSingle();
+    const name = profileRow?.display_name?.trim();
+    if (!name) return;
+    const { data: analysts } = await supabase.from('analysts').select('id, name');
+    const norm = (s: string) =>
+      s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    const target = norm(name);
+    const match = (analysts ?? []).find((a) => norm(a.name || '') === target);
+    if (match) {
+      await supabase.from('analysts').update({ photo_url: publicUrl }).eq('id', match.id);
+      void queryClient.invalidateQueries({ queryKey: ['analysts'] });
+      void queryClient.invalidateQueries({ queryKey: ['kanban-board'] });
+    }
+  };
+
+  const applyPhotoUrlToCaches = (targetUserId: string, publicUrl: string, bust: number) => {
+    const urlWithBust = profilePhotoSrc(publicUrl, bust) ?? publicUrl;
+    queryClient.setQueryData(['profile', targetUserId], (old: any) =>
+      old ? { ...old, photo_url: urlWithBust } : { id: targetUserId, photo_url: urlWithBust },
+    );
+    queryClient.setQueryData(['all-users-roles-profiles'], (old: any[] | undefined) =>
+      (old ?? []).map((ur) =>
+        ur.user_id === targetUserId ? { ...ur, photo_url: urlWithBust } : ur,
+      ),
+    );
+  };
+
   // Photo upload (for self or admin-managed user)
   const handlePhotoUpload = async (targetUserId: string, file: File) => {
     try {
-      const ext = file.name.split('.').pop();
+      const ext = file.name.split('.').pop() || 'jpg';
       const path = `${targetUserId}/${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from('profile-photos').upload(path, file, { upsert: true });
+      const contentType = file.type || 'image/jpeg';
+      const { error: upErr } = await supabase.storage
+        .from('profile-photos')
+        .upload(path, file, { upsert: true, contentType });
       if (upErr) throw upErr;
-      const { data: { publicUrl } } = supabase.storage.from('profile-photos').getPublicUrl(path);
-      const { error } = await supabase.from('profiles').update({ photo_url: publicUrl }).eq('id', targetUserId);
+
+      const { data: urlData } = supabase.storage.from('profile-photos').getPublicUrl(path);
+      const publicUrl = normalizeProfilePhotoUrl(urlData.publicUrl) ?? urlData.publicUrl;
+      const bust = Date.now();
+
+      const { data: existing } = await supabase
+        .from('profiles')
+        .select('display_name')
+        .eq('id', targetUserId)
+        .maybeSingle();
+
+      const displayName =
+        existing?.display_name ||
+        allUsers.find((u: any) => u.user_id === targetUserId)?.email ||
+        user?.email?.split('@')[0] ||
+        'Utilizador';
+
+      const { error } = await supabase.from('profiles').upsert(
+        {
+          id: targetUserId,
+          display_name: displayName,
+          photo_url: publicUrl,
+        },
+        { onConflict: 'id' },
+      );
       if (error) throw error;
+
+      applyPhotoUrlToCaches(targetUserId, publicUrl, bust);
+      void syncLinkedAnalystPhoto(targetUserId, publicUrl);
+
       toast.success('Foto atualizada!');
-      queryClient.invalidateQueries({ queryKey: ['profile'] });
-      queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
-      queryClient.invalidateQueries({ queryKey: ['card-comments'] });
-      queryClient.invalidateQueries({ queryKey: ['dev-card-comments'] });
+      void queryClient.invalidateQueries({ queryKey: ['profile', targetUserId] });
+      void queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
+      void queryClient.invalidateQueries({ queryKey: ['card-comments'] });
+      void queryClient.invalidateQueries({ queryKey: ['dev-card-comments'] });
     } catch (e: any) {
       toast.error('Erro ao enviar foto: ' + (e.message || ''));
     }
@@ -150,11 +213,19 @@ const Profile = () => {
   const handlePhotoRemove = async (targetUserId: string) => {
     const { error } = await supabase.from('profiles').update({ photo_url: null }).eq('id', targetUserId);
     if (error) { toast.error('Erro ao remover foto'); return; }
+    queryClient.setQueryData(['profile', targetUserId], (old: any) =>
+      old ? { ...old, photo_url: null } : old,
+    );
+    queryClient.setQueryData(['all-users-roles-profiles'], (old: any[] | undefined) =>
+      (old ?? []).map((ur) =>
+        ur.user_id === targetUserId ? { ...ur, photo_url: '' } : ur,
+      ),
+    );
     toast.success('Foto removida');
-    queryClient.invalidateQueries({ queryKey: ['profile'] });
-    queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
-    queryClient.invalidateQueries({ queryKey: ['card-comments'] });
-    queryClient.invalidateQueries({ queryKey: ['dev-card-comments'] });
+    void queryClient.invalidateQueries({ queryKey: ['profile', targetUserId] });
+    void queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
+    void queryClient.invalidateQueries({ queryKey: ['card-comments'] });
+    void queryClient.invalidateQueries({ queryKey: ['dev-card-comments'] });
   };
 
   // Activity logs with date filter
@@ -314,12 +385,12 @@ const Profile = () => {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-center gap-4">
-              <Avatar className="h-16 w-16">
-                {profile?.photo_url && <AvatarImage src={profile.photo_url} alt={profile.display_name || ''} />}
-                <AvatarFallback className="text-lg">
-                  {(profile?.display_name || user?.email || '?').charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
+              <ProfileAvatar
+                className="h-16 w-16"
+                photoUrl={profile?.photo_url}
+                fallbackLabel={profile?.display_name || user?.email || '?'}
+                cacheBust={profile?.photo_url || undefined}
+              />
               <div className="flex flex-col gap-1">
                 <label className="cursor-pointer">
                   <input
@@ -406,10 +477,12 @@ const Profile = () => {
                   <div key={ur.id} className="p-3 rounded-lg border space-y-2">
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <Avatar className="h-10 w-10 shrink-0">
-                          {ur.photo_url && <AvatarImage src={ur.photo_url} alt={ur.email} />}
-                          <AvatarFallback>{(ur.email || '?').charAt(0).toUpperCase()}</AvatarFallback>
-                        </Avatar>
+                        <ProfileAvatar
+                          className="h-10 w-10 shrink-0"
+                          photoUrl={ur.photo_url}
+                          fallbackLabel={ur.email || '?'}
+                          cacheBust={ur.photo_url || undefined}
+                        />
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{ur.email}</p>
                           <p className="text-xs text-muted-foreground truncate">{ur.user_id}</p>
