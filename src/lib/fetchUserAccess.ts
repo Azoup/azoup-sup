@@ -1,7 +1,8 @@
 import { supabase } from '@/integrations/supabase/client';
 import { runTimedQuery } from '@/lib/supabaseTimedQuery';
 
-const ACCESS_FETCH_TIMEOUT_MS = 12_000;
+const API_TIMEOUT_MS = 4_000;
+const SUPABASE_ACCESS_TIMEOUT_MS = 8_000;
 
 export type UserAccessResult = {
   role: string;
@@ -47,48 +48,55 @@ export async function fetchUserAccessFromSupabase(userId: string): Promise<UserA
       role: resolveRoleFromRows(roles),
       permissions: buildPermissionsMap(permsRes.data),
     };
-  });
+  }, SUPABASE_ACCESS_TIMEOUT_MS);
 }
 
-export async function fetchUserAccess(
-  accessToken: string,
-  userId: string,
-): Promise<UserAccessResult> {
+async function fetchUserAccessViaApi(accessToken: string): Promise<UserAccessResult> {
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), ACCESS_FETCH_TIMEOUT_MS);
-
+  const timeoutId = window.setTimeout(() => controller.abort(), API_TIMEOUT_MS);
   try {
     const res = await fetch('/api/my-access', {
       headers: { Authorization: `Bearer ${accessToken}` },
       signal: controller.signal,
     });
-
-    if (res.ok) {
-      const data = (await res.json()) as UserAccessResult;
-      const permissions = data.permissions
-        ? Object.fromEntries(
-            Object.entries(data.permissions).map(([k, v]) => [k, isPermissionAllowed(v)]),
-          )
-        : null;
-      return {
-        role: data.role || 'user',
-        permissions,
-      };
-    }
-
-    console.warn('[access] /api/my-access falhou:', res.status, '— usando Supabase direto');
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn('[access] Erro na API, usando Supabase direto:', message);
+    if (!res.ok) throw new Error(`my-access ${res.status}`);
+    const data = (await res.json()) as UserAccessResult;
+    const permissions = data.permissions
+      ? Object.fromEntries(
+          Object.entries(data.permissions).map(([k, v]) => [k, isPermissionAllowed(v)]),
+        )
+      : null;
+    return {
+      role: data.role || 'user',
+      permissions,
+    };
   } finally {
     window.clearTimeout(timeoutId);
   }
+}
 
+function firstFulfilled<T>(promises: Promise<T>[]): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let failures = 0;
+    for (const p of promises) {
+      p.then(resolve).catch(() => {
+        if (++failures === promises.length) reject(new Error('all_sources_failed'));
+      });
+    }
+  });
+}
+
+/** API e Supabase em paralelo — usa o que responder primeiro (menos espera no login). */
+export async function fetchUserAccess(
+  accessToken: string,
+  userId: string,
+): Promise<UserAccessResult> {
   try {
-    return await fetchUserAccessFromSupabase(userId);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn('[access] Erro ao carregar permissões pelo Supabase:', message);
+    return await firstFulfilled([
+      fetchUserAccessViaApi(accessToken),
+      fetchUserAccessFromSupabase(userId),
+    ]);
+  } catch {
     return DEFAULT_USER_ACCESS;
   }
 }

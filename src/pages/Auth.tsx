@@ -1,11 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { fetchUserAccess } from '@/lib/fetchUserAccess';
-import { writeUserAccessCache } from '@/lib/userAccessCache';
+import { loadAndCacheUserAccess } from '@/lib/userAccessLoad';
 import { getSiteUrl } from '@/lib/siteUrl';
 import { formatAuthErrorMessage } from '@/lib/authErrors';
-import { clearSupabaseAuthStorageExcept, getConfiguredSupabaseProjectRef } from '@/lib/supabaseProject';
 import { logActivity } from '@/hooks/useActivityLog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,10 +17,6 @@ const Auth = () => {
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    clearSupabaseAuthStorageExcept(getConfiguredSupabaseProjectRef());
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,31 +33,34 @@ const Auth = () => {
       } else {
         toast.success('Conta criada! Verifique seu email para confirmar.');
       }
-    } else {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
-      if (error) {
-        toast.error(formatAuthErrorMessage(error));
-      } else if (!data.session?.access_token || !data.user?.id) {
-        toast.error('Sessão não iniciada. Confirme o email ou tente novamente.');
-      } else {
-        try {
-          const access = await fetchUserAccess(data.session.access_token, data.user.id);
-          const cached = {
-            ...access,
-            userId: data.user.id,
-            cachedAt: Date.now(),
-          };
-          writeUserAccessCache(cached);
-          queryClient.setQueryData(['user-access', data.user.id], cached);
-        } catch {
-          /* AuthRoute aguarda a query se o pré-carregamento falhar */
-        }
-        logActivity('Login no sistema');
-      }
+      setLoading(false);
+      return;
     }
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    if (error) {
+      toast.error(formatAuthErrorMessage(error));
+      setLoading(false);
+      return;
+    }
+    if (!data.session?.access_token || !data.user?.id) {
+      toast.error('Sessão não iniciada. Confirme o email ou tente novamente.');
+      setLoading(false);
+      return;
+    }
+
+    void logActivity('Login no sistema');
+
+    try {
+      const cached = await loadAndCacheUserAccess(data.session.access_token, data.user.id);
+      queryClient.setQueryData(['user-access', data.user.id], cached);
+    } catch {
+      /* AuthRoute aguarda a query se o pré-carregamento falhar */
+    }
+
     setLoading(false);
   };
 

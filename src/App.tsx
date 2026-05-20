@@ -28,22 +28,26 @@ import { getFirstAllowedPath } from "@/lib/allowedRoutes";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 60 * 1000,
-      gcTime: 10 * 60 * 1000,
+      staleTime: 2 * 60 * 1000,
+      gcTime: 15 * 60 * 1000,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
+      refetchOnMount: false,
       retry: 1,
     },
   },
 });
 
 function ProtectedRoute({ children, screen }: { children: React.ReactNode; screen?: string }) {
-  const { user, loading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { canView, isLoading: permsLoading } = usePermissions();
-  if (loading || permsLoading) {
+  if (authLoading) {
     return <AppLoadingScreen />;
   }
   if (!user) return <Navigate to="/auth" replace />;
+  if (permsLoading) {
+    return <AppLoadingScreen />;
+  }
   if (screen && !canView(screen)) {
     return <Navigate to={getFirstAllowedPath(canView)} replace />;
   }

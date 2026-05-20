@@ -9,9 +9,8 @@ import {
 } from '@/lib/supabaseProject';
 import { withTimeout } from '@/lib/withTimeout';
 
-const AUTH_INIT_TIMEOUT_MS = 10_000;
-const AUTH_GET_USER_TIMEOUT_MS = 8_000;
-const AUTH_LOADING_WATCHDOG_MS = 12_000;
+const AUTH_INIT_TIMEOUT_MS = 6_000;
+const AUTH_LOADING_WATCHDOG_MS = 10_000;
 
 interface AuthContextType {
   session: Session | null;
@@ -27,22 +26,8 @@ const AuthContext = createContext<AuthContextType>({
   signOut: async () => {},
 });
 
-async function validateSessionUser(session: Session): Promise<boolean> {
-  try {
-    const { data: { user }, error } = await withTimeout(
-      supabase.auth.getUser(session.access_token),
-      AUTH_GET_USER_TIMEOUT_MS,
-      'Validação de sessão expirou',
-    );
-    return !error && !!user;
-  } catch {
-    return false;
-  }
-}
-
 async function resolveValidSession(): Promise<Session | null> {
   const urlRef = getConfiguredSupabaseProjectRef();
-
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) return null;
 
@@ -53,13 +38,6 @@ async function resolveValidSession(): Promise<Session | null> {
     clearSupabaseAuthStorageExcept(urlRef);
     return null;
   }
-
-  // Não usar auth.getUser no boot: com JWT ES256 pode falhar/timeout e apagar sessão válida,
-  // deixando queries sem token (dados vazios nas telas).
-  await supabase.auth.setSession({
-    access_token: session.access_token,
-    refresh_token: session.refresh_token ?? '',
-  });
 
   return session;
 }
@@ -80,8 +58,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     let mounted = true;
-
-    clearSupabaseAuthStorageExcept(getConfiguredSupabaseProjectRef());
 
     const finishLoading = () => {
       if (mounted) setLoading(false);
@@ -134,17 +110,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
-      void supabase.auth.setSession({
-        access_token: nextSession.access_token,
-        refresh_token: nextSession.refresh_token ?? '',
-      });
-
       setSession(nextSession);
       finishLoading();
 
-      // Após login/refresh, não revalidar com getUser (pode travar com JWT ES256).
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        return;
+        void supabase.auth.setSession({
+          access_token: nextSession.access_token,
+          refresh_token: nextSession.refresh_token ?? '',
+        });
       }
     });
 
@@ -156,8 +129,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const signOut = async () => {
-    await supabase.auth.signOut();
-    clearSupabaseAuthStorageExcept(getConfiguredSupabaseProjectRef());
+    const urlRef = getConfiguredSupabaseProjectRef();
+    setSession(null);
+    setLoading(false);
+    clearSupabaseAuthStorageExcept(urlRef);
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch {
+      /* ignore */
+    }
   };
 
   return (
