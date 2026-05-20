@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { Loader2, KeyRound, User, Shield, ScrollText, Filter, Camera, Trash2, UserX } from 'lucide-react';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { normalizeProfilePhotoUrl, profilePhotoSrc } from '@/lib/profilePhotoUrl';
+import { personNameMatchesProfile, resolveUserPhoto } from '@/lib/resolveUserPhotoUrl';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
@@ -110,25 +111,64 @@ const Profile = () => {
     enabled: !!user,
   });
 
-  // Admin: all users with roles + profiles for email + photo
+  // Admin: utilizadores + foto (perfil manual ou cadastro analista/desenvolvedor)
   const { data: allUsers = [] } = useQuery({
     queryKey: ['all-users-roles-profiles'],
     queryFn: async () => {
-      const { data: roles } = await supabase.from('user_roles').select('*');
-      const { data: profiles } = await supabase.from('profiles').select('*');
+      const [
+        { data: roles },
+        { data: profiles },
+        { data: analysts },
+        { data: developers },
+      ] = await Promise.all([
+        supabase.from('user_roles').select('*'),
+        supabase.from('profiles').select('*'),
+        supabase.from('analysts').select('name, photo_url'),
+        supabase.from('developers').select('name, photo_url'),
+      ]);
+
       return (roles || []).map((r: any) => {
         const p = profiles?.find((x: any) => x.id === r.user_id);
+        const displayName = p?.display_name || '';
+        const resolved = resolveUserPhoto({
+          profilePhoto: p?.photo_url,
+          displayName,
+          analysts: analysts ?? [],
+          developers: developers ?? [],
+        });
         return {
           ...r,
-          email: p?.display_name || r.user_id,
-          photo_url: p?.photo_url || '',
+          email: displayName || r.user_id,
+          photo_url: resolved.photo_url,
+          photo_source: resolved.source,
+          profile_photo_url: resolved.profile_photo_url,
         };
       });
     },
     enabled: isAdmin,
   });
 
-  const syncLinkedAnalystPhoto = async (targetUserId: string, publicUrl: string) => {
+  const { data: peoplePhotos } = useQuery({
+    queryKey: ['people-photos'],
+    queryFn: async () => {
+      const [{ data: analysts }, { data: developers }] = await Promise.all([
+        supabase.from('analysts').select('name, photo_url'),
+        supabase.from('developers').select('name, photo_url'),
+      ]);
+      return { analysts: analysts ?? [], developers: developers ?? [] };
+    },
+    enabled: !!user,
+    staleTime: 60_000,
+  });
+
+  const selfPhotoResolved = resolveUserPhoto({
+    profilePhoto: profile?.photo_url,
+    displayName: profile?.display_name || user?.email?.split('@')[0],
+    analysts: peoplePhotos?.analysts ?? [],
+    developers: peoplePhotos?.developers ?? [],
+  });
+
+  const syncLinkedCadastroPhoto = async (targetUserId: string, publicUrl: string) => {
     const { data: profileRow } = await supabase
       .from('profiles')
       .select('display_name')
@@ -136,16 +176,27 @@ const Profile = () => {
       .maybeSingle();
     const name = profileRow?.display_name?.trim();
     if (!name) return;
-    const { data: analysts } = await supabase.from('analysts').select('id, name');
-    const norm = (s: string) =>
-      s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-    const target = norm(name);
-    const match = (analysts ?? []).find((a) => norm(a.name || '') === target);
-    if (match) {
-      await supabase.from('analysts').update({ photo_url: publicUrl }).eq('id', match.id);
+
+    const [{ data: analysts }, { data: developers }] = await Promise.all([
+      supabase.from('analysts').select('id, name'),
+      supabase.from('developers').select('id, name'),
+    ]);
+
+    const analyst = (analysts ?? []).find((a) => personNameMatchesProfile(name, a.name || ''));
+    if (analyst) {
+      await supabase.from('analysts').update({ photo_url: publicUrl }).eq('id', analyst.id);
       void queryClient.invalidateQueries({ queryKey: ['analysts'] });
       void queryClient.invalidateQueries({ queryKey: ['kanban-board'] });
     }
+
+    const developer = (developers ?? []).find((d) => personNameMatchesProfile(name, d.name || ''));
+    if (developer) {
+      await supabase.from('developers').update({ photo_url: publicUrl }).eq('id', developer.id);
+      void queryClient.invalidateQueries({ queryKey: ['developers'] });
+      void queryClient.invalidateQueries({ queryKey: ['dev-kanban-board'] });
+    }
+
+    void queryClient.invalidateQueries({ queryKey: ['people-photos'] });
   };
 
   const applyPhotoUrlToCaches = (targetUserId: string, publicUrl: string, bust: number) => {
@@ -155,7 +206,14 @@ const Profile = () => {
     );
     queryClient.setQueryData(['all-users-roles-profiles'], (old: any[] | undefined) =>
       (old ?? []).map((ur) =>
-        ur.user_id === targetUserId ? { ...ur, photo_url: urlWithBust } : ur,
+        ur.user_id === targetUserId
+          ? {
+              ...ur,
+              photo_url: urlWithBust,
+              photo_source: 'profile',
+              profile_photo_url: publicUrl,
+            }
+          : ur,
       ),
     );
   };
@@ -198,7 +256,7 @@ const Profile = () => {
       if (error) throw error;
 
       applyPhotoUrlToCaches(targetUserId, publicUrl, bust);
-      void syncLinkedAnalystPhoto(targetUserId, publicUrl);
+      void syncLinkedCadastroPhoto(targetUserId, publicUrl);
 
       toast.success('Foto atualizada!');
       void queryClient.invalidateQueries({ queryKey: ['profile', targetUserId] });
@@ -216,11 +274,24 @@ const Profile = () => {
     queryClient.setQueryData(['profile', targetUserId], (old: any) =>
       old ? { ...old, photo_url: null } : old,
     );
-    queryClient.setQueryData(['all-users-roles-profiles'], (old: any[] | undefined) =>
-      (old ?? []).map((ur) =>
-        ur.user_id === targetUserId ? { ...ur, photo_url: '' } : ur,
-      ),
-    );
+    queryClient.setQueryData(['all-users-roles-profiles'], (old: any[] | undefined) => {
+      const people = peoplePhotos ?? { analysts: [], developers: [] };
+      return (old ?? []).map((ur) => {
+        if (ur.user_id !== targetUserId) return ur;
+        const resolved = resolveUserPhoto({
+          profilePhoto: null,
+          displayName: ur.email,
+          analysts: people.analysts,
+          developers: people.developers,
+        });
+        return {
+          ...ur,
+          photo_url: resolved.photo_url,
+          photo_source: resolved.source,
+          profile_photo_url: null,
+        };
+      });
+    });
     toast.success('Foto removida');
     void queryClient.invalidateQueries({ queryKey: ['profile', targetUserId] });
     void queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
@@ -387,9 +458,9 @@ const Profile = () => {
             <div className="flex items-center gap-4">
               <ProfileAvatar
                 className="h-16 w-16"
-                photoUrl={profile?.photo_url}
+                photoUrl={selfPhotoResolved.photo_url}
                 fallbackLabel={profile?.display_name || user?.email || '?'}
-                cacheBust={profile?.photo_url || undefined}
+                cacheBust={selfPhotoResolved.photo_url || undefined}
               />
               <div className="flex flex-col gap-1">
                 <label className="cursor-pointer">
@@ -407,7 +478,7 @@ const Profile = () => {
                     <Camera className="h-3 w-3" /> Alterar foto
                   </span>
                 </label>
-                {profile?.photo_url && (
+                {selfPhotoResolved.profile_photo_url && (
                   <button
                     onClick={() => user && handlePhotoRemove(user.id)}
                     className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded text-destructive hover:bg-destructive/10"
@@ -504,7 +575,7 @@ const Profile = () => {
                             <Camera className="h-3.5 w-3.5" />
                           </span>
                         </label>
-                        {ur.photo_url ? (
+                        {ur.profile_photo_url ? (
                           <button
                             onClick={() => handlePhotoRemove(ur.user_id)}
                             className="inline-flex items-center justify-center h-8 w-8 rounded border text-destructive hover:bg-destructive/10 shrink-0"

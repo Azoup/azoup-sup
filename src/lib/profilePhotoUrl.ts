@@ -33,13 +33,27 @@ export function profilePhotoSrc(
   return `${base}${sep}t=${bust}`;
 }
 
-/** Extrai o path dentro do bucket profile-photos (para signed URL). */
-export function profilePhotoStoragePath(url: string): string | null {
+const PHOTO_BUCKETS = ['profile-photos', 'analyst-photos', 'developer-photos'] as const;
+
+/** Extrai bucket e path de uma URL pública do Storage (para signed URL). */
+export function storageObjectFromPublicUrl(
+  url: string,
+): { bucket: (typeof PHOTO_BUCKETS)[number]; path: string } | null {
   const normalized = normalizeProfilePhotoUrl(url);
   if (!normalized) return null;
-  const marker = '/profile-photos/';
-  const idx = normalized.indexOf(marker);
-  if (idx < 0) return null;
-  const path = normalized.slice(idx + marker.length).split('?')[0];
-  return path ? decodeURIComponent(path) : null;
+  for (const bucket of PHOTO_BUCKETS) {
+    const marker = `/${bucket}/`;
+    const idx = normalized.indexOf(marker);
+    if (idx < 0) continue;
+    const path = normalized.slice(idx + marker.length).split('?')[0];
+    if (path) {
+      return { bucket, path: decodeURIComponent(path) };
+    }
+  }
+  return null;
+}
+
+/** @deprecated Use storageObjectFromPublicUrl */
+export function profilePhotoStoragePath(url: string): string | null {
+  return storageObjectFromPublicUrl(url)?.path ?? null;
 }

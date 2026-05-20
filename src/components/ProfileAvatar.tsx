@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { supabase } from '@/integrations/supabase/client';
-import { normalizeProfilePhotoUrl, profilePhotoSrc, profilePhotoStoragePath } from '@/lib/profilePhotoUrl';
+import { normalizeProfilePhotoUrl, profilePhotoSrc, storageObjectFromPublicUrl } from '@/lib/profilePhotoUrl';
 
 type ProfileAvatarProps = {
   photoUrl?: string | null;
@@ -29,11 +29,11 @@ export function ProfileAvatar({
   const trySignedUrl = async () => {
     const raw = normalizeProfilePhotoUrl(photoUrl);
     if (!raw) return;
-    const path = profilePhotoStoragePath(raw);
-    if (!path) return;
+    const object = storageObjectFromPublicUrl(raw);
+    if (!object) return;
     const { data, error } = await supabase.storage
-      .from('profile-photos')
-      .createSignedUrl(path, 60 * 60);
+      .from(object.bucket)
+      .createSignedUrl(object.path, 60 * 60);
     if (!error && data?.signedUrl) {
       setSrc(data.signedUrl);
     }
