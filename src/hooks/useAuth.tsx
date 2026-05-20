@@ -113,7 +113,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         finishLoading();
       });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return;
 
       if (!nextSession?.access_token) {
@@ -136,6 +136,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       setSession(nextSession);
       finishLoading();
+
+      // Após login, não revalidar com getUser (pode travar com JWT ES256).
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        return;
+      }
     });
 
     return () => {

@@ -38,10 +38,15 @@ const queryClient = new QueryClient({
 function ProtectedRoute({ children, screen }: { children: React.ReactNode; screen?: string }) {
   const { user, loading } = useAuth();
   const { canView, isLoading: permsLoading } = usePermissions();
-  if (loading || permsLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
   if (!user) return <Navigate to="/auth" replace />;
-  if (screen && !canView(screen)) {
-    // Avoid infinite loop: if already on "/" redirect to /profile instead
+  if (screen && !permsLoading && !canView(screen)) {
     return <Navigate to={screen === 'kanban' ? '/profile' : '/'} replace />;
   }
   return <AppLayout>{children}</AppLayout>;
@@ -50,9 +55,15 @@ function ProtectedRoute({ children, screen }: { children: React.ReactNode; scree
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const { isAdmin, isLoading } = useRole();
-  if (loading || isLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
   if (!user) return <Navigate to="/auth" replace />;
-  if (!isAdmin) return <Navigate to="/" replace />;
+  if (!isLoading && !isAdmin) return <Navigate to="/" replace />;
   return <AppLayout>{children}</AppLayout>;
 }
 

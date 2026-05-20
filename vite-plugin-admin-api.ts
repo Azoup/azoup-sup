@@ -1,10 +1,7 @@
 import type { Connect, Plugin } from "vite";
-import {
-  adminConfigFromEnv,
-  runAdminUserActionCore,
-  type AdminBody,
-} from "./server/adminUserActionCore";
-import { fetchUserAccessCore } from "./server/myAccessCore";
+import { runAdminUserActionCore, type AdminBody } from "./api/lib/adminAction";
+import { adminConfigFromEnv } from "./api/lib/supabaseConfig";
+import { fetchUserAccessCore } from "./api/lib/userAccess";
 
 function readBody(req: Connect.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {

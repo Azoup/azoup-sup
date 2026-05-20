@@ -1,15 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
+import type { AdminConfig } from "./supabaseConfig";
 
 export type AdminBody = {
   action?: string;
   target_user_id?: string;
   new_password?: string;
-};
-
-export type AdminConfig = {
-  supabaseUrl: string;
-  anonKey: string;
-  serviceRole: string;
 };
 
 export async function runAdminUserActionCore(
@@ -24,13 +19,15 @@ export async function runAdminUserActionCore(
     return { status: 400, body: { error: "missing_target_user_id" } };
   }
 
+  const jwt = authHeader.slice(7).trim();
   const userClient = createClient(config.supabaseUrl, config.anonKey, {
-    global: { headers: { Authorization: authHeader } },
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const jwt = authHeader.slice(7).trim();
-  const { data: { user: caller }, error: authErr } = await userClient.auth.getUser(jwt);
+  const {
+    data: { user: caller },
+    error: authErr,
+  } = await userClient.auth.getUser(jwt);
   if (authErr || !caller?.id) {
     return { status: 401, body: { error: "unauthorized" } };
   }
@@ -96,45 +93,4 @@ export async function runAdminUserActionCore(
   }
 
   return { status: 400, body: { error: "unknown_action" } };
-}
-
-/** Lê credenciais do process.env (ficheiro .env na raiz). */
-export function adminConfigFromEnv(
-  env: NodeJS.ProcessEnv = process.env,
-): AdminConfig | { error: string } {
-  const supabaseUrl =
-    env.VITE_SUPABASE_URL?.trim() || env.SUPABASE_URL?.trim() || "";
-  const anonKey =
-    env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ||
-    env.SUPABASE_PUBLISHABLE_KEY?.trim() ||
-    env.SUPABASE_ANON_KEY?.trim() ||
-    "";
-  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY?.trim() || "";
-
-  if (!supabaseUrl || !anonKey || !serviceRole) {
-    const ref = supabaseUrl.match(/https?:\/\/([^.]+)\.supabase\.co/i)?.[1] ?? "ittmglvkympbyeowgucl";
-    return {
-      error:
-        `Defina SUPABASE_SERVICE_ROLE_KEY no .env (service_role do mesmo projeto que VITE_SUPABASE_URL: ${ref}).`,
-    };
-  }
-
-  const urlRef = supabaseUrl.match(/https?:\/\/([^.]+)\.supabase\.co/i)?.[1];
-  try {
-    const part = serviceRole.split(".")[1];
-    const roleRef = part
-      ? (JSON.parse(
-          Buffer.from(part.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"),
-        ) as { ref?: string }).ref
-      : null;
-    if (urlRef && roleRef && urlRef !== roleRef) {
-      return {
-        error: `SUPABASE_SERVICE_ROLE_KEY é do projeto "${roleRef}" mas VITE_SUPABASE_URL é "${urlRef}". Use chaves do mesmo projeto Supabase (Settings → API).`,
-      };
-    }
-  } catch {
-    /* ignore parse errors */
-  }
-
-  return { supabaseUrl, anonKey, serviceRole };
 }

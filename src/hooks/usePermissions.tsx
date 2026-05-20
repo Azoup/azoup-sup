@@ -36,7 +36,7 @@ const DEFAULT_USER_PERMISSIONS: Record<string, boolean> = {
 
 export function usePermissions() {
   const { isAdmin } = useRole();
-  const { data, isLoading, isError } = useUserAccess();
+  const { data, isFetching } = useUserAccess();
   const permissions = data?.permissions ?? null;
 
   const hasPermission = (key: string): boolean => {
@@ -47,7 +47,12 @@ export function usePermissions() {
 
   const canView = (screen: string): boolean => hasPermission(`${screen}_view`);
 
-  return { permissions: permissions || {}, isLoading: isLoading && !isError, hasPermission, canView };
+  return {
+    permissions: permissions || {},
+    isLoading: isFetching,
+    hasPermission,
+    canView,
+  };
 }
 
 // Map route paths to screen permission keys
