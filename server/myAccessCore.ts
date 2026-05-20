@@ -28,11 +28,10 @@ export async function fetchUserAccessCore(
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const { data: roleRow, error: roleErr } = await admin
+  const { data: roleRows, error: roleErr } = await admin
     .from("user_roles")
     .select("role")
-    .eq("user_id", user.id)
-    .maybeSingle();
+    .eq("user_id", user.id);
   if (roleErr) {
     return { status: 500, body: { error: "role_fetch_failed", message: roleErr.message } };
   }
@@ -45,13 +44,20 @@ export async function fetchUserAccessCore(
     return { status: 500, body: { error: "permissions_fetch_failed", message: permsErr.message } };
   }
 
+  const roles = (roleRows ?? []).map((r) => r.role as string);
+  const role = roles.includes("admin") ? "admin" : roles[0] || "user";
   const permissions =
     perms && perms.length > 0
-      ? Object.fromEntries(perms.map((p) => [p.permission_key, p.allowed]))
+      ? Object.fromEntries(
+          perms.map((p) => [
+            p.permission_key,
+            p.allowed === true || p.allowed === "true" || p.allowed === 1,
+          ]),
+        )
       : null;
 
   const body: UserAccessResult = {
-    role: (roleRow?.role as string) || "user",
+    role,
     permissions,
   };
 

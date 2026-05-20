@@ -1,6 +1,25 @@
 import { createClient } from "@supabase/supabase-js";
 import type { AdminConfig } from "./supabaseConfig";
 
+function isPermissionAllowed(value: unknown): boolean {
+  return value === true || value === "true" || value === 1;
+}
+
+function buildPermissionsMap(
+  rows: { permission_key: string; allowed: unknown }[] | null | undefined,
+): Record<string, boolean> | null {
+  if (!rows?.length) return null;
+  return Object.fromEntries(
+    rows.map((p) => [p.permission_key, isPermissionAllowed(p.allowed)]),
+  );
+}
+
+function resolveRoleFromRows(roles: string[]): string {
+  if (!roles.length) return "user";
+  if (roles.includes("admin")) return "admin";
+  return roles[0] || "user";
+}
+
 export async function fetchUserAccessCore(
   authHeader: string,
   config: AdminConfig,
@@ -23,11 +42,10 @@ export async function fetchUserAccessCore(
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const { data: roleRow, error: roleErr } = await admin
+  const { data: roleRows, error: roleErr } = await admin
     .from("user_roles")
     .select("role")
-    .eq("user_id", user.id)
-    .maybeSingle();
+    .eq("user_id", user.id);
   if (roleErr) {
     return { status: 500, body: { error: "role_fetch_failed", message: roleErr.message } };
   }
@@ -40,16 +58,13 @@ export async function fetchUserAccessCore(
     return { status: 500, body: { error: "permissions_fetch_failed", message: permsErr.message } };
   }
 
-  const permissions =
-    perms && perms.length > 0
-      ? Object.fromEntries(perms.map((p) => [p.permission_key, p.allowed]))
-      : null;
+  const roles = (roleRows ?? []).map((r) => r.role as string);
 
   return {
     status: 200,
     body: {
-      role: (roleRow?.role as string) || "user",
-      permissions,
+      role: resolveRoleFromRows(roles),
+      permissions: buildPermissionsMap(perms),
     },
   };
 }

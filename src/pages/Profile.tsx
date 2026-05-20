@@ -217,12 +217,13 @@ const Profile = () => {
       const rows = PERMISSION_KEYS.map(p => ({
         user_id: editingPermsUserId,
         permission_key: p.key,
-        allowed: permsDraft[p.key] ?? true,
+        allowed: permsDraft[p.key] === true,
       }));
       const { error } = await supabase.from('user_permissions').insert(rows);
       if (error) throw error;
       toast.success('Permissões salvas!');
       queryClient.invalidateQueries({ queryKey: ['user-permissions'] });
+      queryClient.invalidateQueries({ queryKey: ['user-access'] });
     } catch {
       toast.error('Erro ao salvar permissões.');
     }
@@ -238,6 +239,7 @@ const Profile = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['user-access'] });
       toast.success('Permissão atualizada!');
     },
     onError: () => toast.error('Erro ao atualizar permissão.'),

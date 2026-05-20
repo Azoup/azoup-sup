@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
-import { DEFAULT_USER_ACCESS, fetchUserAccess } from '@/lib/fetchUserAccess';
+import { fetchUserAccess } from '@/lib/fetchUserAccess';
 
 export function useUserAccess() {
   const { session, user } = useAuth();
@@ -8,14 +8,13 @@ export function useUserAccess() {
   return useQuery({
     queryKey: ['user-access', user?.id],
     queryFn: async () => {
-      if (!session?.access_token) {
-        return DEFAULT_USER_ACCESS;
+      if (!session?.access_token || !user?.id) {
+        throw new Error('missing_session');
       }
-      return fetchUserAccess(session.access_token);
+      return fetchUserAccess(session.access_token, user.id);
     },
     enabled: !!user && !!session?.access_token,
     staleTime: 60 * 1000,
-    retry: 0,
-    placeholderData: DEFAULT_USER_ACCESS,
+    retry: 1,
   });
 }

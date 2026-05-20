@@ -1,5 +1,6 @@
 import { useUserAccess } from '@/hooks/useUserAccess';
 import { useRole } from '@/hooks/useRole';
+import { isPermissionAllowed } from '@/lib/fetchUserAccess';
 
 // Default permissions for standard (non-admin) users
 const DEFAULT_USER_PERMISSIONS: Record<string, boolean> = {
@@ -35,13 +36,15 @@ const DEFAULT_USER_PERMISSIONS: Record<string, boolean> = {
 };
 
 export function usePermissions() {
-  const { isAdmin } = useRole();
-  const { data, isFetching } = useUserAccess();
+  const { isAdmin, isLoading: roleLoading } = useRole();
+  const { data, isPending, isFetching, isError } = useUserAccess();
   const permissions = data?.permissions ?? null;
+  const isLoading = roleLoading || isPending || isFetching;
 
   const hasPermission = (key: string): boolean => {
     if (isAdmin) return true;
-    if (permissions) return permissions[key] === true;
+    if (isLoading || isError) return false;
+    if (permissions) return isPermissionAllowed(permissions[key]);
     return DEFAULT_USER_PERMISSIONS[key] === true;
   };
 
@@ -49,7 +52,7 @@ export function usePermissions() {
 
   return {
     permissions: permissions || {},
-    isLoading: isFetching,
+    isLoading,
     hasPermission,
     canView,
   };

@@ -174,7 +174,7 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
   const { signOut, user } = useAuth();
-  const { canView } = usePermissions();
+  const { canView, isLoading: permsLoading } = usePermissions();
   const [items, setItems] = useState<MenuItem[]>(DEFAULT_MENU);
 
   useEffect(() => { setItems(loadOrder(user?.id)); }, [user?.id]);
@@ -184,8 +184,9 @@ export function AppSidebar() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  // Filter by permissions
+  // Filter by permissions (aguarda carregar para não ocultar telas liberadas no banco)
   const visibleItems = useMemo(() => {
+    if (permsLoading) return items;
     return items
       .map(item => {
         if (item.type === 'group') {
@@ -201,7 +202,7 @@ export function AppSidebar() {
         return item;
       })
       .filter(Boolean) as MenuItem[];
-  }, [items, canView]);
+  }, [items, canView, permsLoading]);
 
   const handleDragEnd = (e: DragEndEvent) => {
     const { active, over } = e;
