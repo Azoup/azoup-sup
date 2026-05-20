@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { AdminConfig } from "./supabaseConfig";
+import type { AdminConfig } from "./supabaseConfig.js";
 
 export type AdminBody = {
   action?: string;

@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { AdminConfig } from "./supabaseConfig";
+import type { AdminConfig } from "./supabaseConfig.js";
 
 function isPermissionAllowed(value: unknown): boolean {
   return value === true || value === "true" || value === 1;
