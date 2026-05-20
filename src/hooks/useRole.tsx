@@ -1,12 +1,13 @@
-import { useUserAccess } from '@/hooks/useUserAccess';
+import { useUserAccess, useAccessReady } from '@/hooks/useUserAccess';
 
 export function useRole() {
-  const { data, isPending, isFetching, isError } = useUserAccess();
-  const resolvedRole = isError ? 'user' : (data?.role || 'user');
+  const accessReady = useAccessReady();
+  const { data, isError } = useUserAccess();
+  const resolvedRole = !accessReady || isError ? 'user' : (data?.role || 'user');
 
   return {
     role: resolvedRole,
-    isAdmin: resolvedRole === 'admin',
-    isLoading: isPending || isFetching,
+    isAdmin: accessReady && resolvedRole === 'admin',
+    isLoading: !accessReady,
   };
 }

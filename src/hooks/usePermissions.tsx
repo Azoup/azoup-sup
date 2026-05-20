@@ -1,8 +1,7 @@
-import { useUserAccess } from '@/hooks/useUserAccess';
-import { useRole } from '@/hooks/useRole';
+import { useAuth } from '@/hooks/useAuth';
+import { useUserAccess, useAccessReady } from '@/hooks/useUserAccess';
 import { isPermissionAllowed } from '@/lib/fetchUserAccess';
 
-// Default permissions for standard (non-admin) users
 const DEFAULT_USER_PERMISSIONS: Record<string, boolean> = {
   kanban_view: false,
   kanban_create: false,
@@ -36,15 +35,17 @@ const DEFAULT_USER_PERMISSIONS: Record<string, boolean> = {
 };
 
 export function usePermissions() {
-  const { isAdmin, isLoading: roleLoading } = useRole();
-  const { data, isPending, isFetching } = useUserAccess();
-  const permissions = data?.permissions ?? null;
-  const isLoading = roleLoading || isPending || isFetching;
+  const { user } = useAuth();
+  const accessReady = useAccessReady();
+  const { data } = useUserAccess();
+  const isAdmin = accessReady && data?.role === 'admin';
+  const permissions = accessReady ? (data?.permissions ?? null) : null;
+  const isLoading = !accessReady;
 
   const hasPermission = (key: string): boolean => {
+    if (!accessReady) return false;
     if (isAdmin) return true;
     if (permissions) return isPermissionAllowed(permissions[key]);
-    if (isLoading) return false;
     return DEFAULT_USER_PERMISSIONS[key] === true;
   };
 
@@ -58,7 +59,6 @@ export function usePermissions() {
   };
 }
 
-// Map route paths to screen permission keys
 export const ROUTE_SCREEN_MAP: Record<string, string> = {
   '/': 'kanban',
   '/kanban-dashboard': 'kanban_dashboard',

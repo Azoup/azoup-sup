@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchUserAccess } from '@/lib/fetchUserAccess';
+import { writeUserAccessCache } from '@/lib/userAccessCache';
 import { getSiteUrl } from '@/lib/siteUrl';
 import { formatAuthErrorMessage } from '@/lib/authErrors';
 import { clearSupabaseAuthStorageExcept, getConfiguredSupabaseProjectRef } from '@/lib/supabaseProject';
@@ -11,6 +14,7 @@ import { toast } from 'sonner';
 import { Headset, Loader2 } from 'lucide-react';
 
 const Auth = () => {
+  const queryClient = useQueryClient();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
@@ -42,9 +46,21 @@ const Auth = () => {
       });
       if (error) {
         toast.error(formatAuthErrorMessage(error));
-      } else if (!data.session) {
+      } else if (!data.session?.access_token || !data.user?.id) {
         toast.error('Sessão não iniciada. Confirme o email ou tente novamente.');
       } else {
+        try {
+          const access = await fetchUserAccess(data.session.access_token, data.user.id);
+          const cached = {
+            ...access,
+            userId: data.user.id,
+            cachedAt: Date.now(),
+          };
+          writeUserAccessCache(cached);
+          queryClient.setQueryData(['user-access', data.user.id], cached);
+        } catch {
+          /* AuthRoute aguarda a query se o pré-carregamento falhar */
+        }
         logActivity('Login no sistema');
       }
     }
