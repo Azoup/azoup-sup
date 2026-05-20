@@ -22,7 +22,8 @@
     "supabase:deploy-admin-users": "supabase functions deploy admin-users --project-ref ittmglvkympbyeowgucl",
     "migrate:storage": "node supabase/scripts/migrate-storage-ffvgrvrk-to-ittmglvk.mjs",
     "migrate:storage:dry-run": "node supabase/scripts/migrate-storage-ffvgrvrk-to-ittmglvk.mjs --dry-run",
-    "fix:auth-emails": "node supabase/scripts/fix-auth-users-email.mjs"
+    "fix:auth-emails": "node supabase/scripts/fix-auth-users-email.mjs",
+    "fix:user-roles": "node supabase/scripts/fix-user-roles.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
