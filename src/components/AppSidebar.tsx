@@ -184,9 +184,8 @@ export function AppSidebar() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  // Filter by permissions (aguarda carregar para não ocultar telas liberadas no banco)
   const visibleItems = useMemo(() => {
-    if (permsLoading) return items;
+    if (permsLoading) return [];
     return items
       .map(item => {
         if (item.type === 'group') {

@@ -22,7 +22,8 @@ import Developers from "./pages/Developers";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import DigisacDashboard from "./pages/DigisacDashboard";
-import { Loader2 } from "lucide-react";
+import { AppLoadingScreen } from "@/components/AppLoadingScreen";
+import { getFirstAllowedPath } from "@/lib/allowedRoutes";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,16 +40,12 @@ const queryClient = new QueryClient({
 function ProtectedRoute({ children, screen }: { children: React.ReactNode; screen?: string }) {
   const { user, loading } = useAuth();
   const { canView, isLoading: permsLoading } = usePermissions();
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+  if (loading || permsLoading) {
+    return <AppLoadingScreen />;
   }
   if (!user) return <Navigate to="/auth" replace />;
-  if (screen && !permsLoading && !canView(screen)) {
-    return <Navigate to={screen === 'kanban' ? '/profile' : '/'} replace />;
+  if (screen && !canView(screen)) {
+    return <Navigate to={getFirstAllowedPath(canView)} replace />;
   }
   return <AppLayout>{children}</AppLayout>;
 }
@@ -56,22 +53,23 @@ function ProtectedRoute({ children, screen }: { children: React.ReactNode; scree
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const { isAdmin, isLoading } = useRole();
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+  const { canView, isLoading: permsLoading } = usePermissions();
+  if (loading || isLoading || permsLoading) {
+    return <AppLoadingScreen />;
   }
   if (!user) return <Navigate to="/auth" replace />;
-  if (!isLoading && !isAdmin) return <Navigate to="/" replace />;
+  if (!isAdmin) return <Navigate to={getFirstAllowedPath(canView)} replace />;
   return <AppLayout>{children}</AppLayout>;
 }
 
 function AuthRoute() {
   const { user, loading } = useAuth();
-  if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
-  if (user) return <Navigate to="/" replace />;
+  const { canView, isLoading: permsLoading } = usePermissions();
+  if (loading) return <AppLoadingScreen />;
+  if (user) {
+    if (permsLoading) return <AppLoadingScreen />;
+    return <Navigate to={getFirstAllowedPath(canView)} replace />;
+  }
   return <Auth />;
 }
 
