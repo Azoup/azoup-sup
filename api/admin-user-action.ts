@@ -43,9 +43,10 @@ function resolveConfig():
   const serviceRole = env("SUPABASE_SERVICE_ROLE_KEY");
 
   if (!supabaseUrl || !anonKey || !serviceRole) {
+    const ref = projectRefFromUrl(supabaseUrl) ?? "ittmglvkympbyeowgucl";
     return {
       error:
-        "Defina SUPABASE_SERVICE_ROLE_KEY no .env (service_role do projeto ffvgrvrkuiypjzfdcfyw, não ittmglvk).",
+        `Defina SUPABASE_SERVICE_ROLE_KEY nas variáveis de ambiente (service_role do projeto ${ref}, o mesmo de VITE_SUPABASE_URL).`,
     };
   }
 
@@ -53,7 +54,7 @@ function resolveConfig():
   const roleRef = projectRefFromJwt(serviceRole);
   if (urlRef && roleRef && urlRef !== roleRef) {
     return {
-      error: `SUPABASE_SERVICE_ROLE_KEY é do projeto "${roleRef}" mas VITE_SUPABASE_URL é "${urlRef}". Use a service_role de ffvgrvrkuiypjzfdcfyw.`,
+      error: `SUPABASE_SERVICE_ROLE_KEY é do projeto "${roleRef}" mas VITE_SUPABASE_URL é "${urlRef}". Use chaves do mesmo projeto Supabase.`,
     };
   }
 

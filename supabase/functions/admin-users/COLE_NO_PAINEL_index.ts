@@ -1,7 +1,7 @@
 /**
  * Cole TODO este ficheiro no editor da Edge Function "admin-users"
- * Projeto: ffvgrvrkuiypjzfdcfyw (NÃO use ittmglvkympbyeowgucl)
- * URL final: https://ffvgrvrkuiypjzfdcfyw.supabase.co/functions/v1/admin-users
+ * Projeto: ittmglvkympbyeowgucl
+ * URL final: https://ittmglvkympbyeowgucl.supabase.co/functions/v1/admin-users
  *
  * Passos: Supabase → Edge Functions → Deploy a new function → nome: admin-users
  * → apagar código default → colar ESTE ficheiro inteiro → Deploy

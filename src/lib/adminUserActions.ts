@@ -162,7 +162,7 @@ async function invokeAdminUsersEdge(
   }
 }
 
-/** Edge digisac-dashboard (já publicada no ffvgrvrk). */
+/** Edge digisac-dashboard (fallback se admin-users não estiver publicada). */
 async function invokeDigisacAdmin(
   token: string,
   body: AdminUserActionBody,
@@ -261,32 +261,42 @@ export async function runAdminUserAction(body: AdminUserActionBody): Promise<Adm
   return { ok: false, code: 'server_misconfigured' };
 }
 
+function supabaseProjectRef(): string {
+  const fromEnv = import.meta.env.VITE_SUPABASE_PROJECT_ID as string | undefined;
+  if (fromEnv?.trim()) return fromEnv.trim();
+  const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const m = url?.match(/https?:\/\/([^.]+)\.supabase\.co/i);
+  return m?.[1] ?? 'ittmglvkympbyeowgucl';
+}
+
 export function formatAdminActionErrorMessage(
   code: AdminUserActionErrorCode,
   detail?: string,
 ): string {
   if (code === 'server_misconfigured') {
+    const ref = supabaseProjectRef();
     if (detail === 'digisac_sem_admin' || detail?.includes('digisac_sem_admin')) {
       return (
-        'A função digisac-dashboard no Supabase ainda não tem o módulo de administração. ' +
-        'Crie a Edge Function admin-users: abra https://supabase.com/dashboard/project/ffvgrvrkuiypjzfdcfyw/functions, ' +
-        'Deploy new function → nome admin-users → cole todo o ficheiro supabase/functions/admin-users/COLE_NO_PAINEL_index.ts → Deploy.'
+        'A função digisac-dashboard não expõe ações de admin. ' +
+        `Publique a Edge Function admin-users no projeto ${ref}: ` +
+        `https://supabase.com/dashboard/project/${ref}/functions → Deploy → admin-users → ` +
+        'cole supabase/functions/admin-users/index.ts (ou COLE_NO_PAINEL_index.ts).'
       );
     }
-    if (detail?.includes('ittmglvk') || detail?.includes('ffvgrvrk')) {
+    if (detail?.trim()) {
       return detail;
     }
     const isProd = typeof window !== 'undefined' && !window.location.hostname.includes('localhost');
     if (isProd) {
       return (
-        'Em produção, copie do seu .env para a Vercel (Settings → Environment Variables) a variável ' +
-        'SUPABASE_SERVICE_ROLE_KEY do projeto ffvgrvrkuiypjzfdcfyw e faça Redeploy. ' +
-        'Ou publique a Edge Function admin-users no Supabase (COLE_NO_PAINEL_index.ts).'
+        'Em produção (Vercel): em Settings → Environment Variables, adicione SUPABASE_SERVICE_ROLE_KEY ' +
+        `(service_role do projeto ${ref}, o mesmo de VITE_SUPABASE_URL) e faça Redeploy. ` +
+        `Alternativa: publicar a Edge Function admin-users no Supabase (${ref}).`
       );
     }
     return (
-      'No .env, defina SUPABASE_SERVICE_ROLE_KEY com a service_role do projeto ffvgrvrkuiypjzfdcfyw ' +
-      '(não use a chave do projeto ittmglvk). Reinicie npm run dev.'
+      `No .env local, defina SUPABASE_SERVICE_ROLE_KEY com a service_role do projeto ${ref} ` +
+      '(o mesmo de VITE_SUPABASE_URL) e reinicie npm run dev.'
     );
   }
 

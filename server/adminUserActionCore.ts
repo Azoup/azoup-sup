@@ -112,9 +112,10 @@ export function adminConfigFromEnv(
   const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY?.trim() || "";
 
   if (!supabaseUrl || !anonKey || !serviceRole) {
+    const ref = supabaseUrl.match(/https?:\/\/([^.]+)\.supabase\.co/i)?.[1] ?? "ittmglvkympbyeowgucl";
     return {
       error:
-        "Defina SUPABASE_SERVICE_ROLE_KEY no ficheiro .env (service_role do projeto ffvgrvrkuiypjzfdcfyw).",
+        `Defina SUPABASE_SERVICE_ROLE_KEY no .env (service_role do mesmo projeto que VITE_SUPABASE_URL: ${ref}).`,
     };
   }
 
@@ -128,7 +129,7 @@ export function adminConfigFromEnv(
       : null;
     if (urlRef && roleRef && urlRef !== roleRef) {
       return {
-        error: `SUPABASE_SERVICE_ROLE_KEY é do projeto "${roleRef}" mas o app usa "${urlRef}". Troque pela service_role de ffvgrvrkuiypjzfdcfyw.`,
+        error: `SUPABASE_SERVICE_ROLE_KEY é do projeto "${roleRef}" mas VITE_SUPABASE_URL é "${urlRef}". Use chaves do mesmo projeto Supabase (Settings → API).`,
       };
     }
   } catch {
