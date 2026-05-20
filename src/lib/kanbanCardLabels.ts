@@ -45,6 +45,17 @@ export async function syncCardLabels(
 ): Promise<void> {
   const unique = uniqueLabelIds(labelIds);
 
+  const { data: existing, error: readErr } = await supabase
+    .from(table)
+    .select('label_id')
+    .eq('card_id', cardId);
+  if (readErr) throw readErr;
+
+  const existingSet = new Set((existing ?? []).map((r) => r.label_id));
+  const labelsUnchanged =
+    existingSet.size === unique.length && unique.every((id) => existingSet.has(id));
+  if (labelsUnchanged) return;
+
   const { error: delErr } = await supabase.from(table).delete().eq('card_id', cardId);
   if (delErr) throw delErr;
 

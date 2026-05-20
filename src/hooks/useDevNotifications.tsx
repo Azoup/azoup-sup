@@ -102,12 +102,18 @@ function normalize(s: string): string {
  * (e.g. "bea.azoup", "flavia.andreotti", "gianluca"). Matches when the
  * normalized first name of either side is a prefix of the other's first token.
  */
+const analystUserIdCache = new Map<string, string | null>();
+const developerUserIdCache = new Map<string, string | null>();
+
 async function findProfileIdByName(name: string): Promise<string | null> {
   const norm = normalize(name);
   const firstName = norm.split(/[\s.]+/)[0];
   if (!firstName) return null;
 
-  // 1) Exact (case-insensitive) match first
+  const viaRpc = await resolveProfileIdByNameViaRpc(name);
+  if (viaRpc) return viaRpc;
+
+  // Exact (case-insensitive) match
   const { data: exact } = await supabase
     .from('profiles')
     .select('id, display_name')
@@ -115,8 +121,12 @@ async function findProfileIdByName(name: string): Promise<string | null> {
     .maybeSingle();
   if (exact?.id) return exact.id;
 
-  // 2) Pull all profiles and match by first-name prefix (handles "Beatriz" ↔ "bea.azoup")
-  const { data: all } = await supabase.from('profiles').select('id, display_name');
+  // Prefix match — limit rows (evita carregar todos os perfis)
+  const { data: all } = await supabase
+    .from('profiles')
+    .select('id, display_name')
+    .ilike('display_name', `${firstName}%`)
+    .limit(40);
   if (!all) return null;
   // Prefer longer/closer matches
   let best: { id: string; score: number } | null = null;
@@ -152,9 +162,17 @@ async function resolveProfileIdByNameViaRpc(name: string): Promise<string | null
  */
 export async function resolveDeveloperUserId(developerId: string | null | undefined): Promise<string | null> {
   if (!developerId) return null;
+  if (developerUserIdCache.has(developerId)) {
+    return developerUserIdCache.get(developerId) ?? null;
+  }
   const { data: dev } = await supabase.from('developers').select('name').eq('id', developerId).maybeSingle();
-  if (!dev?.name) return null;
-  return (await findProfileIdByName(dev.name)) || (await resolveProfileIdByNameViaRpc(dev.name));
+  if (!dev?.name) {
+    developerUserIdCache.set(developerId, null);
+    return null;
+  }
+  const userId = (await findProfileIdByName(dev.name)) || (await resolveProfileIdByNameViaRpc(dev.name));
+  developerUserIdCache.set(developerId, userId);
+  return userId;
 }
 
 /**
@@ -162,9 +180,17 @@ export async function resolveDeveloperUserId(developerId: string | null | undefi
  */
 export async function resolveAnalystUserId(analystId: string | null | undefined): Promise<string | null> {
   if (!analystId) return null;
+  if (analystUserIdCache.has(analystId)) {
+    return analystUserIdCache.get(analystId) ?? null;
+  }
   const { data: an } = await supabase.from('analysts').select('name').eq('id', analystId).maybeSingle();
-  if (!an?.name) return null;
-  return (await findProfileIdByName(an.name)) || (await resolveProfileIdByNameViaRpc(an.name));
+  if (!an?.name) {
+    analystUserIdCache.set(analystId, null);
+    return null;
+  }
+  const userId = (await findProfileIdByName(an.name)) || (await resolveProfileIdByNameViaRpc(an.name));
+  analystUserIdCache.set(analystId, userId);
+  return userId;
 }
 
 /**

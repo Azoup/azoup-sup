@@ -4,6 +4,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useSupabaseReady } from '@/hooks/useSupabaseReady';
 import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
+import { actorNameFromUser } from '@/lib/actorName';
+import { fetchKanbanCardFiles } from '@/lib/kanbanCardFiles';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Paperclip, Download, Trash2, FileText, FileVideo, FileImage, File as FileIcon, Loader2, Eye } from 'lucide-react';
@@ -15,8 +17,6 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { QueryLoadState } from '@/components/QueryLoadState';
-import { runTimedQuery } from '@/lib/supabaseTimedQuery';
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
 
@@ -55,20 +55,12 @@ export function CardFiles({ cardId }: CardFilesProps) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<any>(null);
 
-  const { data: files = [], isLoading, isError, isFetched, refetch } = useQuery({
+  const { data: files = [], isLoading, isFetching } = useQuery({
     queryKey: ['card-files', cardId],
-    queryFn: async () =>
-      runTimedQuery(async () => {
-        const { data, error } = await supabase
-          .from('kanban_card_files')
-          .select('*')
-          .eq('card_id', cardId)
-          .order('created_at', { ascending: false });
-        if (error) throw error;
-        return data ?? [];
-      }),
+    queryFn: () => fetchKanbanCardFiles(cardId),
     enabled: supabaseReady && !!cardId,
-    retry: 1,
+    staleTime: 60_000,
+    retry: 0,
     placeholderData: [],
   });
 
@@ -87,7 +79,6 @@ export function CardFiles({ cardId }: CardFilesProps) {
       const contentType = isRar ? 'application/octet-stream' : (file.type || 'application/octet-stream');
       const path = `${cardId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
-      // Simulated progress (Supabase JS SDK doesn't expose upload progress directly)
       const progressInterval = setInterval(() => {
         setUploads(prev => prev.map((u, i) =>
           i === idx && u.status === 'uploading' && u.progress < 90
@@ -120,24 +111,23 @@ export function CardFiles({ cardId }: CardFilesProps) {
       if (dbError) throw dbError;
 
       setUploads(prev => prev.map((u, i) => i === idx ? { ...u, progress: 100, status: 'done' } : u));
-      queryClient.invalidateQueries({ queryKey: ['card-files', cardId] });
+      void queryClient.invalidateQueries({ queryKey: ['card-files', cardId] });
 
-      // Notify developer AND analyst about the new attachment
-      const { data: card } = await supabase
-        .from('kanban_cards')
-        .select('title, analyst_id')
-        .eq('id', cardId)
-        .maybeSingle();
-      if (card?.analyst_id) {
-        const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Alguém';
-        await notifySupportAnalyst({
-          cardId, cardTitle: card.title, analystId: card.analyst_id,
-          actionType: 'attachment', actorId: user?.id, actorName,
-          message: `${actorName} anexou "${file.name}" ao ticket "${card.title}"`,
-        });
-      }
+      void (async () => {
+        const { data: card } = await supabase
+          .from('kanban_cards')
+          .select('title, analyst_id')
+          .eq('id', cardId)
+          .maybeSingle();
+        if (card?.analyst_id) {
+          await notifySupportAnalyst({
+            cardId, cardTitle: card.title, analystId: card.analyst_id,
+            actionType: 'attachment', actorId: user?.id, actorName: actorNameFromUser(user),
+            message: `${actorNameFromUser(user)} anexou "${file.name}" ao ticket "${card.title}"`,
+          });
+        }
+      })();
 
-      // Remove from list after delay
       setTimeout(() => {
         setUploads(prev => prev.filter((_, i) => i !== idx));
       }, 2000);
@@ -155,14 +145,14 @@ export function CardFiles({ cardId }: CardFilesProps) {
 
   const handleDelete = async () => {
     if (!deleteId) return;
-    const file = files.find((f: any) => f.id === deleteId);
+    const file = files.find((f) => f.id === deleteId);
     if (!file) return;
     try {
       await supabase.storage.from('kanban-files').remove([file.file_path]);
       const { error } = await supabase.from('kanban_card_files').delete().eq('id', deleteId);
       if (error) throw error;
       toast.success('Arquivo removido');
-      queryClient.invalidateQueries({ queryKey: ['card-files', cardId] });
+      void queryClient.invalidateQueries({ queryKey: ['card-files', cardId] });
     } catch (e: any) {
       toast.error(`Erro ao remover: ${e.message}`);
     } finally {
@@ -175,6 +165,8 @@ export function CardFiles({ cardId }: CardFilesProps) {
     return type.startsWith('image/') || type.startsWith('video/') || type === 'application/pdf'
       || type.startsWith('text/') || type.includes('xml') || type.includes('json');
   };
+
+  const showLoading = isLoading && isFetching && files.length === 0;
 
   return (
     <div className="space-y-3">
@@ -219,16 +211,15 @@ export function CardFiles({ cardId }: CardFilesProps) {
         </div>
       )}
 
-      <QueryLoadState
-        isLoading={isLoading && !isFetched}
-        isError={isError && isFetched}
-        onRetry={() => refetch()}
-      >
-      {!isLoading && !isError && files.length === 0 ? (
+      {showLoading ? (
+        <div className="flex justify-center py-2">
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        </div>
+      ) : files.length === 0 ? (
         <p className="text-xs text-muted-foreground italic">Nenhum arquivo anexado</p>
-      ) : !isError && files.length > 0 ? (
+      ) : (
         <ul className="space-y-1.5">
-          {files.map((f: any) => {
+          {files.map((f) => {
             const Icon = getFileIcon(f.file_type);
             return (
               <li key={f.id} className="flex items-center gap-2 rounded-md border bg-card p-2 text-sm">
@@ -236,7 +227,7 @@ export function CardFiles({ cardId }: CardFilesProps) {
                 <div className="flex-1 min-w-0">
                   <p className="truncate font-medium">{f.file_name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {formatSize(f.file_size)} • {format(new Date(f.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                    {formatSize(f.file_size ?? 0)} • {format(new Date(f.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
                   </p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
@@ -277,8 +268,7 @@ export function CardFiles({ cardId }: CardFilesProps) {
             );
           })}
         </ul>
-      ) : null}
-      </QueryLoadState>
+      )}
 
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
         <AlertDialogContent>

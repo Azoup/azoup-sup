@@ -20,6 +20,7 @@ import {
 } from '@/lib/kanbanCardLabels';
 import { logActivity } from '@/hooks/useActivityLog';
 import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
+import { actorNameFromUser } from '@/lib/actorName';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -210,12 +211,23 @@ const Kanban = () => {
     }
   };
 
-  // Resolve current user's display name once for notification labels
-  const getActorName = useCallback(async (): Promise<string> => {
-    if (!user) return 'Alguém';
-    const { data } = await supabase.from('profiles').select('display_name').eq('id', user.id).maybeSingle();
-    return data?.display_name || user.email?.split('@')[0] || 'Alguém';
-  }, [user]);
+  const patchCardLabelsInCache = useCallback(
+    (cardId: string, labelIds: string[]) => {
+      patchKanbanBoardCardLabels(queryClient, (rows: any[]) => {
+        const rest = rows.filter((r: any) => r.card_id !== cardId);
+        const next = labelIds.map((label_id) => {
+          const label = labels.find((l: any) => l.id === label_id);
+          return {
+            card_id: cardId,
+            label_id,
+            kanban_labels: label ?? { id: label_id },
+          };
+        });
+        return [...rest, ...next];
+      });
+    },
+    [queryClient, labels],
+  );
 
   const createCard = useMutation({
     mutationFn: async () => {
@@ -234,21 +246,22 @@ const Kanban = () => {
       if (pendingFiles.length > 0) {
         await uploadAndSaveFiles(data.id, pendingFiles);
       }
-      await logActivity('Criou card no Kanban', title);
-      // Notify analyst on assignment
+      void logActivity('Criou card no Kanban', title);
       if (analystId) {
-        const actorName = await getActorName();
-        await notifySupportAnalyst({
+        const actorName = actorNameFromUser(user);
+        void notifySupportAnalyst({
           cardId: data.id, cardTitle: title, analystId,
           actionType: 'assignee', actorId: user?.id, actorName,
           message: `${actorName} criou o ticket "${title}" e atribuiu para você`,
         });
       }
+      return data;
     },
-    onSuccess: () => {
-      invalidateKanbanBoard(queryClient);
-      invalidateKanbanBoard(queryClient);
-      invalidateKanbanBoard(queryClient);
+    onSuccess: (newCard: any) => {
+      if (newCard) {
+        patchKanbanBoardCards(queryClient, (list) => [...list, newCard]);
+        patchCardLabelsInCache(newCard.id, selectedLabels);
+      }
       resetForm(); setCreateOpen(false);
       toast.success('Card criado!');
     },
@@ -270,32 +283,43 @@ const Kanban = () => {
       }
       if (pendingFiles.length > 0) {
         await uploadAndSaveFiles(editingCard.id, pendingFiles);
-        queryClient.invalidateQueries({ queryKey: ['dev-card-files', editingCard.id] });
+        void queryClient.invalidateQueries({ queryKey: ['card-files', editingCard.id] });
       }
       void logActivity('Editou card no Kanban', title);
-      try {
-        const actorName = await getActorName();
-        if (newAnalystId && newAnalystId !== prevAnalystId) {
-          await notifySupportAnalyst({
-            cardId: editingCard.id, cardTitle: title, analystId: newAnalystId,
-            actionType: 'assignee', actorId: user?.id, actorName,
-            message: `${actorName} atribuiu o ticket "${title}" para você`,
-          });
-        } else if (newAnalystId) {
-          await notifySupportAnalyst({
-            cardId: editingCard.id, cardTitle: title, analystId: newAnalystId,
-            actionType: 'edit', actorId: user?.id, actorName,
-            message: `${actorName} editou o ticket "${title}"`,
-          });
+      const actorName = actorNameFromUser(user);
+      const cardId = editingCard.id;
+      void (async () => {
+        try {
+          if (newAnalystId && newAnalystId !== prevAnalystId) {
+            await notifySupportAnalyst({
+              cardId, cardTitle: title, analystId: newAnalystId,
+              actionType: 'assignee', actorId: user?.id, actorName,
+              message: `${actorName} atribuiu o ticket "${title}" para você`,
+            });
+          } else if (newAnalystId) {
+            await notifySupportAnalyst({
+              cardId, cardTitle: title, analystId: newAnalystId,
+              actionType: 'edit', actorId: user?.id, actorName,
+              message: `${actorName} editou o ticket "${title}"`,
+            });
+          }
+        } catch (notifyErr) {
+          console.warn('[kanban] notificação:', notifyErr);
         }
-      } catch (notifyErr) {
-        console.warn('[kanban] notificação:', notifyErr);
-      }
+      })();
+      return { cardId };
     },
-    onSuccess: () => {
-      invalidateKanbanBoard(queryClient);
-      invalidateKanbanBoard(queryClient);
-      invalidateKanbanBoard(queryClient);
+    onSuccess: (result?: { cardId: string }) => {
+      const cardId = result?.cardId ?? editingCard?.id;
+      if (!cardId) return;
+      patchKanbanBoardCards(queryClient, (list) =>
+        list.map((c: any) =>
+          c.id === cardId
+            ? { ...c, title, description: description || null, analyst_id: analystId || null }
+            : c,
+        ),
+      );
+      patchCardLabelsInCache(cardId, selectedLabels);
       resetForm(); setEditOpen(false);
       toast.success('Card atualizado!');
     },
@@ -557,7 +581,7 @@ const Kanban = () => {
     if (statusChanged && movedCard?.analyst_id) {
       const colTitle =
         (columns as any[]).find((c) => c.slug === destination.droppableId)?.title || destination.droppableId;
-      const actorName = await getActorName();
+      const actorName = actorNameFromUser(user);
       void notifySupportAnalyst({
         cardId: movedCard.id,
         cardTitle: movedCard.title,
@@ -568,7 +592,7 @@ const Kanban = () => {
         message: `${actorName} moveu o ticket "${movedCard.title}" para "${colTitle}"`,
       });
     }
-  }, [queryClient, cards, columns, getActorName, user?.id, applyDoneLabelRule]);
+  }, [queryClient, cards, columns, user, applyDoneLabelRule]);
 
   // Auto-open a card when navigated with ?card=<id> (e.g., from notifications)
   const [searchParams, setSearchParams] = useSearchParams();
