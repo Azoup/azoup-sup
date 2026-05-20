@@ -60,6 +60,7 @@ export async function proxyAuthenticatedSupabaseRequest(
   if (incoming.Accept) forwardHeaders.Accept = incoming.Accept;
   if (incoming["Content-Type"]) forwardHeaders["Content-Type"] = incoming["Content-Type"];
   if (incoming["Content-Range"]) forwardHeaders["Content-Range"] = incoming["Content-Range"];
+  if (incoming.Range) forwardHeaders.Range = incoming.Range;
   if (incoming["X-Upsert"]) forwardHeaders["X-Upsert"] = incoming["X-Upsert"];
 
   const targetUrl = `${config.supabaseUrl}${path}`;

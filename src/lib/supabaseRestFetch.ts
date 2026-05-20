@@ -1,74 +1,137 @@
+import { getConfiguredSupabaseProjectRef } from '@/lib/supabaseProject';
+
 /**
  * Proxy REST/Storage do Supabase via /api/rest-proxy.
  * Contorna falha ES256 no PostgREST (usuário cai em anon e RLS retorna vazio).
  */
+function getStoredAccessToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  const ref = getConfiguredSupabaseProjectRef();
+  if (!ref) return null;
+
+  for (let i = 0; i < window.localStorage.length; i++) {
+    const key = window.localStorage.key(i);
+    if (!key?.includes(ref) || !key.includes('auth-token')) continue;
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      const data = JSON.parse(raw) as {
+        access_token?: string;
+        currentSession?: { access_token?: string };
+      };
+      const token = data.access_token ?? data.currentSession?.access_token;
+      if (token) return token;
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
+function resolveAuthHeader(init?: RequestInit): string {
+  const headers = new Headers(init?.headers);
+  const fromHeaders = headers.get('Authorization')?.trim();
+  if (fromHeaders?.startsWith('Bearer ') && fromHeaders.length > 20) {
+    return fromHeaders;
+  }
+  const token = getStoredAccessToken();
+  return token ? `Bearer ${token}` : '';
+}
+
+function extractSupabasePath(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.pathname.startsWith('/rest/v1/') || parsed.pathname.startsWith('/storage/v1/')) {
+      return parsed.pathname + parsed.search;
+    }
+    const restIdx = url.indexOf('/rest/v1/');
+    const storageIdx = url.indexOf('/storage/v1/');
+    const idx = restIdx >= 0 ? restIdx : storageIdx;
+    if (idx < 0) return null;
+    const pathAndQuery = url.slice(idx);
+    const q = pathAndQuery.indexOf('?');
+    return q >= 0 ? pathAndQuery : pathAndQuery;
+  } catch {
+    return null;
+  }
+}
+
 export function createSupabaseRestFetch(): typeof fetch {
   const nativeFetch = globalThis.fetch.bind(globalThis);
 
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url =
-      typeof input === "string"
+      typeof input === 'string'
         ? input
         : input instanceof URL
           ? input.href
           : input.url;
 
-    const isSupabaseDataApi =
-      url.includes("/rest/v1/") || url.includes("/storage/v1/");
-
-    if (!isSupabaseDataApi || typeof window === "undefined") {
+    const path = extractSupabasePath(url);
+    if (!path || typeof window === 'undefined') {
       return nativeFetch(input, init);
     }
 
-    try {
-      const parsed = new URL(url, window.location.origin);
-      const headers = new Headers(init?.headers);
-      const auth = headers.get("Authorization") || "";
+    const auth = resolveAuthHeader(init);
+    if (!auth) {
+      console.warn('[supabase] Sem token de sessão — aguardando login');
+      return new Response(JSON.stringify({ message: 'not_authenticated' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-      const proxyRes = await nativeFetch("/api/rest-proxy", {
-        method: "POST",
+    const headers = new Headers(init?.headers);
+    let bodyText: string | null = null;
+    if (init?.body != null) {
+      bodyText =
+        typeof init.body === 'string'
+          ? init.body
+          : await new Response(init.body).text();
+    }
+
+    const proxyRes = await nativeFetch('/api/rest-proxy', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: auth,
+      },
+      body: JSON.stringify({
+        path,
+        method: init?.method || 'GET',
+        body: bodyText,
         headers: {
-          "Content-Type": "application/json",
-          Authorization: auth,
+          ...(headers.get('Prefer') ? { Prefer: headers.get('Prefer')! } : {}),
+          ...(headers.get('Accept') ? { Accept: headers.get('Accept')! } : {}),
+          ...(headers.get('Content-Type') ? { 'Content-Type': headers.get('Content-Type')! } : {}),
+          ...(headers.get('Content-Range') ? { 'Content-Range': headers.get('Content-Range')! } : {}),
+          ...(headers.get('Range') ? { Range: headers.get('Range')! } : {}),
+          ...(headers.get('X-Upsert') ? { 'X-Upsert': headers.get('X-Upsert')! } : {}),
         },
-        body: JSON.stringify({
-          path: parsed.pathname + parsed.search,
-          method: init?.method || "GET",
-          body:
-            init?.body != null && typeof init.body === "string"
-              ? init.body
-              : init?.body != null
-                ? await new Response(init.body).text()
-                : null,
-          headers: {
-            ...(headers.get("Prefer") ? { Prefer: headers.get("Prefer")! } : {}),
-            ...(headers.get("Accept") ? { Accept: headers.get("Accept")! } : {}),
-            ...(headers.get("Content-Type")
-              ? { "Content-Type": headers.get("Content-Type")! }
-              : {}),
-            ...(headers.get("Content-Range")
-              ? { "Content-Range": headers.get("Content-Range")! }
-              : {}),
-            ...(headers.get("X-Upsert") ? { "X-Upsert": headers.get("X-Upsert")! } : {}),
-          },
-        }),
-      });
+      }),
+    });
 
-      const responseHeaders = new Headers();
-      proxyRes.headers.forEach((value, key) => {
-        if (key.toLowerCase() !== "content-encoding") {
-          responseHeaders.set(key, value);
-        }
-      });
+    const responseHeaders = new Headers();
+    proxyRes.headers.forEach((value, key) => {
+      if (key.toLowerCase() !== 'content-encoding') {
+        responseHeaders.set(key, value);
+      }
+    });
 
-      return new Response(await proxyRes.text(), {
+    if (!proxyRes.ok) {
+      const errText = await proxyRes.text();
+      console.error('[supabase] rest-proxy erro', proxyRes.status, path, errText.slice(0, 200));
+      return new Response(errText, {
         status: proxyRes.status,
         statusText: proxyRes.statusText,
         headers: responseHeaders,
       });
-    } catch (err) {
-      console.warn("[supabase] rest-proxy falhou, tentando fetch direto:", err);
-      return nativeFetch(input, init);
     }
+
+    return new Response(await proxyRes.text(), {
+      status: proxyRes.status,
+      statusText: proxyRes.statusText,
+      headers: responseHeaders,
+    });
   };
 }

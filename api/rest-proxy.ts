@@ -2,6 +2,19 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { adminConfigFromEnv } from "./lib/supabaseConfig.js";
 import { proxyAuthenticatedSupabaseRequest, type RestProxyBody } from "./lib/restProxy.js";
 
+function readBody(req: VercelRequest): RestProxyBody {
+  const raw = req.body;
+  if (raw == null) return { path: "/" };
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw) as RestProxyBody;
+    } catch {
+      return { path: "/" };
+    }
+  }
+  return raw as RestProxyBody;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -26,7 +39,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(401).json({ error: "unauthorized" });
     }
 
-    const payload = (req.body ?? {}) as RestProxyBody;
+    const payload = readBody(req);
     const result = await proxyAuthenticatedSupabaseRequest(authHeader, payload, config);
 
     for (const [key, value] of Object.entries(result.headers)) {
