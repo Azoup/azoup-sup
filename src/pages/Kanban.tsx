@@ -11,6 +11,13 @@ import {
   patchKanbanBoardCardLabels,
   patchKanbanBoardColumns,
 } from '@/lib/kanbanBoardPatch';
+import {
+  dedupeCardLabelRows,
+  labelsForCardFromRows,
+  removeDuplicateCardLabelsInDb,
+  syncCardLabels,
+  uniqueLabelIds,
+} from '@/lib/kanbanCardLabels';
 import { logActivity } from '@/hooks/useActivityLog';
 import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -87,9 +94,16 @@ const Kanban = () => {
   const analysts = (board?.analysts ?? []) as any[];
   const cards = (board?.cards ?? []) as any[];
   const labels = (board?.labels ?? []) as any[];
-  const cardLabels = (board?.cardLabels ?? []) as any[];
+  const cardLabels = dedupeCardLabelRows((board?.cardLabels ?? []) as { card_id: string; label_id: string }[]);
   const cardImages = (board?.cardImages ?? []) as any[];
   const isLoading = boardLoading && !board;
+
+  useEffect(() => {
+    if (!supabaseReady) return;
+    void removeDuplicateCardLabelsInDb('kanban_card_labels').then(() => {
+      invalidateKanbanBoard(queryClient);
+    });
+  }, [supabaseReady, queryClient]);
 
   useEffect(() => {
     const channel = supabase
@@ -120,7 +134,12 @@ const Kanban = () => {
       const cls = cardLabels.filter((cl: any) => cl.card_id === card.id);
       const analyst = analysts.find((a: any) => a.id === card.analyst_id);
       const images = cardImages.filter((img: any) => img.card_id === card.id);
-      const enriched = { ...card, labels: cls.map((cl: any) => cl.kanban_labels), analyst, images };
+      const enriched = {
+        ...card,
+        labels: labelsForCardFromRows(cls as { label_id: string; kanban_labels?: unknown }[]),
+        analyst,
+        images,
+      };
       // Apply label filter
       if (filterLabelIds.length > 0) {
         const cardLabelIds = cls.map((cl: any) => cl.label_id);
@@ -208,11 +227,7 @@ const Kanban = () => {
         created_by: user!.id,
       }).select().single();
       if (error) throw error;
-      if (selectedLabels.length > 0) {
-        await supabase.from('kanban_card_labels').insert(
-          selectedLabels.map(lid => ({ card_id: data.id, label_id: lid }))
-        );
-      }
+      await syncCardLabels('kanban_card_labels', data.id, selectedLabels);
       if (pendingImages.length > 0) {
         await uploadAndSaveImages(data.id, pendingImages);
       }
@@ -249,12 +264,7 @@ const Kanban = () => {
         .update({ title, description: description || null, analyst_id: newAnalystId })
         .eq('id', editingCard.id);
       if (error) throw error;
-      await supabase.from('kanban_card_labels').delete().eq('card_id', editingCard.id);
-      if (selectedLabels.length > 0) {
-        await supabase.from('kanban_card_labels').insert(
-          selectedLabels.map(lid => ({ card_id: editingCard.id, label_id: lid }))
-        );
-      }
+      await syncCardLabels('kanban_card_labels', editingCard.id, selectedLabels);
       if (pendingImages.length > 0) {
         await uploadAndSaveImages(editingCard.id, pendingImages);
       }
@@ -262,21 +272,24 @@ const Kanban = () => {
         await uploadAndSaveFiles(editingCard.id, pendingFiles);
         queryClient.invalidateQueries({ queryKey: ['dev-card-files', editingCard.id] });
       }
-      await logActivity('Editou card no Kanban', title);
-      // Notifications
-      const actorName = await getActorName();
-      if (newAnalystId && newAnalystId !== prevAnalystId) {
-        await notifySupportAnalyst({
-          cardId: editingCard.id, cardTitle: title, analystId: newAnalystId,
-          actionType: 'assignee', actorId: user?.id, actorName,
-          message: `${actorName} atribuiu o ticket "${title}" para você`,
-        });
-      } else if (newAnalystId) {
-        await notifySupportAnalyst({
-          cardId: editingCard.id, cardTitle: title, analystId: newAnalystId,
-          actionType: 'edit', actorId: user?.id, actorName,
-          message: `${actorName} editou o ticket "${title}"`,
-        });
+      void logActivity('Editou card no Kanban', title);
+      try {
+        const actorName = await getActorName();
+        if (newAnalystId && newAnalystId !== prevAnalystId) {
+          await notifySupportAnalyst({
+            cardId: editingCard.id, cardTitle: title, analystId: newAnalystId,
+            actionType: 'assignee', actorId: user?.id, actorName,
+            message: `${actorName} atribuiu o ticket "${title}" para você`,
+          });
+        } else if (newAnalystId) {
+          await notifySupportAnalyst({
+            cardId: editingCard.id, cardTitle: title, analystId: newAnalystId,
+            actionType: 'edit', actorId: user?.id, actorName,
+            message: `${actorName} editou o ticket "${title}"`,
+          });
+        }
+      } catch (notifyErr) {
+        console.warn('[kanban] notificação:', notifyErr);
       }
     },
     onSuccess: () => {
@@ -452,8 +465,7 @@ const Kanban = () => {
     if (movedToDone) {
       const doneLabelId = await ensureDoneLabel();
       if (!doneLabelId) return;
-
-      // Optimistic update das labels
+      await syncCardLabels('kanban_card_labels', cardId, [doneLabelId]);
       patchKanbanBoardCardLabels(queryClient, (old) => {
         const targetLabel = (labels as any[]).find((l) => l.id === doneLabelId);
         return [
@@ -461,28 +473,21 @@ const Kanban = () => {
           { card_id: cardId, label_id: doneLabelId, kanban_labels: targetLabel },
         ];
       });
-
-      // Remove todas as etiquetas e adiciona apenas "Concluído"
-      const { error: deleteLabelsError } = await supabase.from('kanban_card_labels').delete().eq('card_id', cardId);
-      if (deleteLabelsError) throw deleteLabelsError;
-      const { error: addDoneLabelError } = await supabase.from('kanban_card_labels').insert({ card_id: cardId, label_id: doneLabelId });
-      if (addDoneLabelError) throw addDoneLabelError;
     } else if (movedFromDone) {
       const doneLabelId = await ensureDoneLabel();
       if (!doneLabelId) return;
-
-      // Optimistic update
+      const remaining = uniqueLabelIds(
+        cardLabels
+          .filter((cl: any) => cl.card_id === cardId && cl.label_id !== doneLabelId)
+          .map((cl: any) => cl.label_id),
+      );
+      await syncCardLabels('kanban_card_labels', cardId, remaining);
       patchKanbanBoardCardLabels(queryClient, (old) =>
         old.filter((cl: any) => !(cl.card_id === cardId && cl.label_id === doneLabelId)),
       );
-
-      // Remove apenas a etiqueta "Concluído" (não restaura antigas)
-      const { error: removeDoneLabelError } = await supabase.from('kanban_card_labels').delete()
-        .eq('card_id', cardId).eq('label_id', doneLabelId);
-      if (removeDoneLabelError) throw removeDoneLabelError;
     }
     invalidateKanbanBoard(queryClient);
-  }, [ensureDoneLabel, queryClient, labels]);
+  }, [ensureDoneLabel, queryClient, labels, cardLabels]);
 
   // --- Optimistic drag and drop ---
   const onDragEnd = useCallback(async (result: DropResult) => {
@@ -590,7 +595,7 @@ const Kanban = () => {
     setTitle(card.title);
     setDescription(card.description || '');
     setAnalystId(card.analyst_id || '');
-    setSelectedLabels((card.labels || []).map((l: any) => l.id));
+    setSelectedLabels(uniqueLabelIds((card.labels || []).map((l: any) => l?.id).filter(Boolean)));
     setPendingImages([]);
     setPendingFiles([]);
     setEditOpen(true);
@@ -608,7 +613,10 @@ const Kanban = () => {
   };
 
   const toggleLabel = useCallback((labelId: string) => {
-    setSelectedLabels(prev => prev.includes(labelId) ? prev.filter(id => id !== labelId) : [...prev, labelId]);
+    setSelectedLabels((prev) => {
+      if (prev.includes(labelId)) return prev.filter((id) => id !== labelId);
+      return uniqueLabelIds([...prev, labelId]);
+    });
   }, []);
 
   const startEditLabel = (label: any) => {

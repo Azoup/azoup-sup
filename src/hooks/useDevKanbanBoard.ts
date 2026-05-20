@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { assertSupabaseData } from '@/lib/supabaseQuery';
+import { dedupeCardLabelRows } from '@/lib/kanbanCardLabels';
 import type { DevKanbanBoardData } from '@/lib/devKanbanBoardPatch';
 import { DEV_KANBAN_BOARD_QUERY_KEY } from '@/lib/devKanbanBoardPatch';
 
@@ -25,7 +26,12 @@ export async function fetchDevKanbanBoard(): Promise<DevKanbanBoardData> {
     developers: assertSupabaseData(developersRes.data, developersRes.error, 'developers'),
     cards: assertSupabaseData(cardsRes.data, cardsRes.error, 'dev_kanban_cards'),
     labels: assertSupabaseData(labelsRes.data, labelsRes.error, 'dev_kanban_labels'),
-    cardLabels: assertSupabaseData(cardLabelsRes.data, cardLabelsRes.error, 'dev_kanban_card_labels'),
+    cardLabels: dedupeCardLabelRows(
+      assertSupabaseData(cardLabelsRes.data, cardLabelsRes.error, 'dev_kanban_card_labels') as {
+        card_id: string;
+        label_id: string;
+      }[],
+    ),
     cardImages: assertSupabaseData(cardImagesRes.data, cardImagesRes.error, 'dev_kanban_card_images'),
     cachedAt: Date.now(),
   };

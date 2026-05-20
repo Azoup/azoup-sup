@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { assertSupabaseData } from '@/lib/supabaseQuery';
+import { dedupeCardLabelRows } from '@/lib/kanbanCardLabels';
 import type { KanbanBoardData } from '@/lib/kanbanBoardCache';
 
 const API_TIMEOUT_MS = 8_000;
@@ -39,7 +40,12 @@ async function fetchKanbanBoardViaProxy(): Promise<KanbanBoardData | null> {
       analysts: assertSupabaseData(analystsRes.data, analystsRes.error, 'analysts'),
       cards: assertSupabaseData(cardsRes.data, cardsRes.error, 'kanban_cards'),
       labels: assertSupabaseData(labelsRes.data, labelsRes.error, 'kanban_labels'),
-      cardLabels: assertSupabaseData(cardLabelsRes.data, cardLabelsRes.error, 'kanban_card_labels'),
+      cardLabels: dedupeCardLabelRows(
+        assertSupabaseData(cardLabelsRes.data, cardLabelsRes.error, 'kanban_card_labels') as {
+          card_id: string;
+          label_id: string;
+        }[],
+      ),
       cardImages: assertSupabaseData(cardImagesRes.data, cardImagesRes.error, 'kanban_card_images'),
       cachedAt: Date.now(),
     };
