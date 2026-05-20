@@ -45,6 +45,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     for (const [key, value] of Object.entries(result.headers)) {
       res.setHeader(key, value);
     }
+    if (result.status === 204 || result.status === 205 || result.status === 304) {
+      return res.status(result.status).end();
+    }
     return res.status(result.status).send(result.body);
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown";

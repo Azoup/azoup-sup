@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useSupabaseReady } from '@/hooks/useSupabaseReady';
-import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
+import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Paperclip, Download, Trash2, FileText, FileVideo, FileImage, File as FileIcon, Loader2, Eye } from 'lucide-react';
@@ -55,7 +55,7 @@ export function CardFiles({ cardId }: CardFilesProps) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<any>(null);
 
-  const { data: files = [], isLoading, isError, refetch } = useQuery({
+  const { data: files = [], isLoading, isError, isFetched, refetch } = useQuery({
     queryKey: ['card-files', cardId],
     queryFn: async () =>
       runTimedQuery(async () => {
@@ -65,10 +65,11 @@ export function CardFiles({ cardId }: CardFilesProps) {
           .eq('card_id', cardId)
           .order('created_at', { ascending: false });
         if (error) throw error;
-        return data || [];
+        return data ?? [];
       }),
     enabled: supabaseReady && !!cardId,
     retry: 1,
+    placeholderData: [],
   });
 
   const uploadFile = useCallback(async (file: File) => {
@@ -119,19 +120,18 @@ export function CardFiles({ cardId }: CardFilesProps) {
       if (dbError) throw dbError;
 
       setUploads(prev => prev.map((u, i) => i === idx ? { ...u, progress: 100, status: 'done' } : u));
-      queryClient.invalidateQueries({ queryKey: ['dev-card-files', cardId] });
+      queryClient.invalidateQueries({ queryKey: ['card-files', cardId] });
 
       // Notify developer AND analyst about the new attachment
       const { data: card } = await supabase
-        .from('dev_kanban_cards')
-        .select('title, developer_id, analyst_id')
+        .from('kanban_cards')
+        .select('title, analyst_id')
         .eq('id', cardId)
         .maybeSingle();
-      if (card && (card.developer_id || card.analyst_id)) {
+      if (card?.analyst_id) {
         const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Alguém';
-        await notifyDevAndAnalyst({
-          cardId, cardTitle: card.title,
-          developerId: card.developer_id, analystId: card.analyst_id,
+        await notifySupportAnalyst({
+          cardId, cardTitle: card.title, analystId: card.analyst_id,
           actionType: 'attachment', actorId: user?.id, actorName,
           message: `${actorName} anexou "${file.name}" ao ticket "${card.title}"`,
         });
@@ -162,7 +162,7 @@ export function CardFiles({ cardId }: CardFilesProps) {
       const { error } = await supabase.from('kanban_card_files').delete().eq('id', deleteId);
       if (error) throw error;
       toast.success('Arquivo removido');
-      queryClient.invalidateQueries({ queryKey: ['dev-card-files', cardId] });
+      queryClient.invalidateQueries({ queryKey: ['card-files', cardId] });
     } catch (e: any) {
       toast.error(`Erro ao remover: ${e.message}`);
     } finally {
@@ -219,10 +219,14 @@ export function CardFiles({ cardId }: CardFilesProps) {
         </div>
       )}
 
-      <QueryLoadState isLoading={isLoading} isError={isError} onRetry={() => refetch()}>
-      {files.length === 0 ? (
+      <QueryLoadState
+        isLoading={isLoading && !isFetched}
+        isError={isError && isFetched}
+        onRetry={() => refetch()}
+      >
+      {!isLoading && !isError && files.length === 0 ? (
         <p className="text-xs text-muted-foreground italic">Nenhum arquivo anexado</p>
-      ) : (
+      ) : !isError && files.length > 0 ? (
         <ul className="space-y-1.5">
           {files.map((f: any) => {
             const Icon = getFileIcon(f.file_type);
@@ -273,7 +277,7 @@ export function CardFiles({ cardId }: CardFilesProps) {
             );
           })}
         </ul>
-      )}
+      ) : null}
       </QueryLoadState>
 
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>

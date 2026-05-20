@@ -128,14 +128,23 @@ export function createSupabaseRestFetch(): typeof fetch {
       });
     }
 
-    let body = await proxyRes.text();
-    // PATCH/DELETE podem retornar 204 sem corpo — o cliente Supabase espera JSON válido.
-    if (!body.trim() && proxyRes.ok) {
-      body = '[]';
+    const status = proxyRes.status;
+    const body = await proxyRes.text();
+
+    // 204/205/304 não podem ter corpo (senão o browser lança TypeError no Response).
+    if (status === 204 || status === 205 || status === 304) {
+      return new Response(null, {
+        status,
+        statusText: proxyRes.statusText,
+        headers: responseHeaders,
+      });
     }
 
-    return new Response(body, {
-      status: proxyRes.status,
+    // PATCH/DELETE com 200 e corpo vazio — Supabase client espera JSON.
+    const normalizedBody = !body.trim() && proxyRes.ok ? '[]' : body;
+
+    return new Response(normalizedBody, {
+      status,
       statusText: proxyRes.statusText,
       headers: responseHeaders,
     });

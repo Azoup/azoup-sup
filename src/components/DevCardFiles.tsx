@@ -53,7 +53,7 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<any>(null);
 
-  const { data: files = [], isLoading, isError, refetch } = useQuery({
+  const { data: files = [], isLoading, isError, isFetched, refetch } = useQuery({
     queryKey: ['dev-card-files', cardId],
     queryFn: async () =>
       runTimedQuery(async () => {
@@ -63,10 +63,11 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
           .eq('card_id', cardId)
           .order('created_at', { ascending: false });
         if (error) throw error;
-        return data || [];
+        return data ?? [];
       }),
     enabled: !!cardId,
     retry: 1,
+    placeholderData: [],
   });
 
   const uploadFile = useCallback(async (file: File) => {
@@ -221,10 +222,14 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
         </div>
       )}
 
-      <QueryLoadState isLoading={isLoading} isError={isError} onRetry={() => refetch()}>
-      {files.length === 0 ? (
+      <QueryLoadState
+        isLoading={isLoading && !isFetched}
+        isError={isError && isFetched}
+        onRetry={() => refetch()}
+      >
+      {!isLoading && !isError && files.length === 0 ? (
         <p className="text-xs text-muted-foreground italic">Nenhum arquivo anexado</p>
-      ) : (
+      ) : !isError && files.length > 0 ? (
         <ul className="space-y-1.5">
           {files.map((f: any) => {
             const Icon = getFileIcon(f.file_type);
@@ -275,7 +280,7 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
             );
           })}
         </ul>
-      )}
+      ) : null}
       </QueryLoadState>
 
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>

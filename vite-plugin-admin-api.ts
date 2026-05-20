@@ -75,7 +75,11 @@ export function adminApiDevPlugin(env: Record<string, string>): Plugin {
               res.setHeader(key, value);
             }
             res.statusCode = result.status;
-            res.end(result.body);
+            if (result.status === 204 || result.status === 205 || result.status === 304) {
+              res.end();
+            } else {
+              res.end(result.body);
+            }
           } catch (err) {
             res.statusCode = 500;
             res.setHeader("Content-Type", "application/json");
