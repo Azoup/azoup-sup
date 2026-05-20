@@ -16,6 +16,7 @@ function readBody(req: Connect.IncomingMessage): Promise<string> {
 export function adminApiDevPlugin(env: Record<string, string>): Plugin {
   return {
     name: "admin-api-dev",
+    apply: "serve",
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const url = req.url?.split("?")[0];

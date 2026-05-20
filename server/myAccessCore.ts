@@ -51,7 +51,7 @@ export async function fetchUserAccessCore(
       ? Object.fromEntries(
           perms.map((p) => [
             p.permission_key,
-            p.allowed === true || p.allowed === "true" || p.allowed === 1,
+            p.allowed === true || (p.allowed as unknown) === "true" || (p.allowed as unknown) === 1,
           ]),
         )
       : null;
