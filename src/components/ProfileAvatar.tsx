@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { supabase } from '@/integrations/supabase/client';
-import { normalizeProfilePhotoUrl, profilePhotoSrc, storageObjectFromPublicUrl } from '@/lib/profilePhotoUrl';
+import { resolvePhotoDisplayUrl } from '@/lib/profilePhotoUpload';
+import { profilePhotoSrc } from '@/lib/profilePhotoUrl';
 
 type ProfileAvatarProps = {
   photoUrl?: string | null;
+  /** URL imediata (blob ou assinada) logo após upload — evita esperar refetch */
+  previewUrl?: string | null;
   fallbackLabel: string;
   className?: string;
   imageClassName?: string;
@@ -13,43 +15,53 @@ type ProfileAvatarProps = {
 
 export function ProfileAvatar({
   photoUrl,
+  previewUrl,
   fallbackLabel,
   className,
   imageClassName,
   cacheBust,
 }: ProfileAvatarProps) {
   const [src, setSrc] = useState<string | undefined>(() =>
-    profilePhotoSrc(photoUrl, cacheBust),
+    previewUrl || profilePhotoSrc(photoUrl, cacheBust),
   );
 
   useEffect(() => {
-    setSrc(profilePhotoSrc(photoUrl, cacheBust));
-  }, [photoUrl, cacheBust]);
+    let cancelled = false;
 
-  const trySignedUrl = async () => {
-    const raw = normalizeProfilePhotoUrl(photoUrl);
-    if (!raw) return;
-    const object = storageObjectFromPublicUrl(raw);
-    if (!object) return;
-    const { data, error } = await supabase.storage
-      .from(object.bucket)
-      .createSignedUrl(object.path, 60 * 60);
-    if (!error && data?.signedUrl) {
-      setSrc(data.signedUrl);
+    if (previewUrl) {
+      setSrc(previewUrl);
+      return;
     }
-  };
+
+    const run = async () => {
+      if (!photoUrl?.trim()) {
+        if (!cancelled) setSrc(undefined);
+        return;
+      }
+      const display = await resolvePhotoDisplayUrl(photoUrl, cacheBust);
+      if (!cancelled) setSrc(display);
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [photoUrl, previewUrl, cacheBust]);
+
+  const imageKey = `${photoUrl ?? ''}-${previewUrl ?? ''}-${cacheBust ?? ''}`;
 
   return (
     <Avatar className={className}>
-      <AvatarImage
-        src={src}
-        alt={fallbackLabel}
-        className={imageClassName}
-        onError={() => {
-          void trySignedUrl();
-        }}
-      />
-      <AvatarFallback>
+      {src ? (
+        <AvatarImage
+          key={imageKey}
+          src={src}
+          alt={fallbackLabel}
+          className={imageClassName}
+          referrerPolicy="no-referrer"
+        />
+      ) : null}
+      <AvatarFallback delayMs={src ? 600 : 0}>
         {(fallbackLabel || '?').charAt(0).toUpperCase()}
       </AvatarFallback>
     </Avatar>

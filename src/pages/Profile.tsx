@@ -17,8 +17,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { Loader2, KeyRound, User, Shield, ScrollText, Filter, Camera, Trash2, UserX } from 'lucide-react';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
-import { normalizeProfilePhotoUrl, profilePhotoSrc } from '@/lib/profilePhotoUrl';
 import { personNameMatchesProfile, resolveUserPhoto } from '@/lib/resolveUserPhotoUrl';
+import { uploadProfilePhotoFile } from '@/lib/profilePhotoUpload';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
@@ -199,17 +199,23 @@ const Profile = () => {
     void queryClient.invalidateQueries({ queryKey: ['people-photos'] });
   };
 
-  const applyPhotoUrlToCaches = (targetUserId: string, publicUrl: string, bust: number) => {
-    const urlWithBust = profilePhotoSrc(publicUrl, bust) ?? publicUrl;
+  const applyPhotoUrlToCaches = (
+    targetUserId: string,
+    publicUrl: string,
+    displayUrl: string,
+  ) => {
+    setPhotoPreviewByUser((prev) => ({ ...prev, [targetUserId]: displayUrl }));
     queryClient.setQueryData(['profile', targetUserId], (old: any) =>
-      old ? { ...old, photo_url: urlWithBust } : { id: targetUserId, photo_url: urlWithBust },
+      old
+        ? { ...old, photo_url: publicUrl }
+        : { id: targetUserId, photo_url: publicUrl, display_name: old?.display_name },
     );
     queryClient.setQueryData(['all-users-roles-profiles'], (old: any[] | undefined) =>
       (old ?? []).map((ur) =>
         ur.user_id === targetUserId
           ? {
               ...ur,
-              photo_url: urlWithBust,
+              photo_url: displayUrl,
               photo_source: 'profile',
               profile_photo_url: publicUrl,
             }
@@ -220,18 +226,12 @@ const Profile = () => {
 
   // Photo upload (for self or admin-managed user)
   const handlePhotoUpload = async (targetUserId: string, file: File) => {
-    try {
-      const ext = file.name.split('.').pop() || 'jpg';
-      const path = `${targetUserId}/${Date.now()}.${ext}`;
-      const contentType = file.type || 'image/jpeg';
-      const { error: upErr } = await supabase.storage
-        .from('profile-photos')
-        .upload(path, file, { upsert: true, contentType });
-      if (upErr) throw upErr;
+    const blobPreview = URL.createObjectURL(file);
+    setPhotoPreviewByUser((prev) => ({ ...prev, [targetUserId]: blobPreview }));
 
-      const { data: urlData } = supabase.storage.from('profile-photos').getPublicUrl(path);
-      const publicUrl = normalizeProfilePhotoUrl(urlData.publicUrl) ?? urlData.publicUrl;
-      const bust = Date.now();
+    try {
+      const { publicUrl, displayUrl } = await uploadProfilePhotoFile(targetUserId, file);
+      URL.revokeObjectURL(blobPreview);
 
       const { data: existing } = await supabase
         .from('profiles')
@@ -255,15 +255,22 @@ const Profile = () => {
       );
       if (error) throw error;
 
-      applyPhotoUrlToCaches(targetUserId, publicUrl, bust);
+      applyPhotoUrlToCaches(targetUserId, publicUrl, displayUrl);
       void syncLinkedCadastroPhoto(targetUserId, publicUrl);
 
       toast.success('Foto atualizada!');
       void queryClient.invalidateQueries({ queryKey: ['profile', targetUserId] });
       void queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
+      void queryClient.invalidateQueries({ queryKey: ['people-photos'] });
       void queryClient.invalidateQueries({ queryKey: ['card-comments'] });
       void queryClient.invalidateQueries({ queryKey: ['dev-card-comments'] });
     } catch (e: any) {
+      URL.revokeObjectURL(blobPreview);
+      setPhotoPreviewByUser((prev) => {
+        const next = { ...prev };
+        delete next[targetUserId];
+        return next;
+      });
       toast.error('Erro ao enviar foto: ' + (e.message || ''));
     }
   };
@@ -271,6 +278,11 @@ const Profile = () => {
   const handlePhotoRemove = async (targetUserId: string) => {
     const { error } = await supabase.from('profiles').update({ photo_url: null }).eq('id', targetUserId);
     if (error) { toast.error('Erro ao remover foto'); return; }
+    setPhotoPreviewByUser((prev) => {
+      const next = { ...prev };
+      delete next[targetUserId];
+      return next;
+    });
     queryClient.setQueryData(['profile', targetUserId], (old: any) =>
       old ? { ...old, photo_url: null } : old,
     );
@@ -334,6 +346,8 @@ const Profile = () => {
   };
 
   const [permsLoaded, setPermsLoaded] = useState(false);
+  /** Preview imediato no avatar após upload (userId → URL assinada ou blob) */
+  const [photoPreviewByUser, setPhotoPreviewByUser] = useState<Record<string, string>>({});
 
   // Sync draft from DB only once when permissions load for a user
   useEffect(() => {
@@ -458,9 +472,9 @@ const Profile = () => {
             <div className="flex items-center gap-4">
               <ProfileAvatar
                 className="h-16 w-16"
-                photoUrl={selfPhotoResolved.photo_url}
+                photoUrl={profile?.photo_url || selfPhotoResolved.photo_url}
+                previewUrl={user?.id ? photoPreviewByUser[user.id] : undefined}
                 fallbackLabel={profile?.display_name || user?.email || '?'}
-                cacheBust={selfPhotoResolved.photo_url || undefined}
               />
               <div className="flex flex-col gap-1">
                 <label className="cursor-pointer">
@@ -550,9 +564,9 @@ const Profile = () => {
                       <div className="flex items-center gap-3 min-w-0 flex-1">
                         <ProfileAvatar
                           className="h-10 w-10 shrink-0"
-                          photoUrl={ur.photo_url}
+                          photoUrl={ur.profile_photo_url || ur.photo_url}
+                          previewUrl={photoPreviewByUser[ur.user_id]}
                           fallbackLabel={ur.email || '?'}
-                          cacheBust={ur.photo_url || undefined}
                         />
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{ur.email}</p>
