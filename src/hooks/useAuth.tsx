@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import { useState, useEffect, useRef, createContext, useContext, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -7,10 +7,11 @@ import {
   getConfiguredSupabaseProjectRef,
   projectRefFromAccessToken,
 } from '@/lib/supabaseProject';
+import { clearLocalSession } from '@/lib/signOutLocal';
 import { withTimeout } from '@/lib/withTimeout';
 
-const AUTH_INIT_TIMEOUT_MS = 6_000;
-const AUTH_LOADING_WATCHDOG_MS = 10_000;
+const AUTH_INIT_TIMEOUT_MS = 4_000;
+const AUTH_LOADING_WATCHDOG_MS = 8_000;
 
 interface AuthContextType {
   session: Session | null;
@@ -43,18 +44,13 @@ async function resolveValidSession(): Promise<Session | null> {
 }
 
 async function resetAuthStateLocal(): Promise<void> {
-  const urlRef = getConfiguredSupabaseProjectRef();
-  clearSupabaseAuthStorageExcept(urlRef);
-  try {
-    await supabase.auth.signOut({ scope: 'local' });
-  } catch {
-    /* ignore */
-  }
+  clearLocalSession();
 }
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const signedOutRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -76,13 +72,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     withTimeout(resolveValidSession(), AUTH_INIT_TIMEOUT_MS, 'Inicialização de sessão expirou')
       .then((validSession) => {
-        if (mounted) setSession(validSession);
+        if (!mounted || signedOutRef.current) return;
+        setSession(validSession);
       })
       .catch(() => {
-        if (mounted) {
-          void resetAuthStateLocal();
-          setSession(null);
-        }
+        if (!mounted || signedOutRef.current) return;
+        void resetAuthStateLocal();
+        setSession(null);
       })
       .finally(() => {
         window.clearTimeout(watchdog);
@@ -92,8 +88,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return;
 
+      if (event === 'SIGNED_IN') {
+        signedOutRef.current = false;
+      }
+
       if (!nextSession?.access_token) {
         setSession(null);
+        finishLoading();
+        return;
+      }
+
+      if (signedOutRef.current) {
         finishLoading();
         return;
       }
@@ -129,11 +134,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const signOut = () => {
-    const urlRef = getConfiguredSupabaseProjectRef();
+    signedOutRef.current = true;
     setSession(null);
     setLoading(false);
-    clearSupabaseAuthStorageExcept(urlRef);
-    void supabase.auth.signOut({ scope: 'local' });
+    clearLocalSession();
   };
 
   return (

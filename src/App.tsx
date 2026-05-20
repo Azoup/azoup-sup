@@ -42,7 +42,6 @@ function ProtectedRoute({ children, screen }: { children: React.ReactNode; scree
   const { user, loading: authLoading } = useAuth();
   const { canView, isLoading: permsLoading } = usePermissions();
   if (!user) {
-    if (authLoading) return <AppLoadingScreen />;
     return <Navigate to="/auth" replace />;
   }
   if (authLoading || permsLoading) {
@@ -59,7 +58,6 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   const { isAdmin, isLoading } = useRole();
   const { canView, isLoading: permsLoading } = usePermissions();
   if (!user) {
-    if (loading) return <AppLoadingScreen />;
     return <Navigate to="/auth" replace />;
   }
   if (loading || isLoading || permsLoading) {
