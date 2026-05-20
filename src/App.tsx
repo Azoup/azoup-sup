@@ -41,10 +41,13 @@ const queryClient = new QueryClient({
 function ProtectedRoute({ children, screen }: { children: React.ReactNode; screen?: string }) {
   const { user, loading: authLoading } = useAuth();
   const { canView, isLoading: permsLoading } = usePermissions();
+  if (!user) {
+    if (authLoading) return <AppLoadingScreen />;
+    return <Navigate to="/auth" replace />;
+  }
   if (authLoading || permsLoading) {
     return <AppLoadingScreen />;
   }
-  if (!user) return <Navigate to="/auth" replace />;
   if (screen && !canView(screen)) {
     return <Navigate to={getFirstAllowedPath(canView)} replace />;
   }
@@ -55,10 +58,13 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const { isAdmin, isLoading } = useRole();
   const { canView, isLoading: permsLoading } = usePermissions();
+  if (!user) {
+    if (loading) return <AppLoadingScreen />;
+    return <Navigate to="/auth" replace />;
+  }
   if (loading || isLoading || permsLoading) {
     return <AppLoadingScreen />;
   }
-  if (!user) return <Navigate to="/auth" replace />;
   if (!isAdmin) return <Navigate to={getFirstAllowedPath(canView)} replace />;
   return <AppLayout>{children}</AppLayout>;
 }
@@ -66,12 +72,9 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 function AuthRoute() {
   const { user, loading } = useAuth();
   const { canView, isLoading: permsLoading } = usePermissions();
-  if (loading) return <AppLoadingScreen />;
-  if (user) {
-    if (permsLoading) return <AppLoadingScreen />;
-    return <Navigate to={getFirstAllowedPath(canView)} replace />;
-  }
-  return <Auth />;
+  if (!user) return <Auth />;
+  if (loading || permsLoading) return <AppLoadingScreen />;
+  return <Navigate to={getFirstAllowedPath(canView)} replace />;
 }
 
 const App = () => (

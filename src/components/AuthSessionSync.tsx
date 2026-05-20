@@ -4,8 +4,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { fetchAppBootstrap } from '@/lib/fetchAppBootstrap';
 import { applyAppBootstrapToQueryClient } from '@/lib/applyAppBootstrap';
-import { clearUserAccessCache, readUserAccessCache } from '@/lib/userAccessCache';
-import { clearKanbanBoardCache, readKanbanBoardCache } from '@/lib/kanbanBoardCache';
+import { readUserAccessCache } from '@/lib/userAccessCache';
+import { readKanbanBoardCache } from '@/lib/kanbanBoardCache';
 
 /** Alinha o cliente Supabase com a sessão React (sem refetch em massa no login). */
 export function AuthSessionSync() {
@@ -20,9 +20,6 @@ export function AuthSessionSync() {
     if (!session?.access_token) {
       lastTokenRef.current = null;
       bootstrapRef.current = false;
-      clearUserAccessCache();
-      clearKanbanBoardCache();
-      queryClient.clear();
       return;
     }
 

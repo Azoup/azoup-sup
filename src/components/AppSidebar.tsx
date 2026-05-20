@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, FileSpreadsheet, BarChart3, UserCircle, Code2, FolderKanban, ChevronDown, GripVertical } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/hooks/useAuth';
+import { useSignOut } from '@/hooks/useSignOut';
 import { usePermissions, ROUTE_SCREEN_MAP } from '@/hooks/usePermissions';
 import {
   Sidebar,
@@ -173,7 +174,8 @@ function SortableGroup({ item, collapsed }: { item: GroupItem; collapsed: boolea
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
-  const { signOut, user } = useAuth();
+  const { user } = useAuth();
+  const signOut = useSignOut();
   const { canView, isLoading: permsLoading } = usePermissions();
   const [items, setItems] = useState<MenuItem[]>(DEFAULT_MENU);
 

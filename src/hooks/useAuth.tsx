@@ -16,14 +16,14 @@ interface AuthContextType {
   session: Session | null;
   user: User | null;
   loading: boolean;
-  signOut: () => Promise<void>;
+  signOut: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
   session: null,
   user: null,
   loading: true,
-  signOut: async () => {},
+  signOut: () => {},
 });
 
 async function resolveValidSession(): Promise<Session | null> {
@@ -128,16 +128,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  const signOut = async () => {
+  const signOut = () => {
     const urlRef = getConfiguredSupabaseProjectRef();
     setSession(null);
     setLoading(false);
     clearSupabaseAuthStorageExcept(urlRef);
-    try {
-      await supabase.auth.signOut({ scope: 'local' });
-    } catch {
-      /* ignore */
-    }
+    void supabase.auth.signOut({ scope: 'local' });
   };
 
   return (
