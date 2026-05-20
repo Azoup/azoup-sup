@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useSupabaseReady } from '@/hooks/useSupabaseReady';
+import { assertSupabaseData } from '@/lib/supabaseQuery';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -11,6 +13,7 @@ import { toast } from 'sonner';
 import { Loader2, Plus, Pencil, Building2, ToggleLeft, ToggleRight } from 'lucide-react';
 
 const BusinessUnits = () => {
+  const { ready: supabaseReady } = useSupabaseReady();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -21,9 +24,9 @@ const BusinessUnits = () => {
     queryKey: ['business-units'],
     queryFn: async () => {
       const { data, error } = await supabase.from('business_units').select('*').order('name');
-      if (error) throw error;
-      return data;
+      return assertSupabaseData(data, error, 'business_units');
     },
+    enabled: supabaseReady,
   });
 
   const upsertMutation = useMutation({

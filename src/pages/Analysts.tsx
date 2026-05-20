@@ -11,8 +11,11 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { toast } from 'sonner';
 import { Plus, Pencil, UserX, UserCheck, Upload, Loader2, Trash2 } from 'lucide-react';
 import { useRole } from '@/hooks/useRole';
+import { useSupabaseReady } from '@/hooks/useSupabaseReady';
+import { assertSupabaseData } from '@/lib/supabaseQuery';
 
 const Analysts = () => {
+  const { ready: supabaseReady } = useSupabaseReady();
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -24,9 +27,9 @@ const Analysts = () => {
     queryKey: ['analysts'],
     queryFn: async () => {
       const { data, error } = await supabase.from('analysts').select('*').order('name');
-      if (error) throw error;
-      return data;
+      return assertSupabaseData(data, error, 'analysts');
     },
+    enabled: supabaseReady,
   });
 
   const upsertMutation = useMutation({

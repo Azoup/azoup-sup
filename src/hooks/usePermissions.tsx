@@ -37,14 +37,14 @@ const DEFAULT_USER_PERMISSIONS: Record<string, boolean> = {
 
 export function usePermissions() {
   const { isAdmin, isLoading: roleLoading } = useRole();
-  const { data, isPending, isFetching, isError } = useUserAccess();
+  const { data, isPending, isFetching } = useUserAccess();
   const permissions = data?.permissions ?? null;
   const isLoading = roleLoading || isPending || isFetching;
 
   const hasPermission = (key: string): boolean => {
     if (isAdmin) return true;
-    if (isLoading || isError) return false;
     if (permissions) return isPermissionAllowed(permissions[key]);
+    if (isLoading) return false;
     return DEFAULT_USER_PERMISSIONS[key] === true;
   };
 

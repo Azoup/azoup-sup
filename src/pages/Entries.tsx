@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useSupabaseReady } from '@/hooks/useSupabaseReady';
+import { assertSupabaseData } from '@/lib/supabaseQuery';
 import { logActivity } from '@/hooks/useActivityLog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +16,7 @@ import { format } from 'date-fns';
 import { useMemo } from 'react';
 
 const Entries = () => {
+  const { ready: supabaseReady } = useSupabaseReady();
   const queryClient = useQueryClient();
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [analystId, setAnalystId] = useState('');
@@ -29,9 +32,9 @@ const Entries = () => {
     queryKey: ['analysts-active'],
     queryFn: async () => {
       const { data, error } = await supabase.from('analysts').select('*').eq('status', 'active').order('name');
-      if (error) throw error;
-      return data;
+      return assertSupabaseData(data, error, 'analysts');
     },
+    enabled: supabaseReady,
   });
 
   const { data: records = [], isLoading } = useQuery({
@@ -43,9 +46,9 @@ const Entries = () => {
         .is('business_unit_id', null)
         .order('record_date', { ascending: false })
         .limit(50);
-      if (error) throw error;
-      return data;
+      return assertSupabaseData(data, error, 'doubt_records');
     },
+    enabled: supabaseReady,
   });
 
   const createMutation = useMutation({

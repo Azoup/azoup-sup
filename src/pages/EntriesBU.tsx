@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useSupabaseReady } from '@/hooks/useSupabaseReady';
+import { assertSupabaseData } from '@/lib/supabaseQuery';
 import { logActivity } from '@/hooks/useActivityLog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,6 +31,7 @@ function getWeeksForSelection() {
 }
 
 const EntriesBU = () => {
+  const { ready: supabaseReady } = useSupabaseReady();
   const queryClient = useQueryClient();
   const today = new Date();
   const currentMonday = format(startOfWeek(today, { weekStartsOn: 1 }), 'yyyy-MM-dd');
@@ -67,9 +70,9 @@ const EntriesBU = () => {
     queryKey: ['business-units-active'],
     queryFn: async () => {
       const { data, error } = await supabase.from('business_units').select('*').eq('status', 'active').order('name');
-      if (error) throw error;
-      return data;
+      return assertSupabaseData(data, error, 'business_units');
     },
+    enabled: supabaseReady,
   });
 
   const { data: records = [], isLoading } = useQuery({
@@ -82,9 +85,9 @@ const EntriesBU = () => {
         .gte('record_date', queryRange.start)
         .lte('record_date', queryRange.end)
         .order('record_date', { ascending: false });
-      if (error) throw error;
-      return data;
+      return assertSupabaseData(data, error, 'bu-records');
     },
+    enabled: supabaseReady,
   });
 
   const consolidated = useMemo(() => {

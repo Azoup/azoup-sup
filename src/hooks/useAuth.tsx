@@ -54,12 +54,12 @@ async function resolveValidSession(): Promise<Session | null> {
     return null;
   }
 
-  const valid = await validateSessionUser(session);
-  if (!valid) {
-    await supabase.auth.signOut({ scope: 'local' });
-    clearSupabaseAuthStorageExcept(urlRef);
-    return null;
-  }
+  // Não usar auth.getUser no boot: com JWT ES256 pode falhar/timeout e apagar sessão válida,
+  // deixando queries sem token (dados vazios nas telas).
+  await supabase.auth.setSession({
+    access_token: session.access_token,
+    refresh_token: session.refresh_token ?? '',
+  });
 
   return session;
 }
@@ -134,10 +134,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
+      void supabase.auth.setSession({
+        access_token: nextSession.access_token,
+        refresh_token: nextSession.refresh_token ?? '',
+      });
+
       setSession(nextSession);
       finishLoading();
 
-      // Após login, não revalidar com getUser (pode travar com JWT ES256).
+      // Após login/refresh, não revalidar com getUser (pode travar com JWT ES256).
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         return;
       }

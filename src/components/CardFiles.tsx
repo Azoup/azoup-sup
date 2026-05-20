@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useSupabaseReady } from '@/hooks/useSupabaseReady';
 import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -47,6 +48,7 @@ function getFileIcon(type: string | null) {
 
 export function CardFiles({ cardId }: CardFilesProps) {
   const { user } = useAuth();
+  const { ready: supabaseReady } = useSupabaseReady();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploads, setUploads] = useState<UploadStatus[]>([]);
@@ -65,7 +67,7 @@ export function CardFiles({ cardId }: CardFilesProps) {
         if (error) throw error;
         return data || [];
       }),
-    enabled: !!cardId,
+    enabled: supabaseReady && !!cardId,
     retry: 1,
   });
 

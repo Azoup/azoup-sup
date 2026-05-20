@@ -4,6 +4,8 @@ import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
+import { useSupabaseReady } from '@/hooks/useSupabaseReady';
+import { assertSupabaseData } from '@/lib/supabaseQuery';
 import { logActivity } from '@/hooks/useActivityLog';
 import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -37,6 +39,7 @@ const COLUMN_COLOR_OPTIONS = [
 const Kanban = () => {
   const { user } = useAuth();
   const { isAdmin } = useRole();
+  const { ready: supabaseReady } = useSupabaseReady();
   const queryClient = useQueryClient();
   const [filterLabelIds, setFilterLabelIds] = useState<string[]>([]);
   const [filterAnalystIds, setFilterAnalystIds] = useState<string[]>([]);
@@ -77,54 +80,60 @@ const Kanban = () => {
   const { data: columns = [] } = useQuery({
     queryKey: ['kanban-columns'],
     queryFn: async () => {
-      const { data } = await supabase.from('kanban_columns').select('*').order('position');
-      return data || [];
+      const { data, error } = await supabase.from('kanban_columns').select('*').order('position');
+      return assertSupabaseData(data, error, 'kanban_columns');
     },
+    enabled: supabaseReady,
     staleTime: 5 * 60 * 1000,
   });
 
   const { data: analysts = [] } = useQuery({
     queryKey: ['analysts-active'],
     queryFn: async () => {
-      const { data } = await supabase.from('analysts').select('*').eq('status', 'active').order('name');
-      return data || [];
+      const { data, error } = await supabase.from('analysts').select('*').eq('status', 'active').order('name');
+      return assertSupabaseData(data, error, 'analysts');
     },
+    enabled: supabaseReady,
     staleTime: 5 * 60 * 1000,
   });
 
   const { data: cards = [], isLoading } = useQuery({
     queryKey: ['kanban-cards'],
     queryFn: async () => {
-      const { data } = await supabase.from('kanban_cards').select('*').order('position');
-      return data || [];
+      const { data, error } = await supabase.from('kanban_cards').select('*').order('position');
+      return assertSupabaseData(data, error, 'kanban_cards');
     },
+    enabled: supabaseReady,
     staleTime: 60 * 1000,
   });
 
   const { data: labels = [] } = useQuery({
     queryKey: ['kanban-labels'],
     queryFn: async () => {
-      const { data } = await supabase.from('kanban_labels').select('*').order('name');
-      return data || [];
+      const { data, error } = await supabase.from('kanban_labels').select('*').order('name');
+      return assertSupabaseData(data, error, 'kanban_labels');
     },
+    enabled: supabaseReady,
     staleTime: 5 * 60 * 1000,
   });
 
   const { data: cardLabels = [] } = useQuery({
     queryKey: ['kanban-card-labels'],
     queryFn: async () => {
-      const { data } = await supabase.from('kanban_card_labels').select('*, kanban_labels(*)');
-      return data || [];
+      const { data, error } = await supabase.from('kanban_card_labels').select('*, kanban_labels(*)');
+      return assertSupabaseData(data, error, 'kanban_card_labels');
     },
+    enabled: supabaseReady,
     staleTime: 60 * 1000,
   });
 
   const { data: cardImages = [] } = useQuery({
     queryKey: ['kanban-card-images'],
     queryFn: async () => {
-      const { data } = await supabase.from('kanban_card_images').select('*').order('created_at');
-      return data || [];
+      const { data, error } = await supabase.from('kanban_card_images').select('*').order('created_at');
+      return assertSupabaseData(data, error, 'kanban_card_images');
     },
+    enabled: supabaseReady,
     staleTime: 60 * 1000,
   });
 

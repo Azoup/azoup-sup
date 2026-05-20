@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useSupabaseReady } from '@/hooks/useSupabaseReady';
+import { assertSupabaseData } from '@/lib/supabaseQuery';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -11,6 +13,7 @@ import { format, startOfMonth, endOfMonth, subMonths, parseISO, startOfWeek, set
 import { ptBR } from 'date-fns/locale';
 
 const DashboardBU = () => {
+  const { ready: supabaseReady } = useSupabaseReady();
   const today = new Date();
   const [dateFrom, setDateFrom] = useState(format(startOfWeek(today, { weekStartsOn: 1 }), 'yyyy-MM-dd'));
   const [dateTo, setDateTo] = useState(format(setDay(startOfWeek(today, { weekStartsOn: 1 }), 6, { weekStartsOn: 1 }), 'yyyy-MM-dd'));
@@ -42,9 +45,9 @@ const DashboardBU = () => {
     queryKey: ['business-units'],
     queryFn: async () => {
       const { data, error } = await supabase.from('business_units').select('*').order('name');
-      if (error) throw error;
-      return data;
+      return assertSupabaseData(data, error, 'business_units');
     },
+    enabled: supabaseReady,
   });
 
   const { data: records = [], isLoading } = useQuery({
@@ -55,9 +58,9 @@ const DashboardBU = () => {
         .select('*, business_units(name)')
         .not('business_unit_id', 'is', null)
         .order('record_date');
-      if (error) throw error;
-      return data;
+      return assertSupabaseData(data, error, 'bu-records');
     },
+    enabled: supabaseReady,
   });
 
   const filteredRecords = useMemo(() => {

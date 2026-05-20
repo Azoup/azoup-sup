@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useSupabaseReady } from '@/hooks/useSupabaseReady';
+import { assertSupabaseData } from '@/lib/supabaseQuery';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -15,6 +17,7 @@ import { ptBR } from 'date-fns/locale';
 type ViewMode = 'daily' | 'weekly' | 'monthly';
 
 const Dashboard = () => {
+  const { ready: supabaseReady } = useSupabaseReady();
   const today = new Date();
   const [dateFrom, setDateFrom] = useState(format(startOfMonth(today), 'yyyy-MM-dd'));
   const [dateTo, setDateTo] = useState(format(endOfMonth(today), 'yyyy-MM-dd'));
@@ -35,9 +38,9 @@ const Dashboard = () => {
     queryKey: ['doubt-records-all'],
     queryFn: async () => {
       const { data, error } = await supabase.from('doubt_records').select('*, analysts(name, status, photo_url)').is('business_unit_id', null).order('record_date');
-      if (error) throw error;
-      return data;
+      return assertSupabaseData(data, error, 'doubt_records');
     },
+    enabled: supabaseReady,
   });
 
   const filteredRecords = useMemo(() => {
