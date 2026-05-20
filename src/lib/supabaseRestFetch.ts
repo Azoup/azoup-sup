@@ -128,7 +128,13 @@ export function createSupabaseRestFetch(): typeof fetch {
       });
     }
 
-    return new Response(await proxyRes.text(), {
+    let body = await proxyRes.text();
+    // PATCH/DELETE podem retornar 204 sem corpo — o cliente Supabase espera JSON válido.
+    if (!body.trim() && proxyRes.ok) {
+      body = '[]';
+    }
+
+    return new Response(body, {
       status: proxyRes.status,
       statusText: proxyRes.statusText,
       headers: responseHeaders,

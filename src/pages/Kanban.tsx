@@ -6,6 +6,11 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { useSupabaseReady } from '@/hooks/useSupabaseReady';
 import { useKanbanBoard, invalidateKanbanBoard } from '@/hooks/useKanbanBoard';
+import {
+  patchKanbanBoardCards,
+  patchKanbanBoardCardLabels,
+  patchKanbanBoardColumns,
+} from '@/lib/kanbanBoardPatch';
 import { logActivity } from '@/hooks/useActivityLog';
 import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -232,7 +237,7 @@ const Kanban = () => {
       resetForm(); setCreateOpen(false);
       toast.success('Card criado!');
     },
-    onError: () => toast.error('Erro ao criar card.'),
+    onError: (e: Error) => toast.error(e?.message ? `Erro ao criar card: ${e.message}` : 'Erro ao criar card.'),
   });
 
   const updateCard = useMutation({
@@ -281,7 +286,7 @@ const Kanban = () => {
       resetForm(); setEditOpen(false);
       toast.success('Card atualizado!');
     },
-    onError: () => toast.error('Erro ao atualizar card.'),
+    onError: (e: Error) => toast.error(e?.message ? `Erro ao atualizar card: ${e.message}` : 'Erro ao atualizar card.'),
   });
 
   const deleteCard = useMutation({
@@ -449,10 +454,12 @@ const Kanban = () => {
       if (!doneLabelId) return;
 
       // Optimistic update das labels
-      queryClient.setQueryData(['kanban-card-labels'], (old: any[] | undefined) => {
-        if (!old) return old;
-        const targetLabel = (labels as any[]).find(l => l.id === doneLabelId);
-        return [...old.filter(cl => cl.card_id !== cardId), { card_id: cardId, label_id: doneLabelId, kanban_labels: targetLabel }];
+      patchKanbanBoardCardLabels(queryClient, (old) => {
+        const targetLabel = (labels as any[]).find((l) => l.id === doneLabelId);
+        return [
+          ...old.filter((cl: any) => cl.card_id !== cardId),
+          { card_id: cardId, label_id: doneLabelId, kanban_labels: targetLabel },
+        ];
       });
 
       // Remove todas as etiquetas e adiciona apenas "Concluído"
@@ -465,10 +472,9 @@ const Kanban = () => {
       if (!doneLabelId) return;
 
       // Optimistic update
-      queryClient.setQueryData(['kanban-card-labels'], (old: any[] | undefined) => {
-        if (!old) return old;
-        return old.filter(cl => !(cl.card_id === cardId && cl.label_id === doneLabelId));
-      });
+      patchKanbanBoardCardLabels(queryClient, (old) =>
+        old.filter((cl: any) => !(cl.card_id === cardId && cl.label_id === doneLabelId)),
+      );
 
       // Remove apenas a etiqueta "Concluído" (não restaura antigas)
       const { error: removeDoneLabelError } = await supabase.from('kanban_card_labels').delete()
@@ -479,57 +485,84 @@ const Kanban = () => {
   }, [ensureDoneLabel, queryClient, labels]);
 
   // --- Optimistic drag and drop ---
-  const onDragEnd = useCallback((result: DropResult) => {
+  const onDragEnd = useCallback(async (result: DropResult) => {
     if (!result.destination) return;
     const { source, destination, draggableId } = result;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
 
     const movedCard = cards.find((c: any) => c.id === draggableId);
     const statusChanged = source.droppableId !== destination.droppableId;
+    const wasDone = isDoneSlug(source.droppableId);
+    const willBeDone = isDoneSlug(destination.droppableId);
 
-    // Optimistic update: immediately update the cache
-    queryClient.setQueryData(['kanban-cards'], (old: any[] | undefined) => {
-      if (!old) return old;
-      return old.map(card =>
+    patchKanbanBoardCards(queryClient, (old) =>
+      old.map((card: any) =>
         card.id === draggableId
-          ? { ...card, status: destination.droppableId, position: destination.index }
-          : card
-      );
-    });
+          ? {
+              ...card,
+              status: destination.droppableId,
+              position: destination.index,
+              completed_at:
+                statusChanged && willBeDone
+                  ? new Date().toISOString()
+                  : statusChanged && wasDone && !willBeDone
+                    ? null
+                    : card.completed_at,
+            }
+          : card,
+      ),
+    );
 
-    // Persist move with a minimal payload to avoid schema drift issues.
-    const movePayload = { status: destination.droppableId, position: destination.index };
-    supabase.from('kanban_cards')
-      .update(movePayload)
-      .eq('id', draggableId)
-      .then(async ({ error }) => {
-        if (error) {
-          // Rollback on error
-          invalidateKanbanBoard(queryClient);
-          toast.error('Erro ao mover card.');
-          return;
-        }
-        // Regra automática de etiquetas para coluna "Concluídos"
-        if (statusChanged) {
-          try {
-            await applyDoneLabelRule(draggableId, source.droppableId, destination.droppableId);
-          } catch (labelError: any) {
-            console.error('Erro ao aplicar etiqueta de concluído:', labelError);
-            toast.error('Card movido, mas houve erro ao atualizar etiquetas.');
-            invalidateKanbanBoard(queryClient);
-          }
-        }
-        // Notify analyst on column change
-        if (statusChanged && movedCard?.analyst_id) {
-          const colTitle = (columns as any[]).find(c => c.slug === destination.droppableId)?.title || destination.droppableId;
-          const actorName = await getActorName();
-          await notifySupportAnalyst({
-            cardId: movedCard.id, cardTitle: movedCard.title, analystId: movedCard.analyst_id,
-            actionType: 'status', actorId: user?.id, actorName,
-            message: `${actorName} moveu o ticket "${movedCard.title}" para "${colTitle}"`,
-          });
-        }
+    const movePayload: Record<string, unknown> = {
+      status: destination.droppableId,
+      position: destination.index,
+    };
+    if (statusChanged && willBeDone) movePayload.completed_at = new Date().toISOString();
+    if (statusChanged && wasDone && !willBeDone) movePayload.completed_at = null;
+
+    let { error } = await supabase.from('kanban_cards').update(movePayload).eq('id', draggableId);
+
+    if (error && `${error.message}`.toLowerCase().includes('completed_at')) {
+      const retry = await supabase
+        .from('kanban_cards')
+        .update({ status: destination.droppableId, position: destination.index })
+        .eq('id', draggableId);
+      error = retry.error;
+    }
+
+    if (error) {
+      invalidateKanbanBoard(queryClient);
+      toast.error(`Erro ao mover card: ${error.message}`);
+      return;
+    }
+
+    if (statusChanged) {
+      try {
+        await applyDoneLabelRule(draggableId, source.droppableId, destination.droppableId);
+      } catch (labelError: unknown) {
+        console.error('Erro ao aplicar etiqueta de concluído:', labelError);
+        toast.error('Card movido, mas houve erro ao atualizar etiquetas.');
+        invalidateKanbanBoard(queryClient);
+        return;
+      }
+    }
+
+    invalidateKanbanBoard(queryClient);
+
+    if (statusChanged && movedCard?.analyst_id) {
+      const colTitle =
+        (columns as any[]).find((c) => c.slug === destination.droppableId)?.title || destination.droppableId;
+      const actorName = await getActorName();
+      void notifySupportAnalyst({
+        cardId: movedCard.id,
+        cardTitle: movedCard.title,
+        analystId: movedCard.analyst_id,
+        actionType: 'status',
+        actorId: user?.id,
+        actorName,
+        message: `${actorName} moveu o ticket "${movedCard.title}" para "${colTitle}"`,
       });
+    }
   }, [queryClient, cards, columns, getActorName, user?.id, applyDoneLabelRule]);
 
   // Auto-open a card when navigated with ?card=<id> (e.g., from notifications)
@@ -614,10 +647,11 @@ const Kanban = () => {
     const a = sortedColumns[idx];
     const b = sortedColumns[swapIdx];
     // Optimistic
-    queryClient.setQueryData(['kanban-columns'], (old: any[] | undefined) => {
-      if (!old) return old;
-      return old.map(c => c.id === a.id ? { ...c, position: b.position } : c.id === b.id ? { ...c, position: a.position } : c);
-    });
+    patchKanbanBoardColumns(queryClient, (old) =>
+      old.map((c: any) =>
+        c.id === a.id ? { ...c, position: b.position } : c.id === b.id ? { ...c, position: a.position } : c,
+      ),
+    );
     await Promise.all([
       supabase.from('kanban_columns').update({ position: b.position }).eq('id', a.id),
       supabase.from('kanban_columns').update({ position: a.position }).eq('id', b.id),

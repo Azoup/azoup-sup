@@ -1,11 +1,16 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { useSupabaseReady } from '@/hooks/useSupabaseReady';
-import { assertSupabaseData } from '@/lib/supabaseQuery';
+import { useDevKanbanBoard, refreshDevKanbanBoard } from '@/hooks/useDevKanbanBoard';
+import {
+  patchDevKanbanBoardCards,
+  patchDevKanbanBoardCardLabels,
+  patchDevKanbanBoardColumns,
+} from '@/lib/devKanbanBoardPatch';
 import { logActivity } from '@/hooks/useActivityLog';
 import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -79,87 +84,27 @@ const KanbanDev = () => {
   const [editColumnColor, setEditColumnColor] = useState('');
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
 
-  const { data: columns = [] } = useQuery({
-    queryKey: ['dev-kanban-columns'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('dev_kanban_columns').select('*').order('position');
-      return assertSupabaseData(data, error, 'dev_kanban_columns');
-    },
-    enabled: supabaseReady,
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const { data: analysts = [] } = useQuery({
-    queryKey: ['analysts-active'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('analysts').select('*').eq('status', 'active').order('name');
-      return assertSupabaseData(data, error, 'analysts');
-    },
-    enabled: supabaseReady,
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const { data: developers = [] } = useQuery({
-    queryKey: ['developers-active'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('developers').select('*').eq('status', 'active').order('name');
-      return assertSupabaseData(data, error, 'developers');
-    },
-    enabled: supabaseReady,
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const { data: cards = [], isLoading } = useQuery({
-    queryKey: ['dev-kanban-cards'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('dev_kanban_cards').select('*').order('position');
-      return assertSupabaseData(data, error, 'dev_kanban_cards');
-    },
-    enabled: supabaseReady,
-    staleTime: 60 * 1000,
-  });
-
-  const { data: labels = [] } = useQuery({
-    queryKey: ['dev-kanban-labels'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('dev_kanban_labels').select('*').order('name');
-      return assertSupabaseData(data, error, 'dev_kanban_labels');
-    },
-    enabled: supabaseReady,
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const { data: cardLabels = [] } = useQuery({
-    queryKey: ['dev-kanban-card-labels'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('dev_kanban_card_labels').select('*, dev_kanban_labels(*)');
-      return assertSupabaseData(data, error, 'dev_kanban_card_labels');
-    },
-    enabled: supabaseReady,
-    staleTime: 60 * 1000,
-  });
-
-  const { data: cardImages = [] } = useQuery({
-    queryKey: ['dev-kanban-card-images'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('dev_kanban_card_images').select('*').order('created_at');
-      return assertSupabaseData(data, error, 'dev_kanban_card_images');
-    },
-    enabled: supabaseReady,
-    staleTime: 60 * 1000,
-  });
+  const { data: board, isLoading: boardLoading } = useDevKanbanBoard(supabaseReady);
+  const columns = (board?.columns ?? []) as any[];
+  const analysts = (board?.analysts ?? []) as any[];
+  const developers = (board?.developers ?? []) as any[];
+  const cards = (board?.cards ?? []) as any[];
+  const labels = (board?.labels ?? []) as any[];
+  const cardLabels = (board?.cardLabels ?? []) as any[];
+  const cardImages = (board?.cardImages ?? []) as any[];
+  const isLoading = boardLoading && !board;
 
   useEffect(() => {
     const channel = supabase
       .channel('dev-kanban-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'dev_kanban_cards' }, () => {
-        queryClient.invalidateQueries({ queryKey: ['dev-kanban-cards'] });
+        refreshDevKanbanBoard(queryClient);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'dev_kanban_card_images' }, () => {
-        queryClient.invalidateQueries({ queryKey: ['dev-kanban-card-images'] });
+        refreshDevKanbanBoard(queryClient);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'dev_kanban_columns' }, () => {
-        queryClient.invalidateQueries({ queryKey: ['dev-kanban-columns'] });
+        refreshDevKanbanBoard(queryClient);
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -286,13 +231,13 @@ const KanbanDev = () => {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dev-kanban-cards'] });
-      queryClient.invalidateQueries({ queryKey: ['dev-kanban-card-labels'] });
-      queryClient.invalidateQueries({ queryKey: ['dev-kanban-card-images'] });
+      refreshDevKanbanBoard(queryClient);
+      refreshDevKanbanBoard(queryClient);
+      refreshDevKanbanBoard(queryClient);
       resetForm(); setCreateOpen(false);
       toast.success('Card criado!');
     },
-    onError: () => toast.error('Erro ao criar card.'),
+    onError: (e: Error) => toast.error(e?.message ? `Erro ao criar card: ${e.message}` : 'Erro ao criar card.'),
   });
 
   const updateCard = useMutation({
@@ -342,13 +287,13 @@ const KanbanDev = () => {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dev-kanban-cards'] });
-      queryClient.invalidateQueries({ queryKey: ['dev-kanban-card-labels'] });
-      queryClient.invalidateQueries({ queryKey: ['dev-kanban-card-images'] });
+      refreshDevKanbanBoard(queryClient);
+      refreshDevKanbanBoard(queryClient);
+      refreshDevKanbanBoard(queryClient);
       resetForm(); setEditOpen(false);
       toast.success('Card atualizado!');
     },
-    onError: () => toast.error('Erro ao atualizar card.'),
+    onError: (e: Error) => toast.error(e?.message ? `Erro ao atualizar card: ${e.message}` : 'Erro ao atualizar card.'),
   });
 
   const deleteCard = useMutation({
@@ -358,7 +303,7 @@ const KanbanDev = () => {
       await logActivity('Excluiu card do Kanban DEV');
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dev-kanban-cards'] });
+      refreshDevKanbanBoard(queryClient);
       toast.success('Card excluído!');
     },
   });
@@ -369,7 +314,7 @@ const KanbanDev = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dev-kanban-card-images'] });
+      refreshDevKanbanBoard(queryClient);
       toast.success('Imagem removida!');
     },
   });
@@ -380,7 +325,7 @@ const KanbanDev = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dev-kanban-labels'] });
+      refreshDevKanbanBoard(queryClient);
       setNewLabelName(''); setNewLabelColor('#3b82f6');
       toast.success('Etiqueta criada!');
     },
@@ -395,8 +340,8 @@ const KanbanDev = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dev-kanban-labels'] });
-      queryClient.invalidateQueries({ queryKey: ['dev-kanban-card-labels'] });
+      refreshDevKanbanBoard(queryClient);
+      refreshDevKanbanBoard(queryClient);
       setEditingLabel(null);
       toast.success('Etiqueta atualizada!');
     },
@@ -409,8 +354,8 @@ const KanbanDev = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dev-kanban-labels'] });
-      queryClient.invalidateQueries({ queryKey: ['dev-kanban-card-labels'] });
+      refreshDevKanbanBoard(queryClient);
+      refreshDevKanbanBoard(queryClient);
       setDeleteLabelId(null);
       toast.success('Etiqueta excluída!');
     },
@@ -426,7 +371,7 @@ const KanbanDev = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dev-kanban-columns'] });
+      refreshDevKanbanBoard(queryClient);
       setNewColumnTitle(''); setNewColumnColor('border-t-blue-500');
       setAddColumnOpen(false);
       toast.success('Lista criada!');
@@ -443,7 +388,7 @@ const KanbanDev = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dev-kanban-columns'] });
+      refreshDevKanbanBoard(queryClient);
       setEditColumnOpen(false); setEditingColumn(null);
       toast.success('Lista atualizada!');
     },
@@ -461,8 +406,8 @@ const KanbanDev = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dev-kanban-columns'] });
-      queryClient.invalidateQueries({ queryKey: ['dev-kanban-cards'] });
+      refreshDevKanbanBoard(queryClient);
+      refreshDevKanbanBoard(queryClient);
       setDeleteColumnId(null);
       toast.success('Lista excluída!');
     },
@@ -499,7 +444,7 @@ const KanbanDev = () => {
       toast.error("Erro ao criar etiqueta 'Concluído' automaticamente.");
       return null;
     }
-    queryClient.invalidateQueries({ queryKey: ['dev-kanban-labels'] });
+    refreshDevKanbanBoard(queryClient);
     return data.id;
   }, [labels, queryClient]);
 
@@ -514,10 +459,12 @@ const KanbanDev = () => {
       if (!doneLabelId) return;
 
       // Optimistic update das labels
-      queryClient.setQueryData(['dev-kanban-card-labels'], (old: any[] | undefined) => {
-        if (!old) return old;
-        const targetLabel = (labels as any[]).find(l => l.id === doneLabelId);
-        return [...old.filter(cl => cl.card_id !== cardId), { card_id: cardId, label_id: doneLabelId, dev_kanban_labels: targetLabel }];
+      patchDevKanbanCardLabels(queryClient, (old) => {
+        const targetLabel = (labels as any[]).find((l) => l.id === doneLabelId);
+        return [
+          ...old.filter((cl: any) => cl.card_id !== cardId),
+          { card_id: cardId, label_id: doneLabelId, dev_kanban_labels: targetLabel },
+        ];
       });
 
       // Remove todas as etiquetas e adiciona apenas "Concluído"
@@ -530,96 +477,74 @@ const KanbanDev = () => {
       if (!doneLabelId) return;
 
       // Optimistic update
-      queryClient.setQueryData(['dev-kanban-card-labels'], (old: any[] | undefined) => {
-        if (!old) return old;
-        return old.filter(cl => !(cl.card_id === cardId && cl.label_id === doneLabelId));
-      });
+      patchDevKanbanCardLabels(queryClient, (old) =>
+        old.filter((cl: any) => !(cl.card_id === cardId && cl.label_id === doneLabelId)),
+      );
 
       // Remove apenas a etiqueta "Concluído" (não restaura antigas)
       const { error: removeDoneLabelError } = await supabase.from('dev_kanban_card_labels').delete()
         .eq('card_id', cardId).eq('label_id', doneLabelId);
       if (removeDoneLabelError) throw removeDoneLabelError;
     }
-    queryClient.invalidateQueries({ queryKey: ['dev-kanban-card-labels'] });
+    refreshDevKanbanBoard(queryClient);
   }, [ensureDoneLabel, queryClient, labels]);
 
-  const onDragEnd = useCallback((result: DropResult) => {
+  const onDragEnd = useCallback(async (result: DropResult) => {
     if (!result.destination) return;
     const { source, destination, draggableId } = result;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
     const movedCard = cards.find((c: any) => c.id === draggableId);
     const statusChanged = source.droppableId !== destination.droppableId;
-    const wasDone = isDoneSlug(source.droppableId);
-    const willBeDone = isDoneSlug(destination.droppableId);
 
-    queryClient.setQueryData(['dev-kanban-cards'], (old: any[] | undefined) => {
-      if (!old) return old;
-      return old.map(card =>
+    patchDevKanbanCards(queryClient, (old) =>
+      old.map((card: any) =>
         card.id === draggableId
-          ? {
-              ...card,
-              status: destination.droppableId,
-              position: destination.index,
-              completed_at: statusChanged && willBeDone
-                ? new Date().toISOString()
-                : statusChanged && wasDone && !willBeDone
-                ? null
-                : card.completed_at,
-            }
-          : card
-      );
-    });
-    const movePayload = {
-      status: destination.droppableId,
-      position: destination.index,
-      ...(statusChanged && willBeDone ? { completed_at: new Date().toISOString() } : {}),
-      ...(statusChanged && wasDone && !willBeDone ? { completed_at: null } : {}),
-    };
-    supabase.from('dev_kanban_cards')
-      .update(movePayload)
-      .eq('id', draggableId)
-      .then(async ({ error }) => {
-        let finalError = error;
-        if (
-          finalError &&
-          'completed_at' in movePayload &&
-          `${finalError.message || ''}`.toLowerCase().includes('completed_at')
-        ) {
-          const retry = await supabase
-            .from('dev_kanban_cards')
-            .update({ status: destination.droppableId, position: destination.index })
-            .eq('id', draggableId);
-          finalError = retry.error;
-        }
+          ? { ...card, status: destination.droppableId, position: destination.index }
+          : card,
+      ),
+    );
 
-        if (finalError) {
-          queryClient.invalidateQueries({ queryKey: ['dev-kanban-cards'] });
-          toast.error('Erro ao mover card.');
-          return;
-        }
-        if (statusChanged) {
-          try {
-            await applyDoneLabelRule(draggableId, source.droppableId, destination.droppableId);
-          } catch (labelError: any) {
-            console.error('Erro ao aplicar etiqueta de concluído:', labelError);
-            toast.error('Card movido, mas houve erro ao atualizar etiquetas.');
-            queryClient.invalidateQueries({ queryKey: ['dev-kanban-card-labels'] });
-          }
-        }
-        if (statusChanged && movedCard) {
-          const colTitle = sortedColumns.find((c: any) => c.slug === destination.droppableId)?.title || destination.droppableId;
-          const isMoveToDone = !isDoneSlug(source.droppableId) && isDoneSlug(destination.droppableId);
-          await notifyDevAndAnalyst({
-            cardId: movedCard.id, cardTitle: movedCard.title,
-            developerId: movedCard.developer_id || null,
-            analystId: movedCard.analyst_id || null,
-            actionType: 'status', actorId: user?.id, actorName,
-            message: isMoveToDone
-              ? `${actorName} concluiu o ticket "${movedCard.title}" em ${new Date().toLocaleString('pt-BR')}`
-              : `${actorName} moveu "${movedCard.title}" para "${colTitle}"`,
-          });
-        }
+    const { error } = await supabase
+      .from('dev_kanban_cards')
+      .update({ status: destination.droppableId, position: destination.index })
+      .eq('id', draggableId);
+
+    if (error) {
+      refreshDevKanbanBoard(queryClient);
+      toast.error(`Erro ao mover card: ${error.message}`);
+      return;
+    }
+
+    if (statusChanged) {
+      try {
+        await applyDoneLabelRule(draggableId, source.droppableId, destination.droppableId);
+      } catch (labelError: unknown) {
+        console.error('Erro ao aplicar etiqueta de concluído:', labelError);
+        toast.error('Card movido, mas houve erro ao atualizar etiquetas.');
+        refreshDevKanbanBoard(queryClient);
+        return;
+      }
+    }
+
+    refreshDevKanbanBoard(queryClient);
+
+    if (statusChanged && movedCard) {
+      const colTitle =
+        sortedColumns.find((c: any) => c.slug === destination.droppableId)?.title || destination.droppableId;
+      const isMoveToDone = !isDoneSlug(source.droppableId) && isDoneSlug(destination.droppableId);
+      void notifyDevAndAnalyst({
+        cardId: movedCard.id,
+        cardTitle: movedCard.title,
+        developerId: movedCard.developer_id || null,
+        analystId: movedCard.analyst_id || null,
+        actionType: 'status',
+        actorId: user?.id,
+        actorName,
+        message: isMoveToDone
+          ? `${actorName} concluiu o ticket "${movedCard.title}" em ${new Date().toLocaleString('pt-BR')}`
+          : `${actorName} moveu "${movedCard.title}" para "${colTitle}"`,
       });
+    }
   }, [queryClient, cards, sortedColumns, user, actorName, applyDoneLabelRule]);
 
   const resetForm = () => {
@@ -686,15 +611,16 @@ const KanbanDev = () => {
     if (swapIdx < 0 || swapIdx >= sortedColumns.length) return;
     const a = sortedColumns[idx];
     const b = sortedColumns[swapIdx];
-    queryClient.setQueryData(['dev-kanban-columns'], (old: any[] | undefined) => {
-      if (!old) return old;
-      return old.map(c => c.id === a.id ? { ...c, position: b.position } : c.id === b.id ? { ...c, position: a.position } : c);
-    });
+    patchDevKanbanBoardColumns(queryClient, (old) =>
+      old.map((c: any) =>
+        c.id === a.id ? { ...c, position: b.position } : c.id === b.id ? { ...c, position: a.position } : c,
+      ),
+    );
     await Promise.all([
       supabase.from('dev_kanban_columns').update({ position: b.position }).eq('id', a.id),
       supabase.from('dev_kanban_columns').update({ position: a.position }).eq('id', b.id),
     ]);
-    queryClient.invalidateQueries({ queryKey: ['dev-kanban-columns'] });
+    refreshDevKanbanBoard(queryClient);
   }, [sortedColumns, queryClient]);
 
   const toggleFilterLabel = useCallback((labelId: string) => {

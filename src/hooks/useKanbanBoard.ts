@@ -26,5 +26,5 @@ export function useKanbanBoard(enabled: boolean) {
 }
 
 export function invalidateKanbanBoard(queryClient: ReturnType<typeof useQueryClient>) {
-  void queryClient.invalidateQueries({ queryKey: ['kanban-board'] });
+  void queryClient.invalidateQueries({ queryKey: ['kanban-board'], refetchType: 'active' });
 }
