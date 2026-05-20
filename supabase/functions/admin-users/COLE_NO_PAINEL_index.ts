@@ -46,19 +46,23 @@ async function assertCallerIsAdmin(
     return { ok: false as const, status: 401, body: { error: "unauthorized" } };
   }
 
-  const { data: roleRow, error: roleErr } = await userClient
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", caller.id)
-    .maybeSingle();
-
-  if (roleErr || roleRow?.role !== "admin") {
-    return { ok: false as const, status: 403, body: { error: "forbidden" } };
-  }
-
   const admin = createClient(supabaseUrl, serviceRole, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+
+  const { data: callerRoles, error: roleErr } = await admin
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", caller.id);
+
+  if (roleErr) {
+    return { ok: false as const, status: 500, body: { error: "server_error", message: roleErr.message } };
+  }
+
+  const isCallerAdmin = (callerRoles ?? []).some((r) => r.role === "admin");
+  if (!isCallerAdmin) {
+    return { ok: false as const, status: 403, body: { error: "forbidden" } };
+  }
 
   return { ok: true as const, callerId: caller.id, admin };
 }
@@ -81,13 +85,12 @@ async function runAdminAction(
       return { ok: false as const, status: 400, body: { error: "cannot_delete_self" } };
     }
 
-    const { data: targetRole } = await admin
+    const { data: targetRoles } = await admin
       .from("user_roles")
       .select("role")
-      .eq("user_id", targetId)
-      .maybeSingle();
+      .eq("user_id", targetId);
 
-    if (targetRole?.role === "admin") {
+    if ((targetRoles ?? []).some((r) => r.role === "admin")) {
       const { count, error: cErr } = await admin
         .from("user_roles")
         .select("id", { count: "exact", head: true })

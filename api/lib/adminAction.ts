@@ -36,13 +36,17 @@ export async function runAdminUserActionCore(
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const { data: roleRow, error: roleErr } = await admin
+  const { data: callerRoles, error: roleErr } = await admin
     .from("user_roles")
     .select("role")
-    .eq("user_id", caller.id)
-    .maybeSingle();
+    .eq("user_id", caller.id);
 
-  if (roleErr || roleRow?.role !== "admin") {
+  if (roleErr) {
+    return { status: 500, body: { error: "server_error", message: roleErr.message } };
+  }
+
+  const isCallerAdmin = (callerRoles ?? []).some((r) => r.role === "admin");
+  if (!isCallerAdmin) {
     return { status: 403, body: { error: "forbidden" } };
   }
 
@@ -51,13 +55,12 @@ export async function runAdminUserActionCore(
       return { status: 400, body: { error: "cannot_delete_self" } };
     }
 
-    const { data: targetRole } = await admin
+    const { data: targetRoles } = await admin
       .from("user_roles")
       .select("role")
-      .eq("user_id", targetId)
-      .maybeSingle();
+      .eq("user_id", targetId);
 
-    if (targetRole?.role === "admin") {
+    if ((targetRoles ?? []).some((r) => r.role === "admin")) {
       const { count, error: cErr } = await admin
         .from("user_roles")
         .select("id", { count: "exact", head: true })

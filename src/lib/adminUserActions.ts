@@ -224,14 +224,18 @@ async function invokeDigisacAdmin(
 }
 
 /**
- * 1) digisac-dashboard (Edge já no ar, CORS ok)
- * 2) /api/admin-user-action (.env local ou mesma variável na Vercel)
- * Não chama admin-users (404 → erro CORS no browser).
+ * 1) /api/admin-user-action (service_role valida admin — confiável com JWT ES256)
+ * 2) Edge admin-users / digisac-dashboard (fallback)
  */
 export async function runAdminUserAction(body: AdminUserActionBody): Promise<AdminUserActionResult> {
   const token = await getAccessToken();
   if (!token) {
     return { ok: false, code: 'unauthorized' };
+  }
+
+  const viaApi = await invokeLocalOrVercelApi(token, body);
+  if (viaApi) {
+    return viaApi;
   }
 
   if (await isAdminUsersEdgeAvailable()) {
@@ -242,19 +246,7 @@ export async function runAdminUserAction(body: AdminUserActionBody): Promise<Adm
   }
 
   const viaDigisac = await invokeDigisacAdmin(token, body);
-  if (viaDigisac?.ok) {
-    return viaDigisac;
-  }
-  if (viaDigisac && !viaDigisac.ok && viaDigisac.code !== 'server_misconfigured') {
-    return viaDigisac;
-  }
-
-  const viaApi = await invokeLocalOrVercelApi(token, body);
-  if (viaApi) {
-    return viaApi;
-  }
-
-  if (viaDigisac?.code === 'server_misconfigured') {
+  if (viaDigisac) {
     return viaDigisac;
   }
 
