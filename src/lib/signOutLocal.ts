@@ -1,3 +1,4 @@
+import { buildAuthPath } from '@/lib/authPaths';
 import { clearAllSupabaseAuthStorage } from '@/lib/supabaseProject';
 import { clearKanbanBoardCache } from '@/lib/kanbanBoardCache';
 import { clearUserAccessCache } from '@/lib/userAccessCache';
@@ -22,6 +23,14 @@ export function consumeLogoutFlag(): boolean {
   }
 }
 
+export function setLogoutFlag(): void {
+  try {
+    sessionStorage.setItem(LOGOUT_FLAG_KEY, '1');
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Limpa sessão local imediatamente (sem await). */
 export function clearLocalSession(): void {
   clearUserAccessCache();
@@ -29,20 +38,16 @@ export function clearLocalSession(): void {
   clearAllSupabaseAuthStorage();
 }
 
-/** Redireciona para login e reinicia o app (logout mais rápido que SPA navigate). */
+/** Redireciona para login com recarga completa. */
 export function redirectToLogin(): void {
-  const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') || '';
-  const authPath = `${base}/auth`.replace(/\/+/g, '/');
-  window.location.replace(authPath);
+  window.location.replace(buildAuthPath('logout=1'));
 }
 
-/** Logout síncrono: marca flag, limpa storage e recarrega em /auth. */
+/**
+ * Logout: marca flag e navega na hora (antes de React re-renderizar).
+ * A limpeza do localStorage ocorre no script inline do index.html e no AuthProvider.
+ */
 export function performLogout(): void {
-  try {
-    sessionStorage.setItem(LOGOUT_FLAG_KEY, '1');
-  } catch {
-    /* ignore */
-  }
-  clearLocalSession();
-  redirectToLogin();
+  setLogoutFlag();
+  window.location.assign(buildAuthPath('logout=1'));
 }

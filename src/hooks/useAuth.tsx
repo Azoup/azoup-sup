@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, createContext, useContext, ReactNode } from 'react';
+import { useState, useEffect, useRef, createContext, useContext, ReactNode, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -7,11 +8,11 @@ import {
   getConfiguredSupabaseProjectRef,
   projectRefFromAccessToken,
 } from '@/lib/supabaseProject';
+import { buildAuthPath, isAuthPathname, isLogoutQuery } from '@/lib/authPaths';
 import { clearLocalSession, consumeLogoutFlag, hasLogoutFlag } from '@/lib/signOutLocal';
 import { withTimeout } from '@/lib/withTimeout';
 
 const AUTH_INIT_TIMEOUT_MS = 4_000;
-const AUTH_LOADING_WATCHDOG_MS = 8_000;
 
 interface AuthContextType {
   session: Session | null;
@@ -26,6 +27,10 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   signOut: () => {},
 });
+
+function pendingLogout(search: string): boolean {
+  return hasLogoutFlag() || isLogoutQuery(search);
+}
 
 async function resolveValidSession(): Promise<Session | null> {
   const urlRef = getConfiguredSupabaseProjectRef();
@@ -43,22 +48,24 @@ async function resolveValidSession(): Promise<Session | null> {
   return session;
 }
 
-async function resetAuthStateLocal(): Promise<void> {
-  clearLocalSession();
-}
-
-function isAuthPath(): boolean {
-  if (typeof window === 'undefined') return false;
-  const path = window.location.pathname.replace(/\/$/, '') || '/';
-  const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') || '';
-  const authPath = `${base}/auth`.replace(/\/+/g, '/').replace(/\/$/, '') || '/auth';
-  return path === authPath || path.endsWith('/auth');
-}
-
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const location = useLocation();
+  const signedOutRef = useRef(pendingLogout(location.search));
   const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(() => !hasLogoutFlag() && !isAuthPath());
-  const signedOutRef = useRef(hasLogoutFlag());
+  const [loading, setLoading] = useState(
+    () => !signedOutRef.current && !isAuthPathname(location.pathname),
+  );
+
+  const applySignedOut = useCallback(() => {
+    signedOutRef.current = true;
+    consumeLogoutFlag();
+    clearLocalSession();
+    setSession(null);
+    setLoading(false);
+    if (isLogoutQuery(location.search)) {
+      window.history.replaceState({}, '', buildAuthPath());
+    }
+  }, [location.search]);
 
   useEffect(() => {
     let mounted = true;
@@ -67,43 +74,38 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (mounted) setLoading(false);
     };
 
-    if (consumeLogoutFlag()) {
-      signedOutRef.current = true;
-      clearLocalSession();
-      setSession(null);
-      finishLoading();
-    }
-
-    const fastAuthPage = isAuthPath() && !signedOutRef.current;
-
-    const watchdog = window.setTimeout(() => {
-      if (!mounted) return;
-      console.warn('[auth] Watchdog: carregamento demorou demais — a limpar sessão local.');
-      void resetAuthStateLocal().finally(() => {
-        if (mounted) {
-          setSession(null);
-          setLoading(false);
+    if (signedOutRef.current || pendingLogout(location.search)) {
+      applySignedOut();
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+        if (!mounted || !signedOutRef.current) return;
+        if (event === 'SIGNED_IN' && nextSession?.access_token) {
+          signedOutRef.current = false;
+          setSession(nextSession);
         }
       });
-    }, AUTH_LOADING_WATCHDOG_MS);
+      return () => {
+        mounted = false;
+        subscription.unsubscribe();
+      };
+    }
 
-    if (fastAuthPage) {
+    const onAuthPage = isAuthPathname(location.pathname);
+    if (onAuthPage) {
       finishLoading();
     }
 
-    const sessionTimeoutMs = fastAuthPage ? 1_500 : AUTH_INIT_TIMEOUT_MS;
-    withTimeout(resolveValidSession(), sessionTimeoutMs, 'Inicialização de sessão expirou')
+    const timeoutMs = onAuthPage ? 800 : AUTH_INIT_TIMEOUT_MS;
+    withTimeout(resolveValidSession(), timeoutMs, 'Inicialização de sessão expirou')
       .then((validSession) => {
         if (!mounted || signedOutRef.current) return;
         setSession(validSession);
       })
       .catch(() => {
         if (!mounted || signedOutRef.current) return;
-        void resetAuthStateLocal();
+        clearLocalSession();
         setSession(null);
       })
       .finally(() => {
-        window.clearTimeout(watchdog);
         finishLoading();
       });
 
@@ -128,12 +130,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const urlRef = getConfiguredSupabaseProjectRef();
       const tokenRef = projectRefFromAccessToken(nextSession.access_token);
       if (urlRef && tokenRef && urlRef !== tokenRef) {
-        void resetAuthStateLocal().finally(() => {
-          if (mounted) {
-            setSession(null);
-            finishLoading();
-          }
-        });
+        clearLocalSession();
+        setSession(null);
+        finishLoading();
         return;
       }
 
@@ -150,10 +149,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     return () => {
       mounted = false;
-      window.clearTimeout(watchdog);
       subscription.unsubscribe();
     };
-  }, []);
+  }, [location.pathname, location.search, applySignedOut]);
 
   const signOut = () => {
     signedOutRef.current = true;

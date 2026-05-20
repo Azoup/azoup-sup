@@ -21,6 +21,31 @@
 </head>
 
   <body>
+    <script>
+      (function () {
+        var FLAG = 'azoup-signed-out';
+        var logout =
+          sessionStorage.getItem(FLAG) === '1' ||
+          /[?&]logout=1/.test(location.search || '');
+        if (!logout) return;
+        try {
+          sessionStorage.removeItem(FLAG);
+        } catch (e) {}
+        try {
+          for (var i = localStorage.length - 1; i >= 0; i--) {
+            var key = localStorage.key(i);
+            if (!key) continue;
+            if (
+              key.indexOf('sb-') === 0 ||
+              key.indexOf('supabase.auth.') === 0 ||
+              key.indexOf('auth-token') !== -1
+            ) {
+              localStorage.removeItem(key);
+            }
+          }
+        } catch (e) {}
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -22,8 +23,15 @@ import Developers from "./pages/Developers";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import DigisacDashboard from "./pages/DigisacDashboard";
-import { AppLoadingScreen } from "@/components/AppLoadingScreen";
 import { getFirstAllowedPath } from "@/lib/allowedRoutes";
+import { redirectToLogin } from "@/lib/signOutLocal";
+
+function RedirectToLogin() {
+  useEffect(() => {
+    redirectToLogin();
+  }, []);
+  return null;
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -38,18 +46,22 @@ const queryClient = new QueryClient({
   },
 });
 
-function ProtectedRoute({ children, screen }: { children: React.ReactNode; screen?: string }) {
+function RequireAuth({ children, screen }: { children: React.ReactNode; screen?: string }) {
   const { user, loading: authLoading } = useAuth();
   const { canView, isLoading: permsLoading } = usePermissions();
+
   if (!user) {
-    return <Navigate to="/auth" replace />;
+    return <RedirectToLogin />;
   }
+
   if (authLoading || permsLoading) {
-    return <AppLoadingScreen />;
+    return null;
   }
+
   if (screen && !canView(screen)) {
     return <Navigate to={getFirstAllowedPath(canView)} replace />;
   }
+
   return <AppLayout>{children}</AppLayout>;
 }
 
@@ -57,12 +69,15 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const { isAdmin, isLoading } = useRole();
   const { canView, isLoading: permsLoading } = usePermissions();
+
   if (!user) {
-    return <Navigate to="/auth" replace />;
+    return <RedirectToLogin />;
   }
+
   if (loading || isLoading || permsLoading) {
-    return <AppLoadingScreen />;
+    return null;
   }
+
   if (!isAdmin) return <Navigate to={getFirstAllowedPath(canView)} replace />;
   return <AppLayout>{children}</AppLayout>;
 }
@@ -70,39 +85,46 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 function AuthRoute() {
   const { user, loading } = useAuth();
   const { canView, isLoading: permsLoading } = usePermissions();
-  if (!user) return <Auth />;
-  if (!loading && !permsLoading) {
+
+  if (user && !loading && !permsLoading) {
     return <Navigate to={getFirstAllowedPath(canView)} replace />;
   }
+
   return <Auth />;
+}
+
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/auth" element={<AuthRoute />} />
+      <Route path="/" element={<RequireAuth screen="kanban"><Index /></RequireAuth>} />
+      <Route path="/dashboard" element={<RequireAuth screen="dashboard"><Dashboard /></RequireAuth>} />
+      <Route path="/dashboard-bu" element={<RequireAuth screen="dashboard_bu"><DashboardBU /></RequireAuth>} />
+      <Route path="/kanban-dashboard" element={<RequireAuth screen="kanban_dashboard"><KanbanDashboard /></RequireAuth>} />
+      <Route path="/profile" element={<RequireAuth screen="profile_log"><Profile /></RequireAuth>} />
+      <Route path="/analysts" element={<RequireAuth screen="analysts"><Analysts /></RequireAuth>} />
+      <Route path="/entries" element={<RequireAuth screen="entries"><Entries /></RequireAuth>} />
+      <Route path="/entries-bu" element={<RequireAuth screen="entries_bu"><EntriesBU /></RequireAuth>} />
+      <Route path="/business-units" element={<RequireAuth screen="business_units"><BusinessUnits /></RequireAuth>} />
+      <Route path="/kanban-dev" element={<RequireAuth screen="kanban_dev"><KanbanDev /></RequireAuth>} />
+      <Route path="/dashboard-dev" element={<RequireAuth screen="dashboard_dev"><DashboardDev /></RequireAuth>} />
+      <Route path="/developers" element={<RequireAuth screen="developers"><Developers /></RequireAuth>} />
+      <Route path="/digisac-dashboard" element={<RequireAuth screen="digisac_dashboard"><DigisacDashboard /></RequireAuth>} />
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  );
 }
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Sonner />
-      <AuthProvider>
-        <AuthSessionSync />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/auth" element={<AuthRoute />} />
-            <Route path="/" element={<ProtectedRoute screen="kanban"><Index /></ProtectedRoute>} />
-            <Route path="/dashboard" element={<ProtectedRoute screen="dashboard"><Dashboard /></ProtectedRoute>} />
-            <Route path="/dashboard-bu" element={<ProtectedRoute screen="dashboard_bu"><DashboardBU /></ProtectedRoute>} />
-            <Route path="/kanban-dashboard" element={<ProtectedRoute screen="kanban_dashboard"><KanbanDashboard /></ProtectedRoute>} />
-            <Route path="/profile" element={<ProtectedRoute screen="profile_log"><Profile /></ProtectedRoute>} />
-            <Route path="/analysts" element={<ProtectedRoute screen="analysts"><Analysts /></ProtectedRoute>} />
-            <Route path="/entries" element={<ProtectedRoute screen="entries"><Entries /></ProtectedRoute>} />
-            <Route path="/entries-bu" element={<ProtectedRoute screen="entries_bu"><EntriesBU /></ProtectedRoute>} />
-            <Route path="/business-units" element={<ProtectedRoute screen="business_units"><BusinessUnits /></ProtectedRoute>} />
-            <Route path="/kanban-dev" element={<ProtectedRoute screen="kanban_dev"><KanbanDev /></ProtectedRoute>} />
-            <Route path="/dashboard-dev" element={<ProtectedRoute screen="dashboard_dev"><DashboardDev /></ProtectedRoute>} />
-            <Route path="/developers" element={<ProtectedRoute screen="developers"><Developers /></ProtectedRoute>} />
-            <Route path="/digisac-dashboard" element={<ProtectedRoute screen="digisac_dashboard"><DigisacDashboard /></ProtectedRoute>} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
+      <BrowserRouter>
+        <AuthProvider>
+          <AuthSessionSync />
+          <AppRoutes />
+        </AuthProvider>
+      </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );
