@@ -1,8 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { runTimedQuery } from '@/lib/supabaseTimedQuery';
 
-const API_TIMEOUT_MS = 4_000;
-const SUPABASE_ACCESS_TIMEOUT_MS = 8_000;
+const API_TIMEOUT_MS = 3_000;
 
 export type UserAccessResult = {
   role: string;
@@ -48,7 +47,7 @@ export async function fetchUserAccessFromSupabase(userId: string): Promise<UserA
       role: resolveRoleFromRows(roles),
       permissions: buildPermissionsMap(permsRes.data),
     };
-  }, SUPABASE_ACCESS_TIMEOUT_MS);
+  }, 6_000);
 }
 
 async function fetchUserAccessViaApi(accessToken: string): Promise<UserAccessResult> {
@@ -75,28 +74,18 @@ async function fetchUserAccessViaApi(accessToken: string): Promise<UserAccessRes
   }
 }
 
-function firstFulfilled<T>(promises: Promise<T>[]): Promise<T> {
-  return new Promise((resolve, reject) => {
-    let failures = 0;
-    for (const p of promises) {
-      p.then(resolve).catch(() => {
-        if (++failures === promises.length) reject(new Error('all_sources_failed'));
-      });
-    }
-  });
-}
-
-/** API e Supabase em paralelo — usa o que responder primeiro (menos espera no login). */
+/** API primeiro (1 hop); fallback Supabase só se a API falhar. */
 export async function fetchUserAccess(
   accessToken: string,
   userId: string,
 ): Promise<UserAccessResult> {
   try {
-    return await firstFulfilled([
-      fetchUserAccessViaApi(accessToken),
-      fetchUserAccessFromSupabase(userId),
-    ]);
+    return await fetchUserAccessViaApi(accessToken);
   } catch {
-    return DEFAULT_USER_ACCESS;
+    try {
+      return await fetchUserAccessFromSupabase(userId);
+    } catch {
+      return DEFAULT_USER_ACCESS;
+    }
   }
 }

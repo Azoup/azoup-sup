@@ -1,0 +1,67 @@
+import { supabase } from '@/integrations/supabase/client';
+import { assertSupabaseData } from '@/lib/supabaseQuery';
+import type { KanbanBoardData } from '@/lib/kanbanBoardCache';
+
+const API_TIMEOUT_MS = 8_000;
+
+async function fetchKanbanBoardViaApi(accessToken: string): Promise<KanbanBoardData | null> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const res = await fetch('/api/kanban-board', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as Omit<KanbanBoardData, 'cachedAt'>;
+    return { ...data, cachedAt: Date.now() };
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+async function fetchKanbanBoardViaProxy(): Promise<KanbanBoardData | null> {
+  try {
+    const [columnsRes, analystsRes, cardsRes, labelsRes, cardLabelsRes, cardImagesRes] =
+      await Promise.all([
+        supabase.from('kanban_columns').select('*').order('position'),
+        supabase.from('analysts').select('*').eq('status', 'active').order('name'),
+        supabase.from('kanban_cards').select('*').order('position'),
+        supabase.from('kanban_labels').select('*').order('name'),
+        supabase.from('kanban_card_labels').select('*, kanban_labels(*)'),
+        supabase.from('kanban_card_images').select('*').order('created_at'),
+      ]);
+
+    return {
+      columns: assertSupabaseData(columnsRes.data, columnsRes.error, 'kanban_columns'),
+      analysts: assertSupabaseData(analystsRes.data, analystsRes.error, 'analysts'),
+      cards: assertSupabaseData(cardsRes.data, cardsRes.error, 'kanban_cards'),
+      labels: assertSupabaseData(labelsRes.data, labelsRes.error, 'kanban_labels'),
+      cardLabels: assertSupabaseData(cardLabelsRes.data, cardLabelsRes.error, 'kanban_card_labels'),
+      cardImages: assertSupabaseData(cardImagesRes.data, cardImagesRes.error, 'kanban_card_images'),
+      cachedAt: Date.now(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchKanbanBoard(accessToken?: string): Promise<KanbanBoardData> {
+  if (accessToken) {
+    const fromApi = await fetchKanbanBoardViaApi(accessToken);
+    if (fromApi) return fromApi;
+  }
+  const fromProxy = await fetchKanbanBoardViaProxy();
+  if (fromProxy) return fromProxy;
+  return {
+    columns: [],
+    analysts: [],
+    cards: [],
+    labels: [],
+    cardLabels: [],
+    cardImages: [],
+    cachedAt: Date.now(),
+  };
+}

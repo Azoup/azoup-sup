@@ -41,13 +41,10 @@ const queryClient = new QueryClient({
 function ProtectedRoute({ children, screen }: { children: React.ReactNode; screen?: string }) {
   const { user, loading: authLoading } = useAuth();
   const { canView, isLoading: permsLoading } = usePermissions();
-  if (authLoading) {
+  if (authLoading || permsLoading) {
     return <AppLoadingScreen />;
   }
   if (!user) return <Navigate to="/auth" replace />;
-  if (permsLoading) {
-    return <AppLoadingScreen />;
-  }
   if (screen && !canView(screen)) {
     return <Navigate to={getFirstAllowedPath(canView)} replace />;
   }

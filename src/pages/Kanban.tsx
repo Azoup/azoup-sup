@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { useSupabaseReady } from '@/hooks/useSupabaseReady';
-import { assertSupabaseData } from '@/lib/supabaseQuery';
+import { useKanbanBoard, invalidateKanbanBoard } from '@/hooks/useKanbanBoard';
 import { logActivity } from '@/hooks/useActivityLog';
 import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -77,77 +77,26 @@ const Kanban = () => {
   const [editColumnColor, setEditColumnColor] = useState('');
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
 
-  const { data: columns = [] } = useQuery({
-    queryKey: ['kanban-columns'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('kanban_columns').select('*').order('position');
-      return assertSupabaseData(data, error, 'kanban_columns');
-    },
-    enabled: supabaseReady,
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const { data: analysts = [] } = useQuery({
-    queryKey: ['analysts-active'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('analysts').select('*').eq('status', 'active').order('name');
-      return assertSupabaseData(data, error, 'analysts');
-    },
-    enabled: supabaseReady,
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const { data: cards = [], isLoading } = useQuery({
-    queryKey: ['kanban-cards'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('kanban_cards').select('*').order('position');
-      return assertSupabaseData(data, error, 'kanban_cards');
-    },
-    enabled: supabaseReady,
-    staleTime: 60 * 1000,
-  });
-
-  const { data: labels = [] } = useQuery({
-    queryKey: ['kanban-labels'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('kanban_labels').select('*').order('name');
-      return assertSupabaseData(data, error, 'kanban_labels');
-    },
-    enabled: supabaseReady,
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const { data: cardLabels = [] } = useQuery({
-    queryKey: ['kanban-card-labels'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('kanban_card_labels').select('*, kanban_labels(*)');
-      return assertSupabaseData(data, error, 'kanban_card_labels');
-    },
-    enabled: supabaseReady,
-    staleTime: 60 * 1000,
-  });
-
-  const { data: cardImages = [] } = useQuery({
-    queryKey: ['kanban-card-images'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('kanban_card_images').select('*').order('created_at');
-      return assertSupabaseData(data, error, 'kanban_card_images');
-    },
-    enabled: supabaseReady,
-    staleTime: 60 * 1000,
-  });
+  const { data: board, isLoading: boardLoading } = useKanbanBoard(supabaseReady);
+  const columns = (board?.columns ?? []) as any[];
+  const analysts = (board?.analysts ?? []) as any[];
+  const cards = (board?.cards ?? []) as any[];
+  const labels = (board?.labels ?? []) as any[];
+  const cardLabels = (board?.cardLabels ?? []) as any[];
+  const cardImages = (board?.cardImages ?? []) as any[];
+  const isLoading = boardLoading && !board;
 
   useEffect(() => {
     const channel = supabase
       .channel('kanban-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'kanban_cards' }, () => {
-        queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
+        invalidateKanbanBoard(queryClient);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'kanban_card_images' }, () => {
-        queryClient.invalidateQueries({ queryKey: ['kanban-card-images'] });
+        invalidateKanbanBoard(queryClient);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'kanban_columns' }, () => {
-        queryClient.invalidateQueries({ queryKey: ['kanban-columns'] });
+        invalidateKanbanBoard(queryClient);
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -277,9 +226,9 @@ const Kanban = () => {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
-      queryClient.invalidateQueries({ queryKey: ['kanban-card-labels'] });
-      queryClient.invalidateQueries({ queryKey: ['kanban-card-images'] });
+      invalidateKanbanBoard(queryClient);
+      invalidateKanbanBoard(queryClient);
+      invalidateKanbanBoard(queryClient);
       resetForm(); setCreateOpen(false);
       toast.success('Card criado!');
     },
@@ -326,9 +275,9 @@ const Kanban = () => {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
-      queryClient.invalidateQueries({ queryKey: ['kanban-card-labels'] });
-      queryClient.invalidateQueries({ queryKey: ['kanban-card-images'] });
+      invalidateKanbanBoard(queryClient);
+      invalidateKanbanBoard(queryClient);
+      invalidateKanbanBoard(queryClient);
       resetForm(); setEditOpen(false);
       toast.success('Card atualizado!');
     },
@@ -342,7 +291,7 @@ const Kanban = () => {
       await logActivity('Excluiu card do Kanban');
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
+      invalidateKanbanBoard(queryClient);
       toast.success('Card excluído!');
     },
   });
@@ -353,7 +302,7 @@ const Kanban = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['kanban-card-images'] });
+      invalidateKanbanBoard(queryClient);
       toast.success('Imagem removida!');
     },
   });
@@ -364,7 +313,7 @@ const Kanban = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['kanban-labels'] });
+      invalidateKanbanBoard(queryClient);
       setNewLabelName(''); setNewLabelColor('#3b82f6');
       toast.success('Etiqueta criada!');
     },
@@ -379,8 +328,8 @@ const Kanban = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['kanban-labels'] });
-      queryClient.invalidateQueries({ queryKey: ['kanban-card-labels'] });
+      invalidateKanbanBoard(queryClient);
+      invalidateKanbanBoard(queryClient);
       setEditingLabel(null);
       toast.success('Etiqueta atualizada!');
     },
@@ -393,8 +342,8 @@ const Kanban = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['kanban-labels'] });
-      queryClient.invalidateQueries({ queryKey: ['kanban-card-labels'] });
+      invalidateKanbanBoard(queryClient);
+      invalidateKanbanBoard(queryClient);
       setDeleteLabelId(null);
       toast.success('Etiqueta excluída!');
     },
@@ -411,7 +360,7 @@ const Kanban = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['kanban-columns'] });
+      invalidateKanbanBoard(queryClient);
       setNewColumnTitle(''); setNewColumnColor('border-t-blue-500');
       setAddColumnOpen(false);
       toast.success('Lista criada!');
@@ -428,7 +377,7 @@ const Kanban = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['kanban-columns'] });
+      invalidateKanbanBoard(queryClient);
       setEditColumnOpen(false); setEditingColumn(null);
       toast.success('Lista atualizada!');
     },
@@ -447,8 +396,8 @@ const Kanban = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['kanban-columns'] });
-      queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
+      invalidateKanbanBoard(queryClient);
+      invalidateKanbanBoard(queryClient);
       setDeleteColumnId(null);
       toast.success('Lista excluída!');
     },
@@ -485,7 +434,7 @@ const Kanban = () => {
       toast.error("Erro ao criar etiqueta 'Concluído' automaticamente.");
       return null;
     }
-    queryClient.invalidateQueries({ queryKey: ['kanban-labels'] });
+    invalidateKanbanBoard(queryClient);
     return data.id;
   }, [labels, queryClient]);
 
@@ -526,7 +475,7 @@ const Kanban = () => {
         .eq('card_id', cardId).eq('label_id', doneLabelId);
       if (removeDoneLabelError) throw removeDoneLabelError;
     }
-    queryClient.invalidateQueries({ queryKey: ['kanban-card-labels'] });
+    invalidateKanbanBoard(queryClient);
   }, [ensureDoneLabel, queryClient, labels]);
 
   // --- Optimistic drag and drop ---
@@ -556,7 +505,7 @@ const Kanban = () => {
       .then(async ({ error }) => {
         if (error) {
           // Rollback on error
-          queryClient.invalidateQueries({ queryKey: ['kanban-cards'] });
+          invalidateKanbanBoard(queryClient);
           toast.error('Erro ao mover card.');
           return;
         }
@@ -567,7 +516,7 @@ const Kanban = () => {
           } catch (labelError: any) {
             console.error('Erro ao aplicar etiqueta de concluído:', labelError);
             toast.error('Card movido, mas houve erro ao atualizar etiquetas.');
-            queryClient.invalidateQueries({ queryKey: ['kanban-card-labels'] });
+            invalidateKanbanBoard(queryClient);
           }
         }
         // Notify analyst on column change
@@ -673,7 +622,7 @@ const Kanban = () => {
       supabase.from('kanban_columns').update({ position: b.position }).eq('id', a.id),
       supabase.from('kanban_columns').update({ position: a.position }).eq('id', b.id),
     ]);
-    queryClient.invalidateQueries({ queryKey: ['kanban-columns'] });
+    invalidateKanbanBoard(queryClient);
   }, [sortedColumns, queryClient]);
 
   const toggleFilterLabel = useCallback((labelId: string) => {

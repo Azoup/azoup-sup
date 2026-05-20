@@ -2,6 +2,8 @@ import type { Connect, Plugin } from "vite";
 import { runAdminUserActionCore, type AdminBody } from "./api/lib/adminAction";
 import { adminConfigFromEnv } from "./api/lib/supabaseConfig";
 import { fetchUserAccessCore } from "./api/lib/userAccess";
+import { fetchAppBootstrapCore } from "./api/lib/appBootstrap";
+import { fetchKanbanBoardCore } from "./api/lib/kanbanBoard";
 import { proxyAuthenticatedSupabaseRequest, type RestProxyBody } from "./api/lib/restProxy";
 
 function readBody(req: Connect.IncomingMessage): Promise<string> {
@@ -87,7 +89,9 @@ export function adminApiDevPlugin(env: Record<string, string>): Plugin {
           return;
         }
 
-        if (url === "/api/my-access") {
+        const handleGetApi = async (
+          handler: (auth: string, config: NonNullable<ReturnType<typeof adminConfigFromEnv> & object>) => Promise<{ status: number; body: Record<string, unknown> }>,
+        ) => {
           res.setHeader("Access-Control-Allow-Origin", "*");
           res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
           res.setHeader("Access-Control-Allow-Headers", "authorization");
@@ -95,14 +99,14 @@ export function adminApiDevPlugin(env: Record<string, string>): Plugin {
           if (req.method === "OPTIONS") {
             res.statusCode = 204;
             res.end();
-            return;
+            return true;
           }
 
           if (req.method !== "GET") {
             res.statusCode = 405;
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify({ error: "method_not_allowed" }));
-            return;
+            return true;
           }
 
           const config = adminConfigFromEnv(env as NodeJS.ProcessEnv);
@@ -110,7 +114,7 @@ export function adminApiDevPlugin(env: Record<string, string>): Plugin {
             res.statusCode = 500;
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify({ error: "server_misconfigured", message: config.error }));
-            return;
+            return true;
           }
 
           const authHeader = req.headers.authorization?.trim();
@@ -118,11 +122,11 @@ export function adminApiDevPlugin(env: Record<string, string>): Plugin {
             res.statusCode = 401;
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify({ error: "unauthorized" }));
-            return;
+            return true;
           }
 
           try {
-            const result = await fetchUserAccessCore(authHeader, config);
+            const result = await handler(authHeader, config);
             res.statusCode = result.status;
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify(result.body));
@@ -136,7 +140,19 @@ export function adminApiDevPlugin(env: Record<string, string>): Plugin {
               }),
             );
           }
-          return;
+          return true;
+        };
+
+        if (url === "/api/my-access") {
+          if (await handleGetApi(fetchUserAccessCore)) return;
+        }
+
+        if (url === "/api/app-bootstrap") {
+          if (await handleGetApi(fetchAppBootstrapCore)) return;
+        }
+
+        if (url === "/api/kanban-board") {
+          if (await handleGetApi(fetchKanbanBoardCore)) return;
         }
 
         if (url !== "/api/admin-user-action") {

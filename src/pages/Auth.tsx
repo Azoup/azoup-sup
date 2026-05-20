@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { loadAndCacheUserAccess } from '@/lib/userAccessLoad';
+import { fetchAppBootstrap } from '@/lib/fetchAppBootstrap';
+import { applyAppBootstrapToQueryClient } from '@/lib/applyAppBootstrap';
 import { getSiteUrl } from '@/lib/siteUrl';
 import { formatAuthErrorMessage } from '@/lib/authErrors';
 import { logActivity } from '@/hooks/useActivityLog';
@@ -55,10 +56,10 @@ const Auth = () => {
     void logActivity('Login no sistema');
 
     try {
-      const cached = await loadAndCacheUserAccess(data.session.access_token, data.user.id);
-      queryClient.setQueryData(['user-access', data.user.id], cached);
+      const bootstrap = await fetchAppBootstrap(data.session.access_token, data.user.id);
+      applyAppBootstrapToQueryClient(queryClient, bootstrap);
     } catch {
-      /* AuthRoute aguarda a query se o pré-carregamento falhar */
+      /* AuthRoute aguarda user-access se o bootstrap falhar */
     }
 
     setLoading(false);
