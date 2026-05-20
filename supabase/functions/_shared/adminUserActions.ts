@@ -1,5 +1,20 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.100.1";
 
+async function purgeUserData(admin: SupabaseClient, userId: string): Promise<string | null> {
+  const results = await Promise.all([
+    admin.from("user_permissions").delete().eq("user_id", userId),
+    admin.from("user_roles").delete().eq("user_id", userId),
+    admin.from("profiles").delete().eq("id", userId),
+  ]);
+  const failed = results.find((r) => r.error);
+  return failed?.error?.message ?? null;
+}
+
+function isAuthUserNotFoundError(message: string): boolean {
+  const m = message.toLowerCase();
+  return m.includes("not found") || m.includes("not_found") || m.includes("does not exist");
+}
+
 export type AdminUserActionBody = {
   action?: string;
   target_user_id?: string;
@@ -88,8 +103,14 @@ export async function runAdminUserAction(
       }
     }
 
+    const purgeErr = await purgeUserData(admin, targetId);
+    if (purgeErr) {
+      console.error("admin-user-actions: purgeUserData", purgeErr);
+      return { ok: false, status: 500, body: { error: "delete_failed", message: purgeErr } };
+    }
+
     const { error: delErr } = await admin.auth.admin.deleteUser(targetId);
-    if (delErr) {
+    if (delErr && !isAuthUserNotFoundError(delErr.message)) {
       console.error("admin-user-actions: deleteUser", delErr.message);
       return { ok: false, status: 400, body: { error: "delete_failed", message: delErr.message } };
     }

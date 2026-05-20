@@ -103,8 +103,21 @@ async function runAdminAction(
       }
     }
 
+    const purgeResults = await Promise.all([
+      admin.from("user_permissions").delete().eq("user_id", targetId),
+      admin.from("user_roles").delete().eq("user_id", targetId),
+      admin.from("profiles").delete().eq("id", targetId),
+    ]);
+    const purgeFail = purgeResults.find((r) => r.error);
+    if (purgeFail?.error) {
+      return { ok: false as const, status: 500, body: { error: "delete_failed", message: purgeFail.error.message } };
+    }
+
     const { error: delErr } = await admin.auth.admin.deleteUser(targetId);
-    if (delErr) {
+    const notFound =
+      delErr &&
+      /not found|not_found|does not exist/i.test(delErr.message);
+    if (delErr && !notFound) {
       return { ok: false as const, status: 400, body: { error: "delete_failed", message: delErr.message } };
     }
 

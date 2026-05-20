@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { isAuthUserNotFoundError, purgeUserData } from "../api/lib/purgeUserData.js";
 
 export type AdminBody = {
   action?: string;
@@ -76,8 +77,13 @@ export async function runAdminUserActionCore(
       }
     }
 
+    const purge = await purgeUserData(admin, targetId);
+    if (purge.error) {
+      return { status: 500, body: { error: "delete_failed", message: purge.error } };
+    }
+
     const { error: delErr } = await admin.auth.admin.deleteUser(targetId);
-    if (delErr) {
+    if (delErr && !isAuthUserNotFoundError(delErr.message)) {
       return { status: 400, body: { error: "delete_failed", message: delErr.message } };
     }
 

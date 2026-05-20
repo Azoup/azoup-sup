@@ -256,7 +256,8 @@ const Profile = () => {
     if (!handleAdminActionResult(result)) return;
     setDeleteTarget(null);
     toast.success('Cadastro do usuário removido.');
-    queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
+    await queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
+    await queryClient.refetchQueries({ queryKey: ['all-users-roles-profiles'] });
   };
 
   const confirmAdminSetPassword = async (e: React.FormEvent) => {
