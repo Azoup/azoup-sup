@@ -71,8 +71,10 @@ function AuthRoute() {
   const { user, loading } = useAuth();
   const { canView, isLoading: permsLoading } = usePermissions();
   if (!user) return <Auth />;
-  if (loading || permsLoading) return <AppLoadingScreen />;
-  return <Navigate to={getFirstAllowedPath(canView)} replace />;
+  if (!loading && !permsLoading) {
+    return <Navigate to={getFirstAllowedPath(canView)} replace />;
+  }
+  return <Auth />;
 }
 
 const App = () => (

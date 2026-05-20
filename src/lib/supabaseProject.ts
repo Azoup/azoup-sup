@@ -44,6 +44,19 @@ export function clearSupabaseAuthStorageExcept(activeProjectRef: string | null):
   keysToRemove.forEach((k) => window.localStorage.removeItem(k));
 }
 
+/** Remove todas as chaves de sessão Supabase (logout). */
+export function clearAllSupabaseAuthStorage(): void {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  const keysToRemove: string[] = [];
+  for (let i = 0; i < window.localStorage.length; i++) {
+    const key = window.localStorage.key(i);
+    if (!key) continue;
+    const isAuthKey = AUTH_STORAGE_PREFIXES.some((p) => key.startsWith(p) || key.includes('auth-token'));
+    if (isAuthKey) keysToRemove.push(key);
+  }
+  keysToRemove.forEach((k) => window.localStorage.removeItem(k));
+}
+
 export function getConfiguredSupabaseProjectRef(): string | null {
   return projectRefFromSupabaseUrl(import.meta.env.VITE_SUPABASE_URL as string | undefined);
 }

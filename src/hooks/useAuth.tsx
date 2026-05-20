@@ -7,7 +7,7 @@ import {
   getConfiguredSupabaseProjectRef,
   projectRefFromAccessToken,
 } from '@/lib/supabaseProject';
-import { clearLocalSession } from '@/lib/signOutLocal';
+import { clearLocalSession, consumeLogoutFlag, hasLogoutFlag } from '@/lib/signOutLocal';
 import { withTimeout } from '@/lib/withTimeout';
 
 const AUTH_INIT_TIMEOUT_MS = 4_000;
@@ -47,10 +47,18 @@ async function resetAuthStateLocal(): Promise<void> {
   clearLocalSession();
 }
 
+function isAuthPath(): boolean {
+  if (typeof window === 'undefined') return false;
+  const path = window.location.pathname.replace(/\/$/, '') || '/';
+  const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') || '';
+  const authPath = `${base}/auth`.replace(/\/+/g, '/').replace(/\/$/, '') || '/auth';
+  return path === authPath || path.endsWith('/auth');
+}
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
-  const signedOutRef = useRef(false);
+  const [loading, setLoading] = useState(() => !hasLogoutFlag() && !isAuthPath());
+  const signedOutRef = useRef(hasLogoutFlag());
 
   useEffect(() => {
     let mounted = true;
@@ -58,6 +66,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const finishLoading = () => {
       if (mounted) setLoading(false);
     };
+
+    if (consumeLogoutFlag()) {
+      signedOutRef.current = true;
+      clearLocalSession();
+      setSession(null);
+      finishLoading();
+    }
+
+    const fastAuthPage = isAuthPath() && !signedOutRef.current;
 
     const watchdog = window.setTimeout(() => {
       if (!mounted) return;
@@ -70,7 +87,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
     }, AUTH_LOADING_WATCHDOG_MS);
 
-    withTimeout(resolveValidSession(), AUTH_INIT_TIMEOUT_MS, 'Inicialização de sessão expirou')
+    if (fastAuthPage) {
+      finishLoading();
+    }
+
+    const sessionTimeoutMs = fastAuthPage ? 1_500 : AUTH_INIT_TIMEOUT_MS;
+    withTimeout(resolveValidSession(), sessionTimeoutMs, 'Inicialização de sessão expirou')
       .then((validSession) => {
         if (!mounted || signedOutRef.current) return;
         setSession(validSession);
