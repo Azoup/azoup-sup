@@ -23,7 +23,7 @@ export function updateDevKanbanBoardCache(
   });
 }
 
-export function patchDevKanbanCards(
+export function patchDevKanbanBoardCards(
   queryClient: QueryClient,
   updater: (cards: unknown[]) => unknown[],
 ): void {
@@ -33,7 +33,7 @@ export function patchDevKanbanCards(
   }));
 }
 
-export function patchDevKanbanCardLabels(
+export function patchDevKanbanBoardCardLabels(
   queryClient: QueryClient,
   updater: (cardLabels: unknown[]) => unknown[],
 ): void {
@@ -43,7 +43,7 @@ export function patchDevKanbanCardLabels(
   }));
 }
 
-export function patchDevKanbanColumns(
+export function patchDevKanbanBoardColumns(
   queryClient: QueryClient,
   updater: (columns: unknown[]) => unknown[],
 ): void {

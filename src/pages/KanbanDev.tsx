@@ -502,7 +502,7 @@ const KanbanDev = () => {
     const movedCard = cards.find((c: any) => c.id === draggableId);
     const statusChanged = source.droppableId !== destination.droppableId;
 
-    patchDevKanbanCards(queryClient, (old) =>
+    patchDevKanbanBoardCards(queryClient, (old) =>
       old.map((card: any) =>
         card.id === draggableId
           ? { ...card, status: destination.droppableId, position: destination.index }
