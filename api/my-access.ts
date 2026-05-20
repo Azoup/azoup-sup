@@ -1,14 +1,10 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import {
-  adminConfigFromEnv,
-  runAdminUserActionCore,
-  type AdminBody,
-} from "../server/adminUserActionCore";
+import { adminConfigFromEnv, fetchUserAccessCore } from "../server/myAccessCore";
 
 function cors(res: VercelResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "authorization, content-type");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "authorization");
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -18,7 +14,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
-  if (req.method !== "POST") {
+  if (req.method !== "GET") {
     return res.status(405).json({ error: "method_not_allowed" });
   }
 
@@ -32,6 +28,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: "unauthorized" });
   }
 
-  const result = await runAdminUserActionCore(authHeader, (req.body ?? {}) as AdminBody, config);
+  const result = await fetchUserAccessCore(authHeader, config);
   return res.status(result.status).json(result.body);
 }

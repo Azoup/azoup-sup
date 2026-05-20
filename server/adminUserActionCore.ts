@@ -35,7 +35,11 @@ export async function runAdminUserActionCore(
     return { status: 401, body: { error: "unauthorized" } };
   }
 
-  const { data: roleRow, error: roleErr } = await userClient
+  const admin = createClient(config.supabaseUrl, config.serviceRole, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const { data: roleRow, error: roleErr } = await admin
     .from("user_roles")
     .select("role")
     .eq("user_id", caller.id)
@@ -44,10 +48,6 @@ export async function runAdminUserActionCore(
   if (roleErr || roleRow?.role !== "admin") {
     return { status: 403, body: { error: "forbidden" } };
   }
-
-  const admin = createClient(config.supabaseUrl, config.serviceRole, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
 
   if (action === "delete_user") {
     if (targetId === caller.id) {

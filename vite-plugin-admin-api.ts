@@ -4,6 +4,7 @@ import {
   runAdminUserActionCore,
   type AdminBody,
 } from "./server/adminUserActionCore";
+import { fetchUserAccessCore } from "./server/myAccessCore";
 
 function readBody(req: Connect.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -14,13 +15,66 @@ function readBody(req: Connect.IncomingMessage): Promise<string> {
   });
 }
 
-/** Em `npm run dev`, serve /api/admin-user-action usando variáveis do .env */
+/** Em `npm run dev`, serve rotas /api/* usando variáveis do .env */
 export function adminApiDevPlugin(env: Record<string, string>): Plugin {
   return {
     name: "admin-api-dev",
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const url = req.url?.split("?")[0];
+
+        if (url === "/api/my-access") {
+          res.setHeader("Access-Control-Allow-Origin", "*");
+          res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+          res.setHeader("Access-Control-Allow-Headers", "authorization");
+
+          if (req.method === "OPTIONS") {
+            res.statusCode = 204;
+            res.end();
+            return;
+          }
+
+          if (req.method !== "GET") {
+            res.statusCode = 405;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "method_not_allowed" }));
+            return;
+          }
+
+          const config = adminConfigFromEnv(env as NodeJS.ProcessEnv);
+          if ("error" in config) {
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "server_misconfigured", message: config.error }));
+            return;
+          }
+
+          const authHeader = req.headers.authorization?.trim();
+          if (!authHeader?.startsWith("Bearer ")) {
+            res.statusCode = 401;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "unauthorized" }));
+            return;
+          }
+
+          try {
+            const result = await fetchUserAccessCore(authHeader, config);
+            res.statusCode = result.status;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify(result.body));
+          } catch (err) {
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json");
+            res.end(
+              JSON.stringify({
+                error: "server_error",
+                message: err instanceof Error ? err.message : "unknown",
+              }),
+            );
+          }
+          return;
+        }
+
         if (url !== "/api/admin-user-action") {
           return next();
         }

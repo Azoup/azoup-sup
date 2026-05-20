@@ -1,8 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useUserAccess } from '@/hooks/useUserAccess';
 import { useRole } from '@/hooks/useRole';
-import { runTimedQuery } from '@/lib/supabaseTimedQuery';
 
 // Default permissions for standard (non-admin) users
 const DEFAULT_USER_PERMISSIONS: Record<string, boolean> = {
@@ -38,33 +35,12 @@ const DEFAULT_USER_PERMISSIONS: Record<string, boolean> = {
 };
 
 export function usePermissions() {
-  const { user } = useAuth();
   const { isAdmin } = useRole();
-
-  const { data: permissions, isLoading, isError } = useQuery({
-    queryKey: ['user-permissions', user?.id],
-    queryFn: async () => {
-      if (!user) return {};
-      return runTimedQuery(async () => {
-        const { data, error } = await supabase
-          .from('user_permissions')
-          .select('permission_key, allowed')
-          .eq('user_id', user.id);
-        if (error) throw error;
-        if (!data || data.length === 0) return null;
-        const map: Record<string, boolean> = {};
-        data.forEach((p) => { map[p.permission_key] = p.allowed; });
-        return map;
-      });
-    },
-    enabled: !!user,
-    staleTime: 60 * 1000,
-    retry: 1,
-  });
+  const { data, isLoading, isError } = useUserAccess();
+  const permissions = data?.permissions ?? null;
 
   const hasPermission = (key: string): boolean => {
     if (isAdmin) return true;
-    // If explicit permissions exist, use them; otherwise use defaults
     if (permissions) return permissions[key] === true;
     return DEFAULT_USER_PERMISSIONS[key] === true;
   };
