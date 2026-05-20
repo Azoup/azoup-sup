@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { AdminConfig } from "./supabaseConfig.js";
 
 export type KanbanBoardPayload = {
@@ -11,7 +11,7 @@ export type KanbanBoardPayload = {
 };
 
 export async function fetchKanbanBoardWithAdmin(
-  admin: ReturnType<typeof createClient>,
+  admin: SupabaseClient,
 ): Promise<KanbanBoardPayload | { error: string }> {
   const [columnsRes, analystsRes, cardsRes, labelsRes, cardLabelsRes, cardImagesRes] =
     await Promise.all([
