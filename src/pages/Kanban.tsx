@@ -30,7 +30,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
@@ -893,10 +893,11 @@ const Kanban = () => {
                                 <div className="flex items-center justify-between">
                                   {card.analyst && (
                                     <div className="flex items-center gap-1.5">
-                                      <Avatar className="h-5 w-5">
-                                        <AvatarImage src={card.analyst.photo_url || ''} />
-                                        <AvatarFallback className="text-[8px]">{card.analyst.name?.charAt(0)}</AvatarFallback>
-                                      </Avatar>
+                                      <ProfileAvatar
+                                        className="h-5 w-5"
+                                        photoUrl={card.analyst.photo_url}
+                                        fallbackLabel={card.analyst.name || '?'}
+                                      />
                                       <span className="text-[10px] text-muted-foreground">{card.analyst.name}</span>
                                     </div>
                                   )}
@@ -979,10 +980,11 @@ const Kanban = () => {
               <div className="flex items-center gap-4 flex-wrap">
                 {viewingCard.analyst && (
                   <div className="flex items-center gap-2">
-                    <Avatar className="h-7 w-7">
-                      <AvatarImage src={viewingCard.analyst.photo_url || ''} />
-                      <AvatarFallback className="text-xs">{viewingCard.analyst.name?.charAt(0)}</AvatarFallback>
-                    </Avatar>
+                    <ProfileAvatar
+                      className="h-7 w-7"
+                      photoUrl={viewingCard.analyst.photo_url}
+                      fallbackLabel={viewingCard.analyst.name || '?'}
+                    />
                     <span className="text-sm text-muted-foreground">{viewingCard.analyst.name}</span>
                   </div>
                 )}

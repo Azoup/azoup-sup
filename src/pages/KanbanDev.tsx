@@ -29,7 +29,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
 import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar, Search } from 'lucide-react';
@@ -826,13 +826,13 @@ const KanbanDev = () => {
                               <div className="flex items-center justify-between gap-1 flex-wrap">
                                 {card.analyst && (
                                   <div className="flex items-center gap-1">
-                                    <Avatar className="h-5 w-5"><AvatarImage src={card.analyst.photo_url || ''} /><AvatarFallback className="text-[8px]">{card.analyst.name?.charAt(0)}</AvatarFallback></Avatar>
+                                    <ProfileAvatar className="h-5 w-5" photoUrl={card.analyst.photo_url} fallbackLabel={card.analyst.name || '?'} />
                                     <span className="text-[10px] text-muted-foreground">{card.analyst.name}</span>
                                   </div>
                                 )}
                                 {card.developer && (
                                   <div className="flex items-center gap-1">
-                                    <Avatar className="h-5 w-5"><AvatarImage src={card.developer.photo_url || ''} /><AvatarFallback className="text-[8px]">{card.developer.name?.charAt(0)}</AvatarFallback></Avatar>
+                                    <ProfileAvatar className="h-5 w-5" photoUrl={card.developer.photo_url} fallbackLabel={card.developer.name || '?'} />
                                     <span className="text-[10px] text-muted-foreground">{card.developer.name}</span>
                                   </div>
                                 )}
@@ -904,13 +904,13 @@ const KanbanDev = () => {
               <div className="flex items-center gap-4 flex-wrap">
                 {viewingCard.analyst && (
                   <div className="flex items-center gap-2">
-                    <Avatar className="h-7 w-7"><AvatarImage src={viewingCard.analyst.photo_url || ''} /><AvatarFallback className="text-xs">{viewingCard.analyst.name?.charAt(0)}</AvatarFallback></Avatar>
+                    <ProfileAvatar className="h-7 w-7" photoUrl={viewingCard.analyst.photo_url} fallbackLabel={viewingCard.analyst.name || '?'} />
                     <span className="text-sm text-muted-foreground">Analista: {viewingCard.analyst.name}</span>
                   </div>
                 )}
                 {viewingCard.developer && (
                   <div className="flex items-center gap-2">
-                    <Avatar className="h-7 w-7"><AvatarImage src={viewingCard.developer.photo_url || ''} /><AvatarFallback className="text-xs">{viewingCard.developer.name?.charAt(0)}</AvatarFallback></Avatar>
+                    <ProfileAvatar className="h-7 w-7" photoUrl={viewingCard.developer.photo_url} fallbackLabel={viewingCard.developer.name || '?'} />
                     <span className="text-sm text-muted-foreground">Dev: {viewingCard.developer.name}</span>
                   </div>
                 )}

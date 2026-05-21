@@ -21,6 +21,22 @@ export function normalizeProfilePhotoUrl(url: string | null | undefined): string
   return normalized;
 }
 
+export function isSignedStorageUrl(url: string): boolean {
+  return url.includes('/object/sign/');
+}
+
+export function isExternalPhotoUrl(url: string): boolean {
+  const n = normalizeProfilePhotoUrl(url);
+  if (!n) return false;
+  if (n.startsWith('blob:') || n.startsWith('data:')) return true;
+  try {
+    const u = new URL(n);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 /** URL para <img> / Avatar com cache-bust opcional (após novo upload). */
 export function profilePhotoSrc(
   url: string | null | undefined,
@@ -28,7 +44,7 @@ export function profilePhotoSrc(
 ): string | undefined {
   const base = normalizeProfilePhotoUrl(url);
   if (!base) return undefined;
-  if (bust == null) return base;
+  if (isSignedStorageUrl(base) || bust == null) return base;
   const sep = base.includes('?') ? '&' : '?';
   return `${base}${sep}t=${bust}`;
 }
@@ -40,7 +56,18 @@ export function storageObjectFromPublicUrl(
   url: string,
 ): { bucket: (typeof PHOTO_BUCKETS)[number]; path: string } | null {
   const normalized = normalizeProfilePhotoUrl(url);
-  if (!normalized) return null;
+  if (!normalized || isSignedStorageUrl(normalized)) return null;
+
+  if (normalized.includes('/object/public/')) {
+    for (const bucket of PHOTO_BUCKETS) {
+      const marker = `/object/public/${bucket}/`;
+      const idx = normalized.indexOf(marker);
+      if (idx < 0) continue;
+      const path = normalized.slice(idx + marker.length).split('?')[0];
+      if (path) return { bucket, path: decodeURIComponent(path) };
+    }
+  }
+
   for (const bucket of PHOTO_BUCKETS) {
     const marker = `/${bucket}/`;
     const idx = normalized.indexOf(marker);

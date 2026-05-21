@@ -5,7 +5,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ProfileAvatar } from '@/components/ProfileAvatar';
+import { resolveUserPhoto } from '@/lib/resolveUserPhotoUrl';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Trash2, Send, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -42,14 +43,21 @@ async function fetchCardComments(cardId: string): Promise<CommentRow[]> {
   let profileMap: Record<string, { name: string; photo_url: string }> = {};
 
   if (userIds.length > 0) {
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, display_name, photo_url')
-      .in('id', userIds);
+    const [{ data: profiles }, { data: analysts }, { data: developers }] = await Promise.all([
+      supabase.from('profiles').select('id, display_name, photo_url').in('id', userIds),
+      supabase.from('analysts').select('name, photo_url'),
+      supabase.from('developers').select('name, photo_url'),
+    ]);
     (profiles ?? []).forEach((p) => {
+      const resolved = resolveUserPhoto({
+        profilePhoto: p.photo_url,
+        displayName: p.display_name,
+        analysts: analysts ?? [],
+        developers: developers ?? [],
+      });
       profileMap[p.id] = {
         name: p.display_name || '',
-        photo_url: p.photo_url || '',
+        photo_url: resolved.photo_url,
       };
     });
   }
@@ -213,12 +221,11 @@ export function CardComments({ cardId }: CardCommentsProps) {
           <div className="space-y-3 pr-2">
             {comments.map((c) => (
               <div key={c.id} className="flex gap-2 group">
-                <Avatar className="h-7 w-7 shrink-0 mt-0.5">
-                  {c.photo_url && <AvatarImage src={c.photo_url} alt={c.display_name} />}
-                  <AvatarFallback className="text-[10px] bg-muted">
-                    {(c.display_name || '?').charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+                <ProfileAvatar
+                  className="h-7 w-7 shrink-0 mt-0.5"
+                  photoUrl={c.photo_url}
+                  fallbackLabel={c.display_name}
+                />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium truncate">{c.display_name}</span>

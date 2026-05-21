@@ -6,7 +6,8 @@ import { useRole } from '@/hooks/useRole';
 import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ProfileAvatar } from '@/components/ProfileAvatar';
+import { resolveUserPhoto } from '@/lib/resolveUserPhotoUrl';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Trash2, Send, Loader2 } from 'lucide-react';
 import { QueryLoadState } from '@/components/QueryLoadState';
@@ -44,13 +45,15 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
             supabase.from('analysts').select('name, photo_url'),
             supabase.from('developers').select('name, photo_url'),
           ]);
-          const byName: Record<string, string> = {};
-          (analysts || []).forEach((a: any) => { if (a.name && a.photo_url) byName[a.name.toLowerCase()] = a.photo_url; });
-          (developers || []).forEach((d: any) => { if (d.name && d.photo_url) byName[d.name.toLowerCase()] = d.photo_url; });
           (profiles || []).forEach((p: any) => {
             const name = p.display_name || '';
-            const photo = p.photo_url || byName[name.toLowerCase()] || '';
-            profileMap[p.id] = { name, photo_url: photo };
+            const resolved = resolveUserPhoto({
+              profilePhoto: p.photo_url,
+              displayName: name,
+              analysts: analysts ?? [],
+              developers: developers ?? [],
+            });
+            profileMap[p.id] = { name, photo_url: resolved.photo_url };
           });
         }
 
@@ -166,12 +169,11 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
           <div className="space-y-3 pr-2">
             {comments.map((c: any) => (
               <div key={c.id} className="flex gap-2 group">
-                <Avatar className="h-7 w-7 shrink-0 mt-0.5">
-                  {c.photo_url && <AvatarImage src={c.photo_url} alt={c.display_name} />}
-                  <AvatarFallback className="text-[10px] bg-muted">
-                    {(c.display_name || '?').charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+                <ProfileAvatar
+                  className="h-7 w-7 shrink-0 mt-0.5"
+                  photoUrl={c.photo_url}
+                  fallbackLabel={c.display_name}
+                />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium truncate">{c.display_name}</span>

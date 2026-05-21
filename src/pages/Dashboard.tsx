@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { HelpCircle, TrendingUp, Users, Download, Loader2, Filter, Trophy, FileText } from 'lucide-react';
 import { useRef } from 'react';
@@ -297,12 +297,11 @@ const Dashboard = () => {
                   {analystRanking.map((a, i) => (
                     <div key={a.name} className={`flex items-center gap-4 py-3 px-4 rounded-xl transition-colors ${i === 0 ? 'bg-chart-3/10' : 'hover:bg-muted/50'}`}>
                       <span className="text-lg font-heading font-bold text-muted-foreground w-8">{i + 1}º</span>
-                      <Avatar className="h-10 w-10">
-                        <AvatarImage src={a.photo_url || undefined} />
-                        <AvatarFallback className="bg-primary/10 text-primary font-heading text-sm font-bold">
-                          {a.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
+                      <ProfileAvatar
+                        className="h-10 w-10"
+                        photoUrl={a.photo_url}
+                        fallbackLabel={a.name}
+                      />
                       <span className="flex-1 font-medium">{a.name}</span>
                       <span className="inline-flex items-center justify-center min-w-[2.5rem] px-3 py-1 rounded-full bg-primary/10 text-primary font-bold text-sm">
                         {a.duvidas}

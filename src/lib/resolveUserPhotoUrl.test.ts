@@ -25,5 +25,7 @@ describe('resolveUserPhoto', () => {
   it('matches display_name with dots to full name', () => {
     expect(personNameMatchesProfile('flavia.andreotti', 'Flavia Andreotti')).toBe(true);
     expect(personNameMatchesProfile('anna.bbento', 'Anna Bento')).toBe(true);
+    expect(personNameMatchesProfile('henri.mecca', 'Henri Mecca')).toBe(true);
+    expect(personNameMatchesProfile('Henri', 'Henri Mecca')).toBe(true);
   });
 });

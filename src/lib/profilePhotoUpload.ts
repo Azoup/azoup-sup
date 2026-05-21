@@ -1,5 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import {
+  isExternalPhotoUrl,
+  isSignedStorageUrl,
   normalizeProfilePhotoUrl,
   profilePhotoSrc,
   storageObjectFromPublicUrl,
@@ -12,19 +14,24 @@ export async function resolvePhotoDisplayUrl(
 ): Promise<string | undefined> {
   if (!photoUrl?.trim()) return undefined;
 
-  const object = storageObjectFromPublicUrl(photoUrl);
+  const normalized = normalizeProfilePhotoUrl(photoUrl);
+  if (!normalized) return undefined;
+
+  if (isSignedStorageUrl(normalized) || (isExternalPhotoUrl(normalized) && !storageObjectFromPublicUrl(normalized))) {
+    return normalized;
+  }
+
+  const object = storageObjectFromPublicUrl(normalized);
   if (object) {
     const { data, error } = await supabase.storage
       .from(object.bucket)
       .createSignedUrl(object.path, 60 * 60 * 24 * 7);
     if (!error && data?.signedUrl) {
-      if (cacheBust == null) return data.signedUrl;
-      const sep = data.signedUrl.includes('?') ? '&' : '?';
-      return `${data.signedUrl}${sep}t=${cacheBust}`;
+      return data.signedUrl;
     }
   }
 
-  return profilePhotoSrc(photoUrl, cacheBust);
+  return profilePhotoSrc(normalized, cacheBust);
 }
 
 export type ProfilePhotoUploadResult = {
@@ -49,9 +56,16 @@ export async function uploadProfilePhotoFile(
 
   const { data: urlData } = supabase.storage.from('profile-photos').getPublicUrl(storagePath);
   const publicUrl = normalizeProfilePhotoUrl(urlData.publicUrl) ?? urlData.publicUrl;
-  const bust = Date.now();
   const displayUrl =
-    (await resolvePhotoDisplayUrl(publicUrl, bust)) ?? URL.createObjectURL(file);
+    (await resolvePhotoDisplayUrl(publicUrl, Date.now())) ?? URL.createObjectURL(file);
 
   return { publicUrl, displayUrl, storagePath };
+}
+
+/** Normaliza URL antes de gravar no banco (cadastro ou link manual). */
+export function photoUrlForDatabase(url: string): string | null {
+  const normalized = normalizeProfilePhotoUrl(url);
+  if (!normalized) return null;
+  if (!isExternalPhotoUrl(normalized)) return normalized;
+  return normalized;
 }

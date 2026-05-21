@@ -46,7 +46,7 @@ function photoFromPeople(displayName: string, people: PersonWithPhoto[]): string
   for (const person of people) {
     if (!person.photo_url?.trim()) continue;
     if (personNameMatchesProfile(displayName, person.name)) {
-      return normalizeProfilePhotoUrl(person.photo_url) ?? person.photo_url;
+      return normalizeProfilePhotoUrl(person.photo_url.trim()) ?? person.photo_url.trim();
     }
   }
   return null;
