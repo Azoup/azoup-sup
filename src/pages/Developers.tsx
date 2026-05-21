@@ -9,11 +9,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { toast } from 'sonner';
-import { Plus, Pencil, UserX, UserCheck, Upload, Loader2, Trash2, Link2 } from 'lucide-react';
+import { Plus, Pencil, UserX, UserCheck, Upload, Loader2, Trash2 } from 'lucide-react';
 import { useRole } from '@/hooks/useRole';
 import { useSupabaseReady } from '@/hooks/useSupabaseReady';
 import { assertSupabaseData } from '@/lib/supabaseQuery';
-import { saveCadastroPhotoUrl, uploadCadastroPhotoFile } from '@/lib/cadastroPhoto';
+import { uploadCadastroPhotoFile } from '@/lib/cadastroPhoto';
 
 const Developers = () => {
   const { ready: supabaseReady } = useSupabaseReady();
@@ -22,7 +22,6 @@ const Developers = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [uploadingId, setUploadingId] = useState<string | null>(null);
-  const [photoLinkById, setPhotoLinkById] = useState<Record<string, string>>({});
   const [photoPreviewById, setPhotoPreviewById] = useState<Record<string, string>>({});
   const { isAdmin } = useRole();
 
@@ -93,9 +92,14 @@ const Developers = () => {
     const blobPreview = URL.createObjectURL(file);
     setPhotoPreviewById((prev) => ({ ...prev, [devId]: blobPreview }));
     try {
-      const publicUrl = await uploadCadastroPhotoFile('developer-photos', devId, file);
+      const { publicUrl, displayUrl } = await uploadCadastroPhotoFile('developer-photos', devId, file);
       const { error } = await supabase.from('developers').update({ photo_url: publicUrl }).eq('id', devId);
       if (error) throw error;
+
+      queryClient.setQueryData(['developers'], (old: typeof developers | undefined) =>
+        (old ?? []).map((row) => (row.id === devId ? { ...row, photo_url: publicUrl } : row)),
+      );
+      setPhotoPreviewById((prev) => ({ ...prev, [devId]: displayUrl }));
       invalidatePhotoQueries();
       toast.success('Foto atualizada!');
     } catch (e: unknown) {
@@ -108,23 +112,6 @@ const Developers = () => {
       });
     } finally {
       URL.revokeObjectURL(blobPreview);
-      setUploadingId(null);
-    }
-  };
-
-  const handlePhotoLink = async (devId: string) => {
-    const raw = photoLinkById[devId]?.trim();
-    if (!raw) return;
-    setUploadingId(devId);
-    try {
-      await saveCadastroPhotoUrl('developers', devId, raw);
-      setPhotoLinkById((prev) => ({ ...prev, [devId]: '' }));
-      invalidatePhotoQueries();
-      toast.success('Foto vinculada!');
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'URL inválida';
-      toast.error('Erro ao vincular foto: ' + msg);
-    } finally {
       setUploadingId(null);
     }
   };
@@ -173,92 +160,71 @@ const Developers = () => {
         <div className="grid gap-3">
           {developers.map((d: any) => (
             <Card key={d.id} className="border shadow-sm">
-              <CardContent className="flex flex-col gap-3 py-4">
-                <div className="flex items-center gap-4">
-                  <div className="relative group shrink-0">
-                    <ProfileAvatar
-                      className="h-12 w-12"
-                      photoUrl={d.photo_url}
-                      previewUrl={photoPreviewById[d.id]}
-                      fallbackLabel={d.name}
+              <CardContent className="flex items-center gap-4 py-4">
+                <div className="relative group shrink-0">
+                  <ProfileAvatar
+                    className="h-12 w-12"
+                    photoUrl={d.photo_url}
+                    previewUrl={photoPreviewById[d.id]}
+                    fallbackLabel={d.name}
+                  />
+                  <label className="absolute inset-0 z-10 cursor-pointer rounded-full" title="Enviar foto">
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/*"
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                      disabled={uploadingId === d.id}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void handlePhotoUpload(d.id, f);
+                        e.target.value = '';
+                      }}
                     />
-                    <label className="absolute inset-0 flex items-center justify-center bg-foreground/50 rounded-full opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
-                      {uploadingId === d.id ? (
-                        <Loader2 className="h-4 w-4 text-card animate-spin" />
-                      ) : (
-                        <Upload className="h-4 w-4 text-card" />
-                      )}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        disabled={uploadingId === d.id}
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) void handlePhotoUpload(d.id, f);
-                          e.target.value = '';
-                        }}
-                      />
-                    </label>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{d.name}</p>
-                  </div>
-                  <Badge variant={d.status === 'active' ? 'default' : 'secondary'}>
-                    {d.status === 'active' ? 'Ativo' : 'Inativo'}
-                  </Badge>
-                  <div className="flex gap-1">
-                    <Button size="icon" variant="ghost" onClick={() => openEdit(d)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button size="icon" variant="ghost" onClick={() => toggleStatus.mutate({ id: d.id, status: d.status })}>
-                      {d.status === 'active' ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
-                    </Button>
-                    {isAdmin && (
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10" title="Excluir desenvolvedor">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Excluir desenvolvedor?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Tem certeza que deseja excluir o desenvolvedor <strong>{d.name}</strong>? Esta ação não pode ser desfeita.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => deleteMutation.mutate(d.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                              Excluir
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                  </label>
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-full bg-foreground/50 opacity-0 transition-opacity group-hover:opacity-100">
+                    {uploadingId === d.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-card" />
+                    ) : (
+                      <Upload className="h-4 w-4 text-card" />
                     )}
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Input
-                    className="h-8 text-xs flex-1"
-                    placeholder="Vincular foto por URL"
-                    value={photoLinkById[d.id] ?? d.photo_url ?? ''}
-                    onChange={(e) =>
-                      setPhotoLinkById((prev) => ({ ...prev, [d.id]: e.target.value }))
-                    }
-                  />
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    className="h-8 shrink-0"
-                    disabled={uploadingId === d.id || !(photoLinkById[d.id] ?? d.photo_url ?? '').trim()}
-                    onClick={() => void handlePhotoLink(d.id)}
-                  >
-                    <Link2 className="h-3.5 w-3.5 mr-1" />
-                    Vincular
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate">{d.name}</p>
+                </div>
+                <Badge variant={d.status === 'active' ? 'default' : 'secondary'}>
+                  {d.status === 'active' ? 'Ativo' : 'Inativo'}
+                </Badge>
+                <div className="flex gap-1">
+                  <Button size="icon" variant="ghost" onClick={() => openEdit(d)}>
+                    <Pencil className="h-4 w-4" />
                   </Button>
+                  <Button size="icon" variant="ghost" onClick={() => toggleStatus.mutate({ id: d.id, status: d.status })}>
+                    {d.status === 'active' ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
+                  </Button>
+                  {isAdmin && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10" title="Excluir desenvolvedor">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Excluir desenvolvedor?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Tem certeza que deseja excluir o desenvolvedor <strong>{d.name}</strong>? Esta ação não pode ser desfeita.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => deleteMutation.mutate(d.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Excluir
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
                 </div>
               </CardContent>
             </Card>

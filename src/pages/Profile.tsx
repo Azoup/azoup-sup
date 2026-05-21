@@ -15,10 +15,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
-import { Loader2, KeyRound, User, Shield, ScrollText, Filter, Camera, Trash2, UserX } from 'lucide-react';
+import { Loader2, KeyRound, User, Shield, ScrollText, Filter, Upload, Trash2, UserX } from 'lucide-react';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { personNameMatchesProfile, resolveUserPhoto } from '@/lib/resolveUserPhotoUrl';
-import { photoUrlForDatabase, resolvePhotoDisplayUrl, uploadProfilePhotoFile } from '@/lib/profilePhotoUpload';
+import { uploadProfilePhotoFile } from '@/lib/profilePhotoUpload';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
@@ -238,7 +238,6 @@ const Profile = () => {
 
     try {
       const { publicUrl, displayUrl } = await uploadProfilePhotoFile(targetUserId, file);
-      URL.revokeObjectURL(blobPreview);
 
       const { data: existing } = await supabase
         .from('profiles')
@@ -263,6 +262,7 @@ const Profile = () => {
       if (error) throw error;
 
       applyPhotoUrlToCaches(targetUserId, publicUrl, displayUrl);
+      setPhotoPreviewByUser((prev) => ({ ...prev, [targetUserId]: displayUrl }));
       void syncLinkedCadastroPhoto(targetUserId, publicUrl);
 
       toast.success('Foto atualizada!');
@@ -272,48 +272,14 @@ const Profile = () => {
       void queryClient.invalidateQueries({ queryKey: ['card-comments'] });
       void queryClient.invalidateQueries({ queryKey: ['dev-card-comments'] });
     } catch (e: any) {
-      URL.revokeObjectURL(blobPreview);
       setPhotoPreviewByUser((prev) => {
         const next = { ...prev };
         delete next[targetUserId];
         return next;
       });
       toast.error('Erro ao enviar foto: ' + (e.message || ''));
-    }
-  };
-
-  const handlePhotoLinkSave = async (targetUserId: string, rawUrl: string) => {
-    const publicUrl = photoUrlForDatabase(rawUrl);
-    if (!publicUrl) {
-      toast.error('Informe um link válido (http/https) ou URL do Supabase Storage.');
-      return;
-    }
-    try {
-      const displayUrl = await resolvePhotoDisplayUrl(publicUrl);
-      const { data: existing } = await supabase
-        .from('profiles')
-        .select('display_name')
-        .eq('id', targetUserId)
-        .maybeSingle();
-      const displayName =
-        existing?.display_name ||
-        allUsers.find((u: any) => u.user_id === targetUserId)?.email ||
-        user?.email?.split('@')[0] ||
-        'Utilizador';
-      const { error } = await supabase.from('profiles').upsert(
-        { id: targetUserId, display_name: displayName, photo_url: publicUrl },
-        { onConflict: 'id' },
-      );
-      if (error) throw error;
-      applyPhotoUrlToCaches(targetUserId, publicUrl, displayUrl || publicUrl);
-      void syncLinkedCadastroPhoto(targetUserId, publicUrl);
-      toast.success('Foto vinculada!');
-      void queryClient.invalidateQueries({ queryKey: ['profile', targetUserId] });
-      void queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
-      void queryClient.invalidateQueries({ queryKey: ['people-photos'] });
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : '';
-      toast.error('Erro ao vincular foto: ' + msg);
+    } finally {
+      URL.revokeObjectURL(blobPreview);
     }
   };
 
@@ -390,8 +356,7 @@ const Profile = () => {
   const [permsLoaded, setPermsLoaded] = useState(false);
   /** Preview imediato no avatar após upload (userId → URL assinada ou blob) */
   const [photoPreviewByUser, setPhotoPreviewByUser] = useState<Record<string, string>>({});
-  const [photoLinkDraft, setPhotoLinkDraft] = useState('');
-  const [adminPhotoLinkByUser, setAdminPhotoLinkByUser] = useState<Record<string, string>>({});
+  const [uploadingPhotoUserId, setUploadingPhotoUserId] = useState<string | null>(null);
 
   // Sync draft from DB only once when permissions load for a user
   useEffect(() => {
@@ -514,60 +479,53 @@ const Profile = () => {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-center gap-4">
-              <ProfileAvatar
-                className="h-16 w-16"
-                photoUrl={selfPhotoResolved.photo_url}
-                alternatePhotoUrl={
-                  selfPhotoResolved.source === 'profile' ? selfCadastroPhoto.photo_url : undefined
-                }
-                previewUrl={user?.id ? photoPreviewByUser[user.id] : undefined}
-                fallbackLabel={profile?.display_name || user?.email || '?'}
-              />
-              <div className="flex flex-col gap-2 flex-1 min-w-0">
-                <div className="flex flex-wrap gap-1">
-                <label className="cursor-pointer">
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f && user) handlePhotoUpload(user.id, f);
-                      e.target.value = '';
-                    }}
-                  />
-                  <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border hover:bg-accent">
-                    <Camera className="h-3 w-3" /> Alterar foto
-                  </span>
-                </label>
-                {selfPhotoResolved.profile_photo_url && (
-                  <button
-                    onClick={() => user && handlePhotoRemove(user.id)}
-                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded text-destructive hover:bg-destructive/10"
-                  >
-                    <Trash2 className="h-3 w-3" /> Remover
-                  </button>
+              <div className="relative group shrink-0">
+                <ProfileAvatar
+                  className="h-16 w-16"
+                  photoUrl={selfPhotoResolved.photo_url}
+                  alternatePhotoUrl={
+                    selfPhotoResolved.source === 'profile' ? selfCadastroPhoto.photo_url : undefined
+                  }
+                  previewUrl={user?.id ? photoPreviewByUser[user.id] : undefined}
+                  fallbackLabel={profile?.display_name || user?.email || '?'}
+                />
+                {user && (
+                  <>
+                    <label className="absolute inset-0 z-10 cursor-pointer rounded-full" title="Enviar foto">
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/*"
+                        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                        disabled={uploadingPhotoUserId === user.id}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) {
+                            setUploadingPhotoUserId(user.id);
+                            void handlePhotoUpload(user.id, f).finally(() => setUploadingPhotoUserId(null));
+                          }
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-full bg-foreground/50 opacity-0 transition-opacity group-hover:opacity-100">
+                      {uploadingPhotoUserId === user.id ? (
+                        <Loader2 className="h-5 w-5 animate-spin text-card" />
+                      ) : (
+                        <Upload className="h-5 w-5 text-card" />
+                      )}
+                    </div>
+                  </>
                 )}
-                </div>
-                <div className="flex gap-1">
-                  <Input
-                    className="h-8 text-xs"
-                    placeholder="Ou cole o link da foto (URL)"
-                    value={photoLinkDraft}
-                    onChange={(e) => setPhotoLinkDraft(e.target.value)}
-                  />
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    className="h-8 shrink-0"
-                    disabled={!photoLinkDraft.trim() || !user}
-                    onClick={() => user && handlePhotoLinkSave(user.id, photoLinkDraft.trim())}
-                  >
-                    Vincular
-                  </Button>
-                </div>
               </div>
+              {selfPhotoResolved.profile_photo_url && (
+                <button
+                  type="button"
+                  onClick={() => user && handlePhotoRemove(user.id)}
+                  className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded text-destructive hover:bg-destructive/10"
+                >
+                  <Trash2 className="h-3 w-3" /> Remover foto do perfil
+                </button>
+              )}
             </div>
             <div>
               <span className="text-sm text-muted-foreground">Nome</span>
@@ -636,36 +594,48 @@ const Profile = () => {
                   <div key={ur.id} className="p-3 rounded-lg border space-y-2">
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <ProfileAvatar
-                          className="h-10 w-10 shrink-0"
-                          photoUrl={ur.photo_url}
-                          alternatePhotoUrl={
-                            ur.profile_photo_url ? cadastroPhoto.photo_url : undefined
-                          }
-                          previewUrl={photoPreviewByUser[ur.user_id]}
-                          fallbackLabel={ur.email || '?'}
-                        />
+                        <div className="relative group shrink-0">
+                          <ProfileAvatar
+                            className="h-10 w-10"
+                            photoUrl={ur.photo_url}
+                            alternatePhotoUrl={
+                              ur.profile_photo_url ? cadastroPhoto.photo_url : undefined
+                            }
+                            previewUrl={photoPreviewByUser[ur.user_id]}
+                            fallbackLabel={ur.email || '?'}
+                          />
+                          <label className="absolute inset-0 z-10 cursor-pointer rounded-full" title="Enviar foto">
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp,image/*"
+                              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                              disabled={uploadingPhotoUserId === ur.user_id}
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) {
+                                  setUploadingPhotoUserId(ur.user_id);
+                                  void handlePhotoUpload(ur.user_id, f).finally(() =>
+                                    setUploadingPhotoUserId(null),
+                                  );
+                                }
+                                e.target.value = '';
+                              }}
+                            />
+                          </label>
+                          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-full bg-foreground/50 opacity-0 transition-opacity group-hover:opacity-100">
+                            {uploadingPhotoUserId === ur.user_id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-card" />
+                            ) : (
+                              <Upload className="h-3.5 w-3.5 text-card" />
+                            )}
+                          </div>
+                        </div>
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{ur.email}</p>
                           <p className="text-xs text-muted-foreground truncate">{ur.user_id}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap justify-end md:flex-nowrap md:justify-end shrink-0 md:min-w-fit">
-                        <label className="cursor-pointer shrink-0" title="Alterar foto">
-                          <input
-                            type="file"
-                            accept="image/png,image/jpeg"
-                            className="hidden"
-                            onChange={(e) => {
-                              const f = e.target.files?.[0];
-                              if (f) handlePhotoUpload(ur.user_id, f);
-                              e.target.value = '';
-                            }}
-                          />
-                          <span className="inline-flex items-center justify-center h-8 w-8 rounded border hover:bg-accent shrink-0">
-                            <Camera className="h-3.5 w-3.5" />
-                          </span>
-                        </label>
                         {ur.profile_photo_url ? (
                           <button
                             onClick={() => handlePhotoRemove(ur.user_id)}
@@ -722,32 +692,6 @@ const Profile = () => {
                           Permissões
                         </Button>
                       </div>
-                    </div>
-
-                    <div className="flex gap-1 pl-12 md:pl-0">
-                      <Input
-                        className="h-8 text-xs flex-1"
-                        placeholder="Link da foto (URL)"
-                        value={adminPhotoLinkByUser[ur.user_id] ?? ''}
-                        onChange={(e) =>
-                          setAdminPhotoLinkByUser((prev) => ({
-                            ...prev,
-                            [ur.user_id]: e.target.value,
-                          }))
-                        }
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        className="h-8 shrink-0"
-                        disabled={!adminPhotoLinkByUser[ur.user_id]?.trim()}
-                        onClick={() =>
-                          handlePhotoLinkSave(ur.user_id, adminPhotoLinkByUser[ur.user_id].trim())
-                        }
-                      >
-                        Vincular
-                      </Button>
                     </div>
 
                     {editingPermsUserId === ur.user_id && (

@@ -1,15 +1,20 @@
 import { supabase } from '@/integrations/supabase/client';
 import { normalizeProfilePhotoUrl } from '@/lib/profilePhotoUrl';
-import { photoUrlForDatabase } from '@/lib/profilePhotoUpload';
+import { resolvePhotoDisplayUrl } from '@/lib/profilePhotoUpload';
 
 export type CadastroPhotoBucket = 'analyst-photos' | 'developer-photos';
-export type CadastroTable = 'analysts' | 'developers';
 
+export type CadastroPhotoUploadResult = {
+  publicUrl: string;
+  displayUrl: string;
+};
+
+/** Upload para bucket de analista/desenvolvedor; retorna URL do banco + URL para exibir no avatar. */
 export async function uploadCadastroPhotoFile(
   bucket: CadastroPhotoBucket,
   recordId: string,
   file: File,
-): Promise<string> {
+): Promise<CadastroPhotoUploadResult> {
   const ext = file.name.split('.').pop() || 'jpg';
   const path = `${recordId}.${ext}`;
   const { error: uploadError } = await supabase.storage
@@ -18,17 +23,9 @@ export async function uploadCadastroPhotoFile(
   if (uploadError) throw uploadError;
 
   const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  return normalizeProfilePhotoUrl(data.publicUrl) ?? data.publicUrl;
-}
+  const publicUrl = normalizeProfilePhotoUrl(data.publicUrl) ?? data.publicUrl;
+  const displayUrl =
+    (await resolvePhotoDisplayUrl(publicUrl, Date.now())) ?? URL.createObjectURL(file);
 
-export async function saveCadastroPhotoUrl(
-  table: CadastroTable,
-  recordId: string,
-  rawUrl: string,
-): Promise<string> {
-  const url = photoUrlForDatabase(rawUrl);
-  if (!url) throw new Error('URL de foto inválida');
-  const { error } = await supabase.from(table).update({ photo_url: url }).eq('id', recordId);
-  if (error) throw error;
-  return url;
+  return { publicUrl, displayUrl };
 }
