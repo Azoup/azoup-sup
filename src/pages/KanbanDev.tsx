@@ -21,6 +21,9 @@ import {
 } from '@/lib/kanbanCardLabels';
 import { logActivity } from '@/hooks/useActivityLog';
 import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
+import { KanbanCardImage } from '@/components/KanbanCardImage';
+import { kanbanImageSrc } from '@/lib/kanbanImageUrl';
+import { uploadKanbanImageViaApi } from '@/lib/uploadKanbanImageApi';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -168,20 +171,12 @@ const KanbanDev = () => {
     return map;
   }, [cards, cardLabels, analysts, developers, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, filterDevIds, searchQuery]);
 
-  const uploadImage = async (file: File): Promise<string | null> => {
-    const ext = file.name?.split('.').pop() || 'png';
-    const path = `dev-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const { error } = await supabase.storage.from('kanban-images').upload(path, file);
-    if (error) { toast.error('Erro ao fazer upload da imagem.'); return null; }
-    const { data } = supabase.storage.from('kanban-images').getPublicUrl(path);
-    return data.publicUrl;
-  };
-
   const uploadAndSaveImages = async (cardId: string, files: File[]) => {
     for (const file of files) {
-      const url = await uploadImage(file);
-      if (url) {
-        await supabase.from('dev_kanban_card_images').insert({ card_id: cardId, image_url: url });
+      try {
+        await uploadKanbanImageViaApi('dev_kanban_card_images', cardId, file);
+      } catch {
+        toast.error('Erro ao fazer upload da imagem.');
       }
     }
   };
@@ -595,7 +590,10 @@ const KanbanDev = () => {
 
   const startEditLabel = (label: any) => { setEditingLabel(label); setEditLabelName(label.name); setEditLabelColor(label.color); };
 
-  const openLightbox = (images: string[], index: number) => { setLightboxImages(images); setLightboxIndex(index); };
+  const openLightbox = (images: string[], index: number) => {
+    setLightboxImages(images.map((u) => kanbanImageSrc(u) ?? u));
+    setLightboxIndex(index);
+  };
 
   const openEditColumn = (col: any) => {
     setEditingColumn(col); setEditColumnTitle(col.title); setEditColumnColor(col.color); setEditColumnOpen(true);
@@ -886,7 +884,12 @@ const KanbanDev = () => {
                   <p className="text-xs font-semibold text-muted-foreground mb-2">Imagens ({viewingCardImages.length})</p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {viewingCardImages.map((img: any, i: number) => (
-                      <img key={img.id} src={img.image_url} alt="" className="rounded-lg w-full h-32 object-cover border cursor-pointer hover:opacity-80 transition-opacity" onClick={() => openLightbox(viewingCardImages.map((im: any) => im.image_url), i)} />
+                      <KanbanCardImage
+                        key={img.id}
+                        imageUrl={img.image_url}
+                        className="rounded-lg w-full h-32 object-cover border cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => openLightbox(viewingCardImages.map((im: any) => im.image_url), i)}
+                      />
                     ))}
                   </div>
                 </div>
@@ -1221,7 +1224,7 @@ function DevCardFormContent({
           <div className="grid grid-cols-3 gap-2">
             {existingImages.map((img: any) => (
               <div key={img.id} className="relative group">
-                <img src={img.image_url} alt="" className="rounded-md w-full h-20 object-cover border" />
+                <KanbanCardImage imageUrl={img.image_url} className="rounded-md w-full h-20 object-cover border" />
                 <button onClick={() => onDeleteImage(img.id)} className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"><X className="h-3 w-3" /></button>
               </div>
             ))}

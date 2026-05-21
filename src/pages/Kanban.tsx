@@ -22,6 +22,9 @@ import {
 import { logActivity } from '@/hooks/useActivityLog';
 import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
 import { actorNameFromUser } from '@/lib/actorName';
+import { KanbanCardImage } from '@/components/KanbanCardImage';
+import { kanbanImageSrc } from '@/lib/kanbanImageUrl';
+import { uploadKanbanImageViaApi } from '@/lib/uploadKanbanImageApi';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -165,20 +168,12 @@ const Kanban = () => {
     return map;
   }, [cards, cardLabels, analysts, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, searchQuery]);
 
-  const uploadImage = async (file: File): Promise<string | null> => {
-    const ext = file.name?.split('.').pop() || 'png';
-    const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const { error } = await supabase.storage.from('kanban-images').upload(path, file);
-    if (error) { toast.error('Erro ao fazer upload da imagem.'); return null; }
-    const { data } = supabase.storage.from('kanban-images').getPublicUrl(path);
-    return data.publicUrl;
-  };
-
   const uploadAndSaveImages = async (cardId: string, files: File[]) => {
     for (const file of files) {
-      const url = await uploadImage(file);
-      if (url) {
-        await supabase.from('kanban_card_images').insert({ card_id: cardId, image_url: url });
+      try {
+        await uploadKanbanImageViaApi('kanban_card_images', cardId, file);
+      } catch {
+        toast.error('Erro ao fazer upload da imagem.');
       }
     }
   };
@@ -663,7 +658,7 @@ const Kanban = () => {
   };
 
   const openLightbox = (images: string[], index: number) => {
-    setLightboxImages(images);
+    setLightboxImages(images.map((u) => kanbanImageSrc(u) ?? u));
     setLightboxIndex(index);
   };
 
@@ -954,10 +949,9 @@ const Kanban = () => {
                   <p className="text-xs font-semibold text-muted-foreground mb-2">Imagens ({viewingCardImages.length})</p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {viewingCardImages.map((img: any, i: number) => (
-                      <img
+                      <KanbanCardImage
                         key={img.id}
-                        src={img.image_url}
-                        alt=""
+                        imageUrl={img.image_url}
                         className="rounded-lg w-full h-32 object-cover border cursor-pointer hover:opacity-80 transition-opacity"
                         onClick={() => openLightbox(viewingCardImages.map((im: any) => im.image_url), i)}
                       />
@@ -1335,7 +1329,7 @@ function CardFormContent({
           <div className="grid grid-cols-3 gap-2">
             {existingImages.map((img: any) => (
               <div key={img.id} className="relative group">
-                <img src={img.image_url} alt="" className="rounded-md w-full h-20 object-cover border" />
+                <KanbanCardImage imageUrl={img.image_url} className="rounded-md w-full h-20 object-cover border" />
                 <button
                   onClick={() => onDeleteImage(img.id)}
                   className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
