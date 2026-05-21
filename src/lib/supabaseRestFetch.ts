@@ -38,6 +38,23 @@ function resolveAuthHeader(init?: RequestInit): string {
   return token ? `Bearer ${token}` : '';
 }
 
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+function isStorageObjectWrite(path: string, method: string): boolean {
+  return (
+    path.startsWith('/storage/v1/object/') &&
+    (method === 'POST' || method === 'PUT')
+  );
+}
+
 function extractSupabasePath(url: string): string | null {
   try {
     const parsed = new URL(url);
@@ -82,12 +99,23 @@ export function createSupabaseRestFetch(): typeof fetch {
     }
 
     const headers = new Headers(init?.headers);
+    const method = (init?.method || 'GET').toUpperCase();
     let bodyText: string | null = null;
+    let bodyBase64: string | null = null;
+
     if (init?.body != null) {
-      bodyText =
-        typeof init.body === 'string'
-          ? init.body
-          : await new Response(init.body).text();
+      if (isStorageObjectWrite(path, method)) {
+        const buffer =
+          init.body instanceof ArrayBuffer
+            ? init.body
+            : await new Response(init.body).arrayBuffer();
+        bodyBase64 = arrayBufferToBase64(buffer);
+      } else {
+        bodyText =
+          typeof init.body === 'string'
+            ? init.body
+            : await new Response(init.body).text();
+      }
     }
 
     const proxyRes = await nativeFetch('/api/rest-proxy', {
@@ -98,8 +126,9 @@ export function createSupabaseRestFetch(): typeof fetch {
       },
       body: JSON.stringify({
         path,
-        method: init?.method || 'GET',
+        method,
         body: bodyText,
+        body_base64: bodyBase64,
         headers: {
           ...(headers.get('Prefer') ? { Prefer: headers.get('Prefer')! } : {}),
           ...(headers.get('Accept') ? { Accept: headers.get('Accept')! } : {}),

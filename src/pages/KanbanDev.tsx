@@ -22,8 +22,8 @@ import {
 import { logActivity } from '@/hooks/useActivityLog';
 import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { KanbanCardImage } from '@/components/KanbanCardImage';
-import { kanbanImageSrc } from '@/lib/kanbanImageUrl';
-import { uploadKanbanImageViaApi } from '@/lib/uploadKanbanImageApi';
+import { filesFromClipboardData } from '@/lib/clipboardImage';
+import { displayKanbanImageUrl, uploadKanbanImageForCard } from '@/lib/uploadKanbanImage';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -172,13 +172,18 @@ const KanbanDev = () => {
   }, [cards, cardLabels, analysts, developers, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, filterDevIds, searchQuery]);
 
   const uploadAndSaveImages = async (cardId: string, files: File[]) => {
-    for (const file of files) {
+    let ok = 0;
+    for (let i = 0; i < files.length; i++) {
       try {
-        await uploadKanbanImageViaApi('dev_kanban_card_images', cardId, file);
-      } catch {
+        await uploadKanbanImageForCard('dev_kanban_card_images', cardId, files[i], i);
+        ok++;
+      } catch (e) {
+        console.error('[kanban-dev] upload imagem', e);
         toast.error('Erro ao fazer upload da imagem.');
       }
     }
+    if (ok > 0) refreshDevKanbanBoard(queryClient);
+    return ok;
   };
 
   const uploadAndSaveFiles = async (cardId: string, files: File[]) => {
@@ -228,7 +233,10 @@ const KanbanDev = () => {
       if (error) throw error;
       await syncCardLabels('dev_kanban_card_labels', data.id, selectedLabels);
       if (pendingImages.length > 0) {
-        await uploadAndSaveImages(data.id, pendingImages);
+        const uploaded = await uploadAndSaveImages(data.id, pendingImages);
+        if (uploaded < pendingImages.length) {
+          throw new Error('Algumas imagens não foram enviadas. Tente colar novamente.');
+        }
       }
       if (pendingFiles.length > 0) {
         await uploadAndSaveFiles(data.id, pendingFiles);
@@ -591,7 +599,7 @@ const KanbanDev = () => {
   const startEditLabel = (label: any) => { setEditingLabel(label); setEditLabelName(label.name); setEditLabelColor(label.color); };
 
   const openLightbox = (images: string[], index: number) => {
-    setLightboxImages(images.map((u) => kanbanImageSrc(u) ?? u));
+    setLightboxImages(images.map((u) => displayKanbanImageUrl(u)));
     setLightboxIndex(index);
   };
 
@@ -1127,15 +1135,7 @@ function DevCardFormContent({
   onSubmit: () => void; loading: boolean;
 }) {
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    const newFiles: File[] = [];
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.startsWith('image/')) {
-        const file = items[i].getAsFile();
-        if (file) newFiles.push(file);
-      }
-    }
+    const newFiles = filesFromClipboardData(e.clipboardData);
     if (newFiles.length > 0) {
       e.preventDefault();
       setPendingImages([...pendingImages, ...newFiles]);
@@ -1189,6 +1189,7 @@ function DevCardFormContent({
         placeholder="Observações (use CTRL+V para colar imagens)"
         value={description}
         onChange={e => setDescription(e.target.value)}
+        onPaste={handlePaste}
         rows={8}
         className="min-h-[120px] max-h-[min(40vh,320px)] resize-y overflow-y-auto focus-visible:ring-offset-0"
       />

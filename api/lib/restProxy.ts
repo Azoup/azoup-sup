@@ -5,6 +5,8 @@ export type RestProxyBody = {
   path: string;
   method?: string;
   body?: string | null;
+  /** Corpo binário (ex.: upload Storage) codificado em base64. */
+  body_base64?: string | null;
   headers?: Record<string, string>;
 };
 
@@ -64,13 +66,19 @@ export async function proxyAuthenticatedSupabaseRequest(
   if (incoming["X-Upsert"]) forwardHeaders["X-Upsert"] = incoming["X-Upsert"];
 
   const targetUrl = `${config.supabaseUrl}${path}`;
+  let forwardBody: string | Buffer | undefined;
+  if (method !== "GET" && method !== "HEAD") {
+    if (payload.body_base64) {
+      forwardBody = Buffer.from(payload.body_base64, "base64");
+    } else if (payload.body != null) {
+      forwardBody = payload.body;
+    }
+  }
+
   const upstream = await fetch(targetUrl, {
     method,
     headers: forwardHeaders,
-    body:
-      method === "GET" || method === "HEAD"
-        ? undefined
-        : payload.body ?? undefined,
+    body: forwardBody,
   });
 
   const responseHeaders: Record<string, string> = {

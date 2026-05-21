@@ -1,6 +1,6 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { ImageOff } from 'lucide-react';
-import { kanbanImageSrc } from '@/lib/kanbanImageUrl';
+import { displayKanbanImageUrl } from '@/lib/uploadKanbanImage';
 import { cn } from '@/lib/utils';
 
 type KanbanCardImageProps = {
@@ -10,8 +10,21 @@ type KanbanCardImageProps = {
 };
 
 function KanbanCardImageInner({ imageUrl, className, onClick }: KanbanCardImageProps) {
+  const candidates = useMemo(() => {
+    const normalized = displayKanbanImageUrl(imageUrl);
+    const raw = imageUrl?.trim();
+    const list = [normalized, raw].filter((u): u is string => !!u);
+    return [...new Set(list)];
+  }, [imageUrl]);
+
+  const [candidateIndex, setCandidateIndex] = useState(0);
   const [failed, setFailed] = useState(false);
-  const src = kanbanImageSrc(imageUrl);
+  const src = candidates[candidateIndex];
+
+  useEffect(() => {
+    setCandidateIndex(0);
+    setFailed(false);
+  }, [imageUrl]);
 
   if (!src || failed) {
     return (
@@ -39,7 +52,13 @@ function KanbanCardImageInner({ imageUrl, className, onClick }: KanbanCardImageP
       decoding="async"
       referrerPolicy="no-referrer"
       onClick={onClick}
-      onError={() => setFailed(true)}
+      onError={() => {
+        if (candidateIndex < candidates.length - 1) {
+          setCandidateIndex((i) => i + 1);
+          return;
+        }
+        setFailed(true);
+      }}
     />
   );
 }

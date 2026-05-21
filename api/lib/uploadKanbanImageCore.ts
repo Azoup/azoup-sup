@@ -65,8 +65,8 @@ export async function uploadKanbanImageCore(
     return { status: 400, body: { error: "empty_file" } };
   }
 
-  const ext = fileName.split(".").pop() || "png";
-  const storagePath = `${cardId}/${Date.now()}.${ext}`;
+  const ext = (fileName.split(".").pop() || "png").toLowerCase();
+  const storagePath = `${cardId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
   const admin = createClient(config.supabaseUrl, config.serviceRole, {
     auth: { autoRefreshToken: false, persistSession: false },
