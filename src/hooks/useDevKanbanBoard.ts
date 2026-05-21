@@ -8,6 +8,8 @@ import { DEV_KANBAN_BOARD_QUERY_KEY } from '@/lib/devKanbanBoardPatch';
 
 const DEV_KANBAN_STALE_MS = 2 * 60 * 1000;
 
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
 export async function fetchDevKanbanBoard(): Promise<DevKanbanBoardData> {
   const [columnsRes, analystsRes, developersRes, cardsRes, labelsRes, cardLabelsRes, cardImagesRes] =
     await Promise.all([
@@ -51,6 +53,29 @@ export function useDevKanbanBoard(enabled: boolean) {
   });
 }
 
-export function refreshDevKanbanBoard(queryClient: ReturnType<typeof useQueryClient>) {
-  void queryClient.invalidateQueries({ queryKey: DEV_KANBAN_BOARD_QUERY_KEY, refetchType: 'active' });
+/** Atualiza o board com atraso — evita dezenas de refetch em paralelo (lock do Supabase). */
+export function refreshDevKanbanBoard(
+  queryClient: ReturnType<typeof useQueryClient>,
+  delayMs = 400,
+): void {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null;
+    void queryClient.invalidateQueries({
+      queryKey: DEV_KANBAN_BOARD_QUERY_KEY,
+      refetchType: 'active',
+    });
+  }, delayMs);
+}
+
+/** Refetch imediato (ex.: erro ao mover card — reverter UI). */
+export function flushDevKanbanBoardRefresh(queryClient: ReturnType<typeof useQueryClient>): void {
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
+  void queryClient.invalidateQueries({
+    queryKey: DEV_KANBAN_BOARD_QUERY_KEY,
+    refetchType: 'active',
+  });
 }

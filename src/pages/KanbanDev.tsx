@@ -1,11 +1,12 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { useSupabaseReady } from '@/hooks/useSupabaseReady';
-import { useDevKanbanBoard, refreshDevKanbanBoard } from '@/hooks/useDevKanbanBoard';
+import { useDevKanbanBoard, refreshDevKanbanBoard, flushDevKanbanBoardRefresh } from '@/hooks/useDevKanbanBoard';
+import { isSupabaseLockError, withSupabaseRetry } from '@/lib/supabaseRetry';
 import {
   patchDevKanbanBoardCards,
   patchDevKanbanBoardCardLabels,
@@ -90,6 +91,7 @@ const KanbanDev = () => {
   const [editColumnTitle, setEditColumnTitle] = useState('');
   const [editColumnColor, setEditColumnColor] = useState('');
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
+  const dragBusyRef = useRef(false);
 
   const { data: board, isLoading: boardLoading } = useDevKanbanBoard(supabaseReady);
   const columns = (board?.columns ?? []) as any[];
@@ -492,15 +494,18 @@ const KanbanDev = () => {
         old.filter((cl: any) => !(cl.card_id === cardId && cl.label_id === doneLabelId)),
       );
     }
-    refreshDevKanbanBoard(queryClient);
   }, [ensureDoneLabel, queryClient, labels, cardLabels]);
 
   const onDragEnd = useCallback(async (result: DropResult) => {
-    if (!result.destination) return;
+    if (!result.destination || dragBusyRef.current) return;
     const { source, destination, draggableId } = result;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+
     const movedCard = cards.find((c: any) => c.id === draggableId);
     const statusChanged = source.droppableId !== destination.droppableId;
+    const previousCards = queryClient.getQueryData<{ cards?: any[] }>(['dev-kanban-board'])?.cards;
+
+    dragBusyRef.current = true;
 
     patchDevKanbanBoardCards(queryClient, (old) =>
       old.map((card: any) =>
@@ -510,29 +515,37 @@ const KanbanDev = () => {
       ),
     );
 
-    const { error } = await supabase
-      .from('dev_kanban_cards')
-      .update({ status: destination.droppableId, position: destination.index })
-      .eq('id', draggableId);
+    try {
+      await withSupabaseRetry(async () => {
+        const { error } = await supabase
+          .from('dev_kanban_cards')
+          .update({ status: destination.droppableId, position: destination.index })
+          .eq('id', draggableId);
+        if (error) throw error;
+      });
 
-    if (error) {
-      refreshDevKanbanBoard(queryClient);
-      toast.error(`Erro ao mover card: ${error.message}`);
+      if (statusChanged) {
+        await withSupabaseRetry(() =>
+          applyDoneLabelRule(draggableId, source.droppableId, destination.droppableId),
+        );
+      }
+    } catch (error: unknown) {
+      if (previousCards) {
+        patchDevKanbanBoardCards(queryClient, () => previousCards);
+      } else {
+        flushDevKanbanBoardRefresh(queryClient);
+      }
+      const message = error instanceof Error ? error.message : 'Erro desconhecido';
+      toast.error(
+        isSupabaseLockError(error)
+          ? 'Sistema ocupado — solte o card e tente mover de novo em instantes.'
+          : `Erro ao mover card: ${message}`,
+      );
+      dragBusyRef.current = false;
       return;
     }
 
-    if (statusChanged) {
-      try {
-        await applyDoneLabelRule(draggableId, source.droppableId, destination.droppableId);
-      } catch (labelError: unknown) {
-        console.error('Erro ao aplicar etiqueta de concluído:', labelError);
-        toast.error('Card movido, mas houve erro ao atualizar etiquetas.');
-        refreshDevKanbanBoard(queryClient);
-        return;
-      }
-    }
-
-    refreshDevKanbanBoard(queryClient);
+    dragBusyRef.current = false;
 
     if (statusChanged && movedCard) {
       const colTitle =

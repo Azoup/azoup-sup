@@ -5,6 +5,8 @@ import { readKanbanBoardCache, writeKanbanBoardCache } from '@/lib/kanbanBoardCa
 
 const KANBAN_STALE_MS = 2 * 60 * 1000;
 
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
 export function useKanbanBoard(enabled: boolean) {
   const { session } = useAuth();
   const cached = readKanbanBoardCache();
@@ -25,6 +27,21 @@ export function useKanbanBoard(enabled: boolean) {
   });
 }
 
-export function invalidateKanbanBoard(queryClient: ReturnType<typeof useQueryClient>) {
+export function invalidateKanbanBoard(
+  queryClient: ReturnType<typeof useQueryClient>,
+  delayMs = 400,
+) {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null;
+    void queryClient.invalidateQueries({ queryKey: ['kanban-board'], refetchType: 'active' });
+  }, delayMs);
+}
+
+export function flushKanbanBoardRefresh(queryClient: ReturnType<typeof useQueryClient>) {
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
   void queryClient.invalidateQueries({ queryKey: ['kanban-board'], refetchType: 'active' });
 }
