@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   formatAdminActionErrorMessage,
@@ -206,12 +206,28 @@ const Profile = () => {
     void queryClient.invalidateQueries({ queryKey: ['people-photos'] });
   };
 
+  const blobByUserRef = useRef<Record<string, string>>({});
+
+  const clearPhotoPreview = (userId: string) => {
+    const blob = blobByUserRef.current[userId];
+    if (blob) {
+      URL.revokeObjectURL(blob);
+      delete blobByUserRef.current[userId];
+    }
+    setPhotoPreviewByUser((prev) => {
+      if (!prev[userId]) return prev;
+      const next = { ...prev };
+      delete next[userId];
+      return next;
+    });
+  };
+
   const applyPhotoUrlToCaches = (
     targetUserId: string,
     publicUrl: string,
-    displayUrl: string,
+    blobPreview: string,
   ) => {
-    setPhotoPreviewByUser((prev) => ({ ...prev, [targetUserId]: displayUrl }));
+    setPhotoPreviewByUser((prev) => ({ ...prev, [targetUserId]: blobPreview }));
     queryClient.setQueryData(['profile', targetUserId], (old: any) =>
       old
         ? { ...old, photo_url: publicUrl }
@@ -233,11 +249,8 @@ const Profile = () => {
 
   // Photo upload (for self or admin-managed user)
   const handlePhotoUpload = async (targetUserId: string, file: File) => {
-    const blobPreview = URL.createObjectURL(file);
-    setPhotoPreviewByUser((prev) => ({ ...prev, [targetUserId]: blobPreview }));
-
     try {
-      const { publicUrl, displayUrl } = await uploadProfilePhotoFile(targetUserId, file);
+      const { publicUrl, blobPreview } = await uploadProfilePhotoFile(targetUserId, file);
 
       const { data: existing } = await supabase
         .from('profiles')
@@ -261,36 +274,25 @@ const Profile = () => {
       );
       if (error) throw error;
 
-      applyPhotoUrlToCaches(targetUserId, publicUrl, displayUrl);
-      setPhotoPreviewByUser((prev) => ({ ...prev, [targetUserId]: displayUrl }));
+      blobByUserRef.current[targetUserId] = blobPreview;
+      applyPhotoUrlToCaches(targetUserId, publicUrl, blobPreview);
       void syncLinkedCadastroPhoto(targetUserId, publicUrl);
 
       toast.success('Foto atualizada!');
-      void queryClient.invalidateQueries({ queryKey: ['profile', targetUserId] });
-      void queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
       void queryClient.invalidateQueries({ queryKey: ['people-photos'] });
+      void queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
       void queryClient.invalidateQueries({ queryKey: ['card-comments'] });
       void queryClient.invalidateQueries({ queryKey: ['dev-card-comments'] });
     } catch (e: any) {
-      setPhotoPreviewByUser((prev) => {
-        const next = { ...prev };
-        delete next[targetUserId];
-        return next;
-      });
+      clearPhotoPreview(targetUserId);
       toast.error('Erro ao enviar foto: ' + (e.message || ''));
-    } finally {
-      URL.revokeObjectURL(blobPreview);
     }
   };
 
   const handlePhotoRemove = async (targetUserId: string) => {
     const { error } = await supabase.from('profiles').update({ photo_url: null }).eq('id', targetUserId);
     if (error) { toast.error('Erro ao remover foto'); return; }
-    setPhotoPreviewByUser((prev) => {
-      const next = { ...prev };
-      delete next[targetUserId];
-      return next;
-    });
+    clearPhotoPreview(targetUserId);
     queryClient.setQueryData(['profile', targetUserId], (old: any) =>
       old ? { ...old, photo_url: null } : old,
     );
@@ -488,6 +490,7 @@ const Profile = () => {
                   }
                   previewUrl={user?.id ? photoPreviewByUser[user.id] : undefined}
                   fallbackLabel={profile?.display_name || user?.email || '?'}
+                  onPhotoLoaded={() => user && clearPhotoPreview(user.id)}
                 />
                 {user && (
                   <>
@@ -603,6 +606,7 @@ const Profile = () => {
                             }
                             previewUrl={photoPreviewByUser[ur.user_id]}
                             fallbackLabel={ur.email || '?'}
+                            onPhotoLoaded={() => clearPhotoPreview(ur.user_id)}
                           />
                           <label className="absolute inset-0 z-10 cursor-pointer rounded-full" title="Enviar foto">
                             <input

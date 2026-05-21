@@ -1,27 +1,19 @@
 import { useEffect, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { resolvePhotoDisplayUrl } from '@/lib/profilePhotoUpload';
+import { getPhotoDisplaySrc } from '@/lib/photoDisplayCache';
 import { profilePhotoSrc } from '@/lib/profilePhotoUrl';
 
 type ProfileAvatarProps = {
   photoUrl?: string | null;
-  /** Se a foto principal falhar (ex.: perfil manual quebrado), tenta esta (cadastro). */
   alternatePhotoUrl?: string | null;
-  /** URL imediata (blob ou assinada) logo após upload — evita esperar refetch */
+  /** Blob local logo após upload — mantido até a URL do banco carregar */
   previewUrl?: string | null;
   fallbackLabel: string;
   className?: string;
   imageClassName?: string;
   cacheBust?: string | number;
+  onPhotoLoaded?: () => void;
 };
-
-async function loadDisplaySrc(
-  url: string | null | undefined,
-  cacheBust?: string | number,
-): Promise<string | undefined> {
-  if (!url?.trim()) return undefined;
-  return (await resolvePhotoDisplayUrl(url, cacheBust)) ?? profilePhotoSrc(url, cacheBust);
-}
 
 export function ProfileAvatar({
   photoUrl,
@@ -31,62 +23,67 @@ export function ProfileAvatar({
   className,
   imageClassName,
   cacheBust,
+  onPhotoLoaded,
 }: ProfileAvatarProps) {
-  const [src, setSrc] = useState<string | undefined>(() =>
-    previewUrl || profilePhotoSrc(photoUrl, cacheBust),
-  );
-  const [activeUrl, setActiveUrl] = useState<'primary' | 'alternate'>('primary');
+  const [src, setSrc] = useState<string | undefined>(() => previewUrl || profilePhotoSrc(photoUrl, cacheBust));
 
   useEffect(() => {
     let cancelled = false;
+
     const run = async () => {
-      if (previewUrl) {
-        if (!cancelled) setSrc(previewUrl);
-        return;
-      }
       const primary = photoUrl?.trim();
       const alternate = alternatePhotoUrl?.trim();
-      const chosen =
-        activeUrl === 'alternate' && alternate
-          ? alternate
-          : primary || alternate || '';
-      if (!chosen) {
-        if (!cancelled) setSrc(undefined);
+
+      if (previewUrl) {
+        if (!cancelled) setSrc(previewUrl);
+      }
+
+      const toResolve = primary || alternate || '';
+      if (!toResolve) {
+        if (!previewUrl && !cancelled) setSrc(undefined);
         return;
       }
-      const display = await loadDisplaySrc(chosen, cacheBust);
-      if (!cancelled) setSrc(display);
+
+      const resolved = await getPhotoDisplaySrc(toResolve);
+      if (cancelled || !resolved) return;
+
+      setSrc((current) => {
+        if (previewUrl && current === previewUrl) return resolved;
+        if (!previewUrl) return resolved;
+        return current;
+      });
     };
+
     void run();
     return () => {
       cancelled = true;
     };
-  }, [photoUrl, alternatePhotoUrl, previewUrl, cacheBust, activeUrl]);
-
-  useEffect(() => {
-    setActiveUrl('primary');
-  }, [photoUrl, alternatePhotoUrl, previewUrl]);
+  }, [photoUrl, alternatePhotoUrl, previewUrl, cacheBust]);
 
   const handleImageError = () => {
-    if (previewUrl) return;
-    const alternate = alternatePhotoUrl?.trim();
-    const primary = photoUrl?.trim();
-    if (activeUrl === 'primary' && alternate && alternate !== primary) {
-      setActiveUrl('alternate');
+    const publicDirect = profilePhotoSrc(photoUrl, cacheBust);
+    if (publicDirect && src !== publicDirect) {
+      setSrc(publicDirect);
       return;
     }
-    const publicFallback = profilePhotoSrc(
-      activeUrl === 'alternate' ? alternatePhotoUrl : photoUrl,
-      cacheBust,
-    );
-    if (publicFallback && src !== publicFallback) {
-      setSrc(publicFallback);
+    const altDirect = profilePhotoSrc(alternatePhotoUrl, cacheBust);
+    if (altDirect && src !== altDirect) {
+      setSrc(altDirect);
+      return;
+    }
+    if (previewUrl) {
+      setSrc(previewUrl);
       return;
     }
     setSrc(undefined);
   };
 
-  const imageKey = `${activeUrl}-${photoUrl ?? ''}-${alternatePhotoUrl ?? ''}-${previewUrl ?? ''}-${cacheBust ?? ''}`;
+  const handleImageLoad = () => {
+    if (previewUrl && src === previewUrl) return;
+    onPhotoLoaded?.();
+  };
+
+  const imageKey = `${photoUrl ?? ''}-${alternatePhotoUrl ?? ''}-${previewUrl ?? ''}-${src ?? ''}`;
 
   return (
     <Avatar className={className}>
@@ -98,6 +95,7 @@ export function ProfileAvatar({
           className={imageClassName}
           referrerPolicy="no-referrer"
           onError={handleImageError}
+          onLoad={handleImageLoad}
         />
       ) : null}
       <AvatarFallback delayMs={src ? 600 : 0}>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -23,13 +23,27 @@ const Developers = () => {
   const [name, setName] = useState('');
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [photoPreviewById, setPhotoPreviewById] = useState<Record<string, string>>({});
+  const blobByIdRef = useRef<Record<string, string>>({});
   const { isAdmin } = useRole();
 
-  const invalidatePhotoQueries = () => {
-    void queryClient.invalidateQueries({ queryKey: ['developers'] });
+  const clearPhotoPreview = (id: string) => {
+    const blob = blobByIdRef.current[id];
+    if (blob) {
+      URL.revokeObjectURL(blob);
+      delete blobByIdRef.current[id];
+    }
+    setPhotoPreviewById((prev) => {
+      if (!prev[id]) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const refreshRelatedPhotoQueries = () => {
     void queryClient.invalidateQueries({ queryKey: ['people-photos'] });
-    void queryClient.invalidateQueries({ queryKey: ['dev-kanban-board'] });
     void queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
+    void queryClient.invalidateQueries({ queryKey: ['dev-kanban-board'] });
   };
 
   const { data: developers = [], isLoading } = useQuery({
@@ -52,7 +66,8 @@ const Developers = () => {
       }
     },
     onSuccess: () => {
-      invalidatePhotoQueries();
+      void queryClient.invalidateQueries({ queryKey: ['developers'] });
+      refreshRelatedPhotoQueries();
       toast.success(editingId ? 'Desenvolvedor atualizado!' : 'Desenvolvedor criado!');
       resetForm();
     },
@@ -66,7 +81,7 @@ const Developers = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      invalidatePhotoQueries();
+      void queryClient.invalidateQueries({ queryKey: ['developers'] });
       toast.success('Status atualizado!');
     },
   });
@@ -81,7 +96,8 @@ const Developers = () => {
       return data;
     },
     onSuccess: () => {
-      invalidatePhotoQueries();
+      void queryClient.invalidateQueries({ queryKey: ['developers'] });
+      refreshRelatedPhotoQueries();
       toast.success('Desenvolvedor excluído com sucesso!');
     },
     onError: (err: any) => toast.error(err.message || 'Erro ao excluir desenvolvedor. Ele pode ter dados vinculados.'),
@@ -89,29 +105,25 @@ const Developers = () => {
 
   const handlePhotoUpload = async (devId: string, file: File) => {
     setUploadingId(devId);
-    const blobPreview = URL.createObjectURL(file);
-    setPhotoPreviewById((prev) => ({ ...prev, [devId]: blobPreview }));
     try {
-      const { publicUrl, displayUrl } = await uploadCadastroPhotoFile('developer-photos', devId, file);
+      const { publicUrl, blobPreview } = await uploadCadastroPhotoFile('developer-photos', devId, file);
       const { error } = await supabase.from('developers').update({ photo_url: publicUrl }).eq('id', devId);
       if (error) throw error;
 
       queryClient.setQueryData(['developers'], (old: typeof developers | undefined) =>
         (old ?? []).map((row) => (row.id === devId ? { ...row, photo_url: publicUrl } : row)),
       );
-      setPhotoPreviewById((prev) => ({ ...prev, [devId]: displayUrl }));
-      invalidatePhotoQueries();
+
+      blobByIdRef.current[devId] = blobPreview;
+      setPhotoPreviewById((prev) => ({ ...prev, [devId]: blobPreview }));
+
+      refreshRelatedPhotoQueries();
       toast.success('Foto atualizada!');
     } catch (e: unknown) {
+      clearPhotoPreview(devId);
       const msg = e instanceof Error ? e.message : '';
       toast.error('Erro ao enviar foto: ' + msg);
-      setPhotoPreviewById((prev) => {
-        const next = { ...prev };
-        delete next[devId];
-        return next;
-      });
     } finally {
-      URL.revokeObjectURL(blobPreview);
       setUploadingId(null);
     }
   };
@@ -167,6 +179,7 @@ const Developers = () => {
                     photoUrl={d.photo_url}
                     previewUrl={photoPreviewById[d.id]}
                     fallbackLabel={d.name}
+                    onPhotoLoaded={() => clearPhotoPreview(d.id)}
                   />
                   <label className="absolute inset-0 z-10 cursor-pointer rounded-full" title="Enviar foto">
                     <input

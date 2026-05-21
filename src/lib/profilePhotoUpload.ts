@@ -6,8 +6,9 @@ import {
   profilePhotoSrc,
   storageObjectFromPublicUrl,
 } from '@/lib/profilePhotoUrl';
+import { canLoadImageUrl, primePhotoDisplayCache } from '@/lib/photoDisplayCache';
 
-/** URL que o navegador consegue carregar (assinada; fallback pública). */
+/** URL que o navegador consegue carregar. Buckets públicos usam URL direta (mais estável). */
 export async function resolvePhotoDisplayUrl(
   photoUrl: string | null | undefined,
   cacheBust?: number,
@@ -17,8 +18,15 @@ export async function resolvePhotoDisplayUrl(
   const normalized = normalizeProfilePhotoUrl(photoUrl);
   if (!normalized) return undefined;
 
-  if (isSignedStorageUrl(normalized) || (isExternalPhotoUrl(normalized) && !storageObjectFromPublicUrl(normalized))) {
+  if (isSignedStorageUrl(normalized)) return normalized;
+
+  if (isExternalPhotoUrl(normalized) && !storageObjectFromPublicUrl(normalized)) {
     return normalized;
+  }
+
+  const publicSrc = profilePhotoSrc(normalized, cacheBust);
+  if (publicSrc?.includes('/object/public/')) {
+    if (await canLoadImageUrl(publicSrc)) return publicSrc;
   }
 
   const object = storageObjectFromPublicUrl(normalized);
@@ -27,24 +35,27 @@ export async function resolvePhotoDisplayUrl(
       .from(object.bucket)
       .createSignedUrl(object.path, 60 * 60 * 24 * 7);
     if (!error && data?.signedUrl) {
-      return data.signedUrl;
+      if (await canLoadImageUrl(data.signedUrl)) return data.signedUrl;
     }
   }
 
-  return profilePhotoSrc(normalized, cacheBust);
+  if (publicSrc && (await canLoadImageUrl(publicSrc))) return publicSrc;
+  return publicSrc;
 }
 
 export type ProfilePhotoUploadResult = {
   publicUrl: string;
   displayUrl: string;
   storagePath: string;
+  blobPreview: string;
 };
 
-/** Envia foto ao bucket profile-photos e devolve URL pública (DB) + URL para exibir (assinada). */
+/** Envia foto ao bucket profile-photos e devolve URL pública (DB) + URL para exibir. */
 export async function uploadProfilePhotoFile(
   userId: string,
   file: File,
 ): Promise<ProfilePhotoUploadResult> {
+  const blobPreview = URL.createObjectURL(file);
   const ext = file.name.split('.').pop() || 'jpg';
   const storagePath = `${userId}/${Date.now()}.${ext}`;
   const contentType = file.type || 'image/jpeg';
@@ -52,20 +63,18 @@ export async function uploadProfilePhotoFile(
   const { error: upErr } = await supabase.storage
     .from('profile-photos')
     .upload(storagePath, file, { upsert: true, contentType });
-  if (upErr) throw upErr;
+  if (upErr) {
+    URL.revokeObjectURL(blobPreview);
+    throw upErr;
+  }
 
   const { data: urlData } = supabase.storage.from('profile-photos').getPublicUrl(storagePath);
   const publicUrl = normalizeProfilePhotoUrl(urlData.publicUrl) ?? urlData.publicUrl;
-  const displayUrl =
-    (await resolvePhotoDisplayUrl(publicUrl, Date.now())) ?? URL.createObjectURL(file);
+  const displayUrl = (await resolvePhotoDisplayUrl(publicUrl, Date.now())) ?? blobPreview;
 
-  return { publicUrl, displayUrl, storagePath };
-}
+  if (displayUrl !== blobPreview) {
+    primePhotoDisplayCache(publicUrl, displayUrl);
+  }
 
-/** Normaliza URL antes de gravar no banco (cadastro ou link manual). */
-export function photoUrlForDatabase(url: string): string | null {
-  const normalized = normalizeProfilePhotoUrl(url);
-  if (!normalized) return null;
-  if (!isExternalPhotoUrl(normalized)) return normalized;
-  return normalized;
+  return { publicUrl, displayUrl, storagePath, blobPreview };
 }
