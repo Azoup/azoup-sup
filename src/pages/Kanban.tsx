@@ -24,7 +24,7 @@ import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
 import { actorNameFromUser } from '@/lib/actorName';
 import { KanbanCardImage } from '@/components/KanbanCardImage';
 import { filesFromClipboardData } from '@/lib/clipboardImage';
-import { displayKanbanImageUrl, uploadKanbanImageForCard } from '@/lib/uploadKanbanImage';
+import { uploadKanbanImageForCard } from '@/lib/uploadKanbanImage';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -666,7 +666,7 @@ const Kanban = () => {
   };
 
   const openLightbox = (images: string[], index: number) => {
-    setLightboxImages(images.map((u) => displayKanbanImageUrl(u)));
+    setLightboxImages(images);
     setLightboxIndex(index);
   };
 

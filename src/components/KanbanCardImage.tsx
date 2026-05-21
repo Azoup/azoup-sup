@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useState } from 'react';
 import { ImageOff } from 'lucide-react';
-import { displayKanbanImageUrl } from '@/lib/uploadKanbanImage';
+import { kanbanImageDisplayCandidates } from '@/lib/kanbanImageUrl';
 import { cn } from '@/lib/utils';
 
 type KanbanCardImageProps = {
@@ -10,12 +10,7 @@ type KanbanCardImageProps = {
 };
 
 function KanbanCardImageInner({ imageUrl, className, onClick }: KanbanCardImageProps) {
-  const candidates = useMemo(() => {
-    const normalized = displayKanbanImageUrl(imageUrl);
-    const raw = imageUrl?.trim();
-    const list = [normalized, raw].filter((u): u is string => !!u);
-    return [...new Set(list)];
-  }, [imageUrl]);
+  const candidates = useMemo(() => kanbanImageDisplayCandidates(imageUrl), [imageUrl]);
 
   const [candidateIndex, setCandidateIndex] = useState(0);
   const [failed, setFailed] = useState(false);

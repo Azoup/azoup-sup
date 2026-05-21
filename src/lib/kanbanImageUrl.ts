@@ -59,3 +59,12 @@ export function normalizeKanbanImageUrl(url: string | null | undefined): string 
 export function kanbanImageSrc(url: string | null | undefined): string | undefined {
   return normalizeKanbanImageUrl(url) ?? undefined;
 }
+
+/** URLs a tentar na ordem (normalizada → original), para thumbnail e lightbox. */
+export function kanbanImageDisplayCandidates(url: string | null | undefined): string[] {
+  if (!url?.trim()) return [];
+  const raw = url.trim();
+  const normalized = normalizeKanbanImageUrl(raw);
+  const list = [normalized, raw].filter((u): u is string => !!u);
+  return [...new Set(list)];
+}

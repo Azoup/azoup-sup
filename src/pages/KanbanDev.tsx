@@ -23,7 +23,7 @@ import { logActivity } from '@/hooks/useActivityLog';
 import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { KanbanCardImage } from '@/components/KanbanCardImage';
 import { filesFromClipboardData } from '@/lib/clipboardImage';
-import { displayKanbanImageUrl, uploadKanbanImageForCard } from '@/lib/uploadKanbanImage';
+import { uploadKanbanImageForCard } from '@/lib/uploadKanbanImage';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -599,7 +599,7 @@ const KanbanDev = () => {
   const startEditLabel = (label: any) => { setEditingLabel(label); setEditLabelName(label.name); setEditLabelColor(label.color); };
 
   const openLightbox = (images: string[], index: number) => {
-    setLightboxImages(images.map((u) => displayKanbanImageUrl(u)));
+    setLightboxImages(images);
     setLightboxIndex(index);
   };
 

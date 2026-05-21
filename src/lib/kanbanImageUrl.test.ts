@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { kanbanImagePathFromUrl, normalizeKanbanImageUrl } from '@/lib/kanbanImageUrl';
+import {
+  kanbanImageDisplayCandidates,
+  kanbanImagePathFromUrl,
+  normalizeKanbanImageUrl,
+} from '@/lib/kanbanImageUrl';
 
 describe('kanbanImageUrl', () => {
   it('extracts path from public storage url', () => {
@@ -25,5 +29,14 @@ describe('kanbanImageUrl', () => {
   it('builds public url from bare filename', () => {
     const n = normalizeKanbanImageUrl('1716291234-abc.png');
     expect(n).toContain('/storage/v1/object/public/kanban-images/1716291234-abc.png');
+  });
+
+  it('display candidates include raw url when different from normalized', () => {
+    const raw =
+      'https://ffvgrvrkuiypjzfdcfyw.supabase.co/storage/v1/object/public/kanban-images/a/b.png';
+    const candidates = kanbanImageDisplayCandidates(raw);
+    expect(candidates).toContain(raw);
+    expect(candidates.length).toBeGreaterThanOrEqual(2);
+    expect(candidates[0]).not.toContain('ffvgrvrk');
   });
 });
