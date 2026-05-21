@@ -10,7 +10,7 @@ import {
 } from '@/lib/supabaseProject';
 import { buildAuthPath, isAuthPathname, isLogoutQuery } from '@/lib/authPaths';
 import { clearLocalSession, consumeLogoutFlag, hasLogoutFlag } from '@/lib/signOutLocal';
-import { withTimeout } from '@/lib/withTimeout';
+import { TimeoutError, withTimeout } from '@/lib/withTimeout';
 
 const AUTH_INIT_TIMEOUT_MS = 4_000;
 
@@ -100,9 +100,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (!mounted || signedOutRef.current) return;
         setSession(validSession);
       })
-      .catch(() => {
+      .catch((err) => {
         if (!mounted || signedOutRef.current) return;
-        clearLocalSession();
+        if (!(err instanceof TimeoutError)) {
+          clearLocalSession();
+        }
         setSession(null);
       })
       .finally(() => {

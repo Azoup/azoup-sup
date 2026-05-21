@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -24,14 +23,7 @@ import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import DigisacDashboard from "./pages/DigisacDashboard";
 import { getFirstAllowedPath } from "@/lib/allowedRoutes";
-import { redirectToLogin } from "@/lib/signOutLocal";
-
-function RedirectToLogin() {
-  useEffect(() => {
-    redirectToLogin();
-  }, []);
-  return null;
-}
+import { buildAuthPath } from "@/lib/authPaths";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,12 +42,12 @@ function RequireAuth({ children, screen }: { children: React.ReactNode; screen?:
   const { user, loading: authLoading } = useAuth();
   const { canView, isLoading: permsLoading } = usePermissions();
 
-  if (!user) {
-    return <RedirectToLogin />;
-  }
-
   if (authLoading || permsLoading) {
     return null;
+  }
+
+  if (!user) {
+    return <Navigate to={buildAuthPath()} replace />;
   }
 
   if (screen && !canView(screen)) {
@@ -70,12 +62,12 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   const { isAdmin, isLoading } = useRole();
   const { canView, isLoading: permsLoading } = usePermissions();
 
-  if (!user) {
-    return <RedirectToLogin />;
-  }
-
   if (loading || isLoading || permsLoading) {
     return null;
+  }
+
+  if (!user) {
+    return <Navigate to={buildAuthPath()} replace />;
   }
 
   if (!isAdmin) return <Navigate to={getFirstAllowedPath(canView)} replace />;
@@ -86,7 +78,11 @@ function AuthRoute() {
   const { user, loading } = useAuth();
   const { canView, isLoading: permsLoading } = usePermissions();
 
-  if (user && !loading && !permsLoading) {
+  if (loading || permsLoading) {
+    return null;
+  }
+
+  if (user) {
     return <Navigate to={getFirstAllowedPath(canView)} replace />;
   }
 
