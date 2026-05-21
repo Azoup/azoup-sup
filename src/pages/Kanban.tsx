@@ -458,7 +458,7 @@ const Kanban = () => {
 
   const getCardCompletedAt = useCallback((card: any): string | null => {
     if (!card || !isDoneSlug(card.status)) return null;
-    return card.completed_at || card.updated_at || null;
+    return card.completed_at || null;
   }, []);
 
   // Helper: garante existência da etiqueta "Concluído" e retorna seu id

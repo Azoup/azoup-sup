@@ -440,8 +440,7 @@ const KanbanDev = () => {
 
   const getCardCompletedAt = useCallback((card: any): string | null => {
     if (!card || !isDoneSlug(card.status)) return null;
-    // Fallback for older completed cards that still don't have completed_at.
-    return card.completed_at || card.updated_at || null;
+    return card.completed_at || null;
   }, []);
 
   // Helper: garante existência da etiqueta "Concluído" e retorna seu id
@@ -506,24 +505,54 @@ const KanbanDev = () => {
 
     const movedCard = cards.find((c: any) => c.id === draggableId);
     const statusChanged = source.droppableId !== destination.droppableId;
+    const wasDone = isDoneSlug(source.droppableId);
+    const willBeDone = isDoneSlug(destination.droppableId);
     const previousCards = queryClient.getQueryData<{ cards?: any[] }>(['dev-kanban-board'])?.cards;
 
     dragBusyRef.current = true;
 
+    const completedAtOnMove =
+      statusChanged && willBeDone
+        ? new Date().toISOString()
+        : statusChanged && wasDone && !willBeDone
+          ? null
+          : undefined;
+
     patchDevKanbanBoardCards(queryClient, (old) =>
       old.map((card: any) =>
         card.id === draggableId
-          ? { ...card, status: destination.droppableId, position: destination.index }
+          ? {
+              ...card,
+              status: destination.droppableId,
+              position: destination.index,
+              completed_at:
+                completedAtOnMove !== undefined ? completedAtOnMove : card.completed_at,
+            }
           : card,
       ),
     );
 
+    const movePayload: Record<string, unknown> = {
+      status: destination.droppableId,
+      position: destination.index,
+    };
+    if (completedAtOnMove !== undefined) movePayload.completed_at = completedAtOnMove;
+
     try {
       await withSupabaseRetry(async () => {
-        const { error } = await supabase
+        let { error } = await supabase
           .from('dev_kanban_cards')
-          .update({ status: destination.droppableId, position: destination.index })
+          .update(movePayload)
           .eq('id', draggableId);
+
+        if (error && `${error.message}`.toLowerCase().includes('completed_at')) {
+          const retry = await supabase
+            .from('dev_kanban_cards')
+            .update({ status: destination.droppableId, position: destination.index })
+            .eq('id', draggableId);
+          error = retry.error;
+        }
+
         if (error) throw error;
       });
 
