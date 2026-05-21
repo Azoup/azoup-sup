@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -12,8 +12,9 @@ import { toast } from 'sonner';
 import { Plus, Pencil, UserX, UserCheck, Upload, Loader2, Trash2 } from 'lucide-react';
 import { useRole } from '@/hooks/useRole';
 import { useSupabaseReady } from '@/hooks/useSupabaseReady';
-import { assertSupabaseData } from '@/lib/supabaseQuery';
 import { uploadCadastroPhotoFile } from '@/lib/cadastroPhoto';
+import { fetchDevelopersList } from '@/lib/fetchCadastroList';
+import { rememberCadastroPhoto } from '@/lib/cadastroPhotoCache';
 import { primePhotoDisplayCache } from '@/lib/photoDisplayCache';
 
 const Developers = () => {
@@ -24,36 +25,23 @@ const Developers = () => {
   const [name, setName] = useState('');
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [photoPreviewById, setPhotoPreviewById] = useState<Record<string, string>>({});
-  const blobByIdRef = useRef<Record<string, string>>({});
   const { isAdmin } = useRole();
 
-  const clearPhotoPreview = (id: string) => {
-    const blob = blobByIdRef.current[id];
-    if (blob) {
-      URL.revokeObjectURL(blob);
-      delete blobByIdRef.current[id];
-    }
-    setPhotoPreviewById((prev) => {
-      if (!prev[id]) return prev;
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
+  const patchDeveloperInCache = (devId: string, photoUrl: string) => {
+    rememberCadastroPhoto('developers', devId, photoUrl);
+    primePhotoDisplayCache(photoUrl);
+    queryClient.setQueryData(['developers'], (old: Awaited<ReturnType<typeof fetchDevelopersList>> | undefined) =>
+      (old ?? []).map((row) => (row.id === devId ? { ...row, photo_url: photoUrl } : row)),
+    );
   };
 
-  const refreshRelatedPhotoQueries = () => {
-    void queryClient.invalidateQueries({ queryKey: ['people-photos'] });
-    void queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
-    void queryClient.invalidateQueries({ queryKey: ['dev-kanban-board'] });
-  };
-
-  const { data: developers = [], isLoading } = useQuery({
+  const { data: developers = [], isLoading, isFetching } = useQuery({
     queryKey: ['developers'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('developers').select('*').order('name');
-      return assertSupabaseData(data, error, 'developers');
-    },
+    queryFn: fetchDevelopersList,
     enabled: supabaseReady,
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    placeholderData: (prev) => prev,
   });
 
   const upsertMutation = useMutation({
@@ -66,9 +54,8 @@ const Developers = () => {
         if (error) throw error;
       }
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['developers'] });
-      refreshRelatedPhotoQueries();
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['developers'] });
       toast.success(editingId ? 'Desenvolvedor atualizado!' : 'Desenvolvedor criado!');
       resetForm();
     },
@@ -81,8 +68,11 @@ const Developers = () => {
       const { error } = await supabase.from('developers').update({ status: newStatus }).eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['developers'] });
+    onSuccess: (_, { id, status }) => {
+      const newStatus = status === 'active' ? 'inactive' : 'active';
+      queryClient.setQueryData(['developers'], (old: typeof developers | undefined) =>
+        (old ?? []).map((row) => (row.id === id ? { ...row, status: newStatus } : row)),
+      );
       toast.success('Status atualizado!');
     },
   });
@@ -98,7 +88,6 @@ const Developers = () => {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['developers'] });
-      refreshRelatedPhotoQueries();
       toast.success('Desenvolvedor excluído com sucesso!');
     },
     onError: (err: any) => toast.error(err.message || 'Erro ao excluir desenvolvedor. Ele pode ter dados vinculados.'),
@@ -106,24 +95,22 @@ const Developers = () => {
 
   const handlePhotoUpload = async (devId: string, file: File) => {
     setUploadingId(devId);
+    const blobPreview = URL.createObjectURL(file);
+    setPhotoPreviewById((prev) => ({ ...prev, [devId]: blobPreview }));
     try {
-      const { publicUrl, blobPreview } = await uploadCadastroPhotoFile('developer-photos', devId, file);
-
-      queryClient.setQueryData(['developers'], (old: typeof developers | undefined) =>
-        (old ?? []).map((row) => (row.id === devId ? { ...row, photo_url: publicUrl } : row)),
-      );
-
-      blobByIdRef.current[devId] = blobPreview;
-      setPhotoPreviewById((prev) => ({ ...prev, [devId]: blobPreview }));
-
-      primePhotoDisplayCache(publicUrl);
-      refreshRelatedPhotoQueries();
+      const { publicUrl } = await uploadCadastroPhotoFile('developer-photos', devId, file);
+      patchDeveloperInCache(devId, publicUrl);
       toast.success('Foto atualizada!');
     } catch (e: unknown) {
-      clearPhotoPreview(devId);
+      setPhotoPreviewById((prev) => {
+        const next = { ...prev };
+        delete next[devId];
+        return next;
+      });
       const msg = e instanceof Error ? e.message : '';
       toast.error('Erro ao enviar foto: ' + msg);
     } finally {
+      URL.revokeObjectURL(blobPreview);
       setUploadingId(null);
     }
   };
@@ -139,6 +126,8 @@ const Developers = () => {
     setName(dev.name);
     setDialogOpen(true);
   };
+
+  const showInitialLoader = isLoading && developers.length === 0;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -166,11 +155,11 @@ const Developers = () => {
         </Dialog>
       </div>
 
-      {isLoading ? (
+      {showInitialLoader ? (
         <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
       ) : (
         <div className="grid gap-3">
-          {developers.map((d: any) => (
+          {developers.map((d) => (
             <Card key={d.id} className="border shadow-sm">
               <CardContent className="flex items-center gap-4 py-4">
                 <div className="relative group shrink-0">
@@ -179,7 +168,6 @@ const Developers = () => {
                     photoUrl={d.photo_url}
                     previewUrl={photoPreviewById[d.id]}
                     fallbackLabel={d.name}
-                    onPhotoLoaded={() => clearPhotoPreview(d.id)}
                   />
                   <label className="absolute inset-0 z-10 cursor-pointer rounded-full" title="Enviar foto">
                     <input
@@ -212,7 +200,11 @@ const Developers = () => {
                   <Button size="icon" variant="ghost" onClick={() => openEdit(d)}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button size="icon" variant="ghost" onClick={() => toggleStatus.mutate({ id: d.id, status: d.status })}>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => toggleStatus.mutate({ id: d.id, status: d.status })}
+                  >
                     {d.status === 'active' ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
                   </Button>
                   {isAdmin && (
@@ -246,6 +238,9 @@ const Developers = () => {
             <p className="text-center text-muted-foreground py-12">Nenhum desenvolvedor cadastrado.</p>
           )}
         </div>
+      )}
+      {isFetching && developers.length > 0 && (
+        <p className="text-center text-xs text-muted-foreground">Atualizando lista…</p>
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -12,8 +12,9 @@ import { toast } from 'sonner';
 import { Plus, Pencil, UserX, UserCheck, Upload, Loader2, Trash2 } from 'lucide-react';
 import { useRole } from '@/hooks/useRole';
 import { useSupabaseReady } from '@/hooks/useSupabaseReady';
-import { assertSupabaseData } from '@/lib/supabaseQuery';
 import { uploadCadastroPhotoFile } from '@/lib/cadastroPhoto';
+import { fetchAnalystsList } from '@/lib/fetchCadastroList';
+import { rememberCadastroPhoto } from '@/lib/cadastroPhotoCache';
 import { primePhotoDisplayCache } from '@/lib/photoDisplayCache';
 
 const Analysts = () => {
@@ -24,37 +25,23 @@ const Analysts = () => {
   const [name, setName] = useState('');
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [photoPreviewById, setPhotoPreviewById] = useState<Record<string, string>>({});
-  const blobByIdRef = useRef<Record<string, string>>({});
   const { isAdmin } = useRole();
 
-  const clearPhotoPreview = (id: string) => {
-    const blob = blobByIdRef.current[id];
-    if (blob) {
-      URL.revokeObjectURL(blob);
-      delete blobByIdRef.current[id];
-    }
-    setPhotoPreviewById((prev) => {
-      if (!prev[id]) return prev;
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
+  const patchAnalystInCache = (analystId: string, photoUrl: string) => {
+    rememberCadastroPhoto('analysts', analystId, photoUrl);
+    primePhotoDisplayCache(photoUrl);
+    queryClient.setQueryData(['analysts'], (old: Awaited<ReturnType<typeof fetchAnalystsList>> | undefined) =>
+      (old ?? []).map((row) => (row.id === analystId ? { ...row, photo_url: photoUrl } : row)),
+    );
   };
 
-  const refreshRelatedPhotoQueries = () => {
-    void queryClient.invalidateQueries({ queryKey: ['people-photos'] });
-    void queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
-    void queryClient.invalidateQueries({ queryKey: ['kanban-board'] });
-    void queryClient.invalidateQueries({ queryKey: ['dev-kanban-board'] });
-  };
-
-  const { data: analysts = [], isLoading } = useQuery({
+  const { data: analysts = [], isLoading, isFetching } = useQuery({
     queryKey: ['analysts'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('analysts').select('*').order('name');
-      return assertSupabaseData(data, error, 'analysts');
-    },
+    queryFn: fetchAnalystsList,
     enabled: supabaseReady,
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    placeholderData: (prev) => prev,
   });
 
   const upsertMutation = useMutation({
@@ -67,9 +54,8 @@ const Analysts = () => {
         if (error) throw error;
       }
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['analysts'] });
-      refreshRelatedPhotoQueries();
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['analysts'] });
       toast.success(editingId ? 'Analista atualizado!' : 'Analista criado!');
       resetForm();
     },
@@ -82,8 +68,11 @@ const Analysts = () => {
       const { error } = await supabase.from('analysts').update({ status: newStatus }).eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['analysts'] });
+    onSuccess: (_, { id, status }) => {
+      const newStatus = status === 'active' ? 'inactive' : 'active';
+      queryClient.setQueryData(['analysts'], (old: typeof analysts | undefined) =>
+        (old ?? []).map((row) => (row.id === id ? { ...row, status: newStatus } : row)),
+      );
       toast.success('Status atualizado!');
     },
   });
@@ -99,7 +88,6 @@ const Analysts = () => {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['analysts'] });
-      refreshRelatedPhotoQueries();
       toast.success('Analista excluído com sucesso!');
     },
     onError: (err: any) => toast.error(err.message || 'Erro ao excluir analista. Ele pode ter dados vinculados.'),
@@ -107,24 +95,22 @@ const Analysts = () => {
 
   const handlePhotoUpload = async (analystId: string, file: File) => {
     setUploadingId(analystId);
+    const blobPreview = URL.createObjectURL(file);
+    setPhotoPreviewById((prev) => ({ ...prev, [analystId]: blobPreview }));
     try {
-      const { publicUrl, blobPreview } = await uploadCadastroPhotoFile('analyst-photos', analystId, file);
-
-      queryClient.setQueryData(['analysts'], (old: typeof analysts | undefined) =>
-        (old ?? []).map((row) => (row.id === analystId ? { ...row, photo_url: publicUrl } : row)),
-      );
-
-      blobByIdRef.current[analystId] = blobPreview;
-      setPhotoPreviewById((prev) => ({ ...prev, [analystId]: blobPreview }));
-
-      primePhotoDisplayCache(publicUrl);
-      refreshRelatedPhotoQueries();
+      const { publicUrl } = await uploadCadastroPhotoFile('analyst-photos', analystId, file);
+      patchAnalystInCache(analystId, publicUrl);
       toast.success('Foto atualizada!');
     } catch (e: unknown) {
-      clearPhotoPreview(analystId);
+      setPhotoPreviewById((prev) => {
+        const next = { ...prev };
+        delete next[analystId];
+        return next;
+      });
       const msg = e instanceof Error ? e.message : '';
       toast.error('Erro ao enviar foto: ' + msg);
     } finally {
+      URL.revokeObjectURL(blobPreview);
       setUploadingId(null);
     }
   };
@@ -140,6 +126,8 @@ const Analysts = () => {
     setName(analyst.name);
     setDialogOpen(true);
   };
+
+  const showInitialLoader = isLoading && analysts.length === 0;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -167,7 +155,7 @@ const Analysts = () => {
         </Dialog>
       </div>
 
-      {isLoading ? (
+      {showInitialLoader ? (
         <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
       ) : (
         <div className="grid gap-3">
@@ -180,7 +168,6 @@ const Analysts = () => {
                     photoUrl={a.photo_url}
                     previewUrl={photoPreviewById[a.id]}
                     fallbackLabel={a.name}
-                    onPhotoLoaded={() => clearPhotoPreview(a.id)}
                   />
                   <label className="absolute inset-0 z-10 cursor-pointer rounded-full" title="Enviar foto">
                     <input
@@ -213,7 +200,11 @@ const Analysts = () => {
                   <Button size="icon" variant="ghost" onClick={() => openEdit(a)}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button size="icon" variant="ghost" onClick={() => toggleStatus.mutate({ id: a.id, status: a.status })}>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => toggleStatus.mutate({ id: a.id, status: a.status })}
+                  >
                     {a.status === 'active' ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
                   </Button>
                   {isAdmin && (
@@ -247,6 +238,9 @@ const Analysts = () => {
             <p className="text-center text-muted-foreground py-12">Nenhum analista cadastrado.</p>
           )}
         </div>
+      )}
+      {isFetching && analysts.length > 0 && (
+        <p className="text-center text-xs text-muted-foreground">Atualizando lista…</p>
       )}
     </div>
   );

@@ -28,4 +28,9 @@ describe('resolveUserPhoto', () => {
     expect(personNameMatchesProfile('henri.mecca', 'Henri Mecca')).toBe(true);
     expect(personNameMatchesProfile('Henri', 'Henri Mecca')).toBe(true);
   });
+
+  it('does not match different people by partial first name', () => {
+    expect(personNameMatchesProfile('anna.bbento', 'Anderson')).toBe(false);
+    expect(personNameMatchesProfile('beatriz.silva', 'Beatriz Souza')).toBe(true);
+  });
 });

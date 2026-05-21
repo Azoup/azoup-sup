@@ -28,9 +28,8 @@ export function personNameMatchesProfile(displayName: string, personName: string
 
   const aFirst = firstToken(displayName);
   const bFirst = firstToken(personName);
-  if (aFirst.length >= 3 && bFirst.length >= 3) {
-    if (aFirst === bFirst) return true;
-    if (aFirst.startsWith(bFirst) || bFirst.startsWith(aFirst)) return true;
+  if (aFirst.length >= 3 && bFirst.length >= 3 && aFirst === bFirst) {
+    return true;
   }
 
   const aParts = displayName.toLowerCase().split(/[._\s]+/).filter((p) => p.length >= 2);
@@ -43,13 +42,18 @@ export function personNameMatchesProfile(displayName: string, personName: string
 }
 
 function photoFromPeople(displayName: string, people: PersonWithPhoto[]): string | null {
+  let best: { score: number; url: string } | null = null;
+
   for (const person of people) {
-    if (!person.photo_url?.trim()) continue;
-    if (personNameMatchesProfile(displayName, person.name)) {
-      return normalizeProfilePhotoUrl(person.photo_url.trim()) ?? person.photo_url.trim();
+    if (!person.photo_url?.trim() || !personNameMatchesProfile(displayName, person.name)) continue;
+    const url = normalizeProfilePhotoUrl(person.photo_url.trim()) ?? person.photo_url.trim();
+    const score = normalizeKey(displayName) === normalizeKey(person.name) ? 100 : 50;
+    if (!best || score > best.score) {
+      best = { score, url };
     }
   }
-  return null;
+
+  return best?.url ?? null;
 }
 
 export type ResolveUserPhotoInput = {

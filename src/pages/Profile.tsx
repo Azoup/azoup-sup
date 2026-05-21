@@ -19,6 +19,8 @@ import { Loader2, KeyRound, User, Shield, ScrollText, Filter, Upload, Trash2, Us
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { personNameMatchesProfile, resolveUserPhoto } from '@/lib/resolveUserPhotoUrl';
 import { uploadProfilePhotoFile } from '@/lib/profilePhotoUpload';
+import { fetchPeoplePhotos } from '@/lib/fetchCadastroList';
+import { rememberCadastroPhoto } from '@/lib/cadastroPhotoCache';
 import { primePhotoDisplayCache } from '@/lib/photoDisplayCache';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -151,26 +153,15 @@ const Profile = () => {
 
   const { data: peoplePhotos } = useQuery({
     queryKey: ['people-photos'],
-    queryFn: async () => {
-      const [{ data: analysts }, { data: developers }] = await Promise.all([
-        supabase.from('analysts').select('name, photo_url'),
-        supabase.from('developers').select('name, photo_url'),
-      ]);
-      return { analysts: analysts ?? [], developers: developers ?? [] };
-    },
+    queryFn: fetchPeoplePhotos,
     enabled: !!user,
-    staleTime: 60_000,
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    placeholderData: (prev) => prev,
   });
 
   const selfPhotoResolved = resolveUserPhoto({
     profilePhoto: profile?.photo_url,
-    displayName: profile?.display_name || user?.email?.split('@')[0],
-    analysts: peoplePhotos?.analysts ?? [],
-    developers: peoplePhotos?.developers ?? [],
-  });
-
-  const selfCadastroPhoto = resolveUserPhoto({
-    profilePhoto: null,
     displayName: profile?.display_name || user?.email?.split('@')[0],
     analysts: peoplePhotos?.analysts ?? [],
     developers: peoplePhotos?.developers ?? [],
@@ -192,19 +183,33 @@ const Profile = () => {
 
     const analyst = (analysts ?? []).find((a) => personNameMatchesProfile(name, a.name || ''));
     if (analyst) {
+      rememberCadastroPhoto('analysts', analyst.id, publicUrl);
+      queryClient.setQueryData(['analysts'], (old: any[] | undefined) =>
+        (old ?? []).map((row) => (row.id === analyst.id ? { ...row, photo_url: publicUrl } : row)),
+      );
       await supabase.from('analysts').update({ photo_url: publicUrl }).eq('id', analyst.id);
-      void queryClient.invalidateQueries({ queryKey: ['analysts'] });
-      void queryClient.invalidateQueries({ queryKey: ['kanban-board'] });
     }
 
     const developer = (developers ?? []).find((d) => personNameMatchesProfile(name, d.name || ''));
     if (developer) {
+      rememberCadastroPhoto('developers', developer.id, publicUrl);
+      queryClient.setQueryData(['developers'], (old: any[] | undefined) =>
+        (old ?? []).map((row) => (row.id === developer.id ? { ...row, photo_url: publicUrl } : row)),
+      );
       await supabase.from('developers').update({ photo_url: publicUrl }).eq('id', developer.id);
-      void queryClient.invalidateQueries({ queryKey: ['developers'] });
-      void queryClient.invalidateQueries({ queryKey: ['dev-kanban-board'] });
     }
 
-    void queryClient.invalidateQueries({ queryKey: ['people-photos'] });
+    queryClient.setQueryData(['people-photos'], (old: { analysts: any[]; developers: any[] } | undefined) => {
+      const base = old ?? { analysts: analysts ?? [], developers: developers ?? [] };
+      return {
+        analysts: base.analysts.map((a) =>
+          analyst && a.id === analyst.id ? { ...a, photo_url: publicUrl } : a,
+        ),
+        developers: base.developers.map((d) =>
+          developer && d.id === developer.id ? { ...d, photo_url: publicUrl } : d,
+        ),
+      };
+    });
   };
 
   const blobByUserRef = useRef<Record<string, string>>({});
@@ -279,7 +284,6 @@ const Profile = () => {
       void syncLinkedCadastroPhoto(targetUserId, publicUrl);
 
       toast.success('Foto atualizada!');
-      void queryClient.invalidateQueries({ queryKey: ['people-photos'] });
       void queryClient.invalidateQueries({ queryKey: ['all-users-roles-profiles'] });
       void queryClient.invalidateQueries({ queryKey: ['card-comments'] });
       void queryClient.invalidateQueries({ queryKey: ['dev-card-comments'] });
@@ -485,12 +489,8 @@ const Profile = () => {
                 <ProfileAvatar
                   className="h-16 w-16"
                   photoUrl={selfPhotoResolved.photo_url}
-                  alternatePhotoUrl={
-                    selfPhotoResolved.source === 'profile' ? selfCadastroPhoto.photo_url : undefined
-                  }
                   previewUrl={user?.id ? photoPreviewByUser[user.id] : undefined}
                   fallbackLabel={profile?.display_name || user?.email || '?'}
-                  onPhotoLoaded={() => user && clearPhotoPreview(user.id)}
                 />
                 {user && (
                   <>
@@ -586,14 +586,7 @@ const Profile = () => {
               <p className="text-sm text-muted-foreground">Nenhum usuário encontrado.</p>
             ) : (
               <div className="space-y-3 animate-in fade-in duration-200">
-                {(showAllUsers ? allUsers : allUsers.slice(0, 4)).map((ur: any) => {
-                  const cadastroPhoto = resolveUserPhoto({
-                    profilePhoto: null,
-                    displayName: ur.email,
-                    analysts: peoplePhotos?.analysts ?? [],
-                    developers: peoplePhotos?.developers ?? [],
-                  });
-                  return (
+                {(showAllUsers ? allUsers : allUsers.slice(0, 4)).map((ur: any) => (
                   <div key={ur.id} className="p-3 rounded-lg border space-y-2">
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -601,12 +594,8 @@ const Profile = () => {
                           <ProfileAvatar
                             className="h-10 w-10"
                             photoUrl={ur.photo_url}
-                            alternatePhotoUrl={
-                              ur.profile_photo_url ? cadastroPhoto.photo_url : undefined
-                            }
                             previewUrl={photoPreviewByUser[ur.user_id]}
                             fallbackLabel={ur.email || '?'}
-                            onPhotoLoaded={() => clearPhotoPreview(ur.user_id)}
                           />
                           <label className="absolute inset-0 z-10 cursor-pointer rounded-full" title="Enviar foto">
                             <input
@@ -741,8 +730,7 @@ const Profile = () => {
                       </div>
                     )}
                   </div>
-                );
-                })}
+                ))}
                 {allUsers.length > 4 && (
                   <div className="flex justify-center pt-2">
                     <Button variant="outline" size="sm" onClick={() => setShowAllUsers(v => !v)}>

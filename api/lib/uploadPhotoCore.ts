@@ -76,8 +76,7 @@ export async function uploadPhotoCore(
   }
 
   const ext = fileName.split(".").pop() || "jpg";
-  const storagePath =
-    bucket === "profile-photos" ? `${recordId}/${Date.now()}.${ext}` : `${recordId}.${ext}`;
+  const storagePath = `${recordId}/${Date.now()}.${ext}`;
 
   const admin = createClient(config.supabaseUrl, config.serviceRole, {
     auth: { autoRefreshToken: false, persistSession: false },

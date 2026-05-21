@@ -1,3 +1,4 @@
+import { rememberCadastroPhoto } from '@/lib/cadastroPhotoCache';
 import { getConfiguredSupabaseProjectRef } from '@/lib/supabaseProject';
 
 export type PhotoBucket = 'analyst-photos' | 'developer-photos' | 'profile-photos';
@@ -87,6 +88,10 @@ export async function uploadPhotoViaApi(
   if (!publicUrl) {
     URL.revokeObjectURL(blobPreview);
     throw new Error('Resposta inválida do servidor ao enviar foto');
+  }
+
+  if (table === 'analysts' || table === 'developers') {
+    rememberCadastroPhoto(table, recordId, publicUrl);
   }
 
   return { publicUrl, blobPreview };
