@@ -5,6 +5,7 @@ import { fetchUserAccessCore } from "./api/lib/userAccess";
 import { fetchAppBootstrapCore } from "./api/lib/appBootstrap";
 import { fetchKanbanBoardCore } from "./api/lib/kanbanBoard";
 import { proxyAuthenticatedSupabaseRequest, type RestProxyBody } from "./api/lib/restProxy";
+import { uploadPhotoCore, type UploadPhotoBody } from "./api/lib/uploadPhotoCore";
 
 function readBody(req: Connect.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -157,6 +158,69 @@ export function adminApiDevPlugin(env: Record<string, string>): Plugin {
 
         if (url === "/api/kanban-board") {
           if (await handleGetApi(fetchKanbanBoardCore)) return;
+        }
+
+        if (url === "/api/upload-photo") {
+          res.setHeader("Access-Control-Allow-Origin", "*");
+          res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+          res.setHeader("Access-Control-Allow-Headers", "authorization, content-type");
+
+          if (req.method === "OPTIONS") {
+            res.statusCode = 204;
+            res.end();
+            return;
+          }
+
+          if (req.method !== "POST") {
+            res.statusCode = 405;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "method_not_allowed" }));
+            return;
+          }
+
+          const config = adminConfigFromEnv(env as NodeJS.ProcessEnv);
+          if ("error" in config) {
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "server_misconfigured", message: config.error }));
+            return;
+          }
+
+          const authHeader = req.headers.authorization?.trim();
+          if (!authHeader?.startsWith("Bearer ")) {
+            res.statusCode = 401;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "unauthorized" }));
+            return;
+          }
+
+          let body: UploadPhotoBody = {} as UploadPhotoBody;
+          try {
+            const raw = await readBody(req);
+            body = raw ? (JSON.parse(raw) as UploadPhotoBody) : body;
+          } catch {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "invalid_json" }));
+            return;
+          }
+
+          try {
+            const result = await uploadPhotoCore(authHeader, body, config);
+            res.statusCode = result.status;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify(result.body));
+          } catch (err) {
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json");
+            res.end(
+              JSON.stringify({
+                error: "server_error",
+                message: err instanceof Error ? err.message : "unknown",
+              }),
+            );
+          }
+          return;
         }
 
         if (url !== "/api/admin-user-action") {

@@ -14,6 +14,7 @@ import { useRole } from '@/hooks/useRole';
 import { useSupabaseReady } from '@/hooks/useSupabaseReady';
 import { assertSupabaseData } from '@/lib/supabaseQuery';
 import { uploadCadastroPhotoFile } from '@/lib/cadastroPhoto';
+import { primePhotoDisplayCache } from '@/lib/photoDisplayCache';
 
 const Developers = () => {
   const { ready: supabaseReady } = useSupabaseReady();
@@ -107,8 +108,6 @@ const Developers = () => {
     setUploadingId(devId);
     try {
       const { publicUrl, blobPreview } = await uploadCadastroPhotoFile('developer-photos', devId, file);
-      const { error } = await supabase.from('developers').update({ photo_url: publicUrl }).eq('id', devId);
-      if (error) throw error;
 
       queryClient.setQueryData(['developers'], (old: typeof developers | undefined) =>
         (old ?? []).map((row) => (row.id === devId ? { ...row, photo_url: publicUrl } : row)),
@@ -117,6 +116,7 @@ const Developers = () => {
       blobByIdRef.current[devId] = blobPreview;
       setPhotoPreviewById((prev) => ({ ...prev, [devId]: blobPreview }));
 
+      primePhotoDisplayCache(publicUrl);
       refreshRelatedPhotoQueries();
       toast.success('Foto atualizada!');
     } catch (e: unknown) {

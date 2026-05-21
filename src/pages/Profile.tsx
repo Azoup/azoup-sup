@@ -19,6 +19,7 @@ import { Loader2, KeyRound, User, Shield, ScrollText, Filter, Upload, Trash2, Us
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { personNameMatchesProfile, resolveUserPhoto } from '@/lib/resolveUserPhotoUrl';
 import { uploadProfilePhotoFile } from '@/lib/profilePhotoUpload';
+import { primePhotoDisplayCache } from '@/lib/photoDisplayCache';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
@@ -264,16 +265,15 @@ const Profile = () => {
         user?.email?.split('@')[0] ||
         'Utilizador';
 
-      const { error } = await supabase.from('profiles').upsert(
-        {
-          id: targetUserId,
-          display_name: displayName,
-          photo_url: publicUrl,
-        },
-        { onConflict: 'id' },
-      );
-      if (error) throw error;
+      if (!existing?.display_name) {
+        const { error } = await supabase.from('profiles').upsert(
+          { id: targetUserId, display_name: displayName, photo_url: publicUrl },
+          { onConflict: 'id' },
+        );
+        if (error) throw error;
+      }
 
+      primePhotoDisplayCache(publicUrl);
       blobByUserRef.current[targetUserId] = blobPreview;
       applyPhotoUrlToCaches(targetUserId, publicUrl, blobPreview);
       void syncLinkedCadastroPhoto(targetUserId, publicUrl);

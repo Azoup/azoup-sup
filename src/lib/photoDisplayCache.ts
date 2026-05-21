@@ -1,27 +1,22 @@
-import { profilePhotoSrc } from '@/lib/profilePhotoUrl';
-import { resolvePhotoDisplayUrl } from '@/lib/profilePhotoUpload';
+import { normalizeProfilePhotoUrl, profilePhotoSrc } from '@/lib/profilePhotoUrl';
 
 const cache = new Map<string, string>();
 
-/** URL estável para <img> (cache em memória por URL pública do banco). */
-export async function getPhotoDisplaySrc(
-  photoUrl: string | null | undefined,
-): Promise<string | undefined> {
-  const normalized = profilePhotoSrc(photoUrl);
+/** URL para exibir no avatar — buckets públicos usam link direto (sem async). */
+export function getPhotoDisplaySrc(photoUrl: string | null | undefined): string | undefined {
+  const normalized = normalizeProfilePhotoUrl(photoUrl);
   if (!normalized) return undefined;
 
   const cached = cache.get(normalized);
   if (cached) return cached;
 
-  const display = await resolvePhotoDisplayUrl(normalized);
-  const src = display ?? normalized;
-  cache.set(normalized, src);
-  return src;
+  cache.set(normalized, normalized);
+  return normalized;
 }
 
-export function primePhotoDisplayCache(photoUrl: string, displaySrc: string): void {
-  const key = profilePhotoSrc(photoUrl);
-  if (key) cache.set(key, displaySrc);
+export function primePhotoDisplayCache(photoUrl: string, displaySrc?: string): void {
+  const key = normalizeProfilePhotoUrl(photoUrl);
+  if (key) cache.set(key, displaySrc ?? key);
 }
 
 export function clearPhotoDisplayCache(photoUrl?: string | null): void {
@@ -29,17 +24,6 @@ export function clearPhotoDisplayCache(photoUrl?: string | null): void {
     cache.clear();
     return;
   }
-  const key = profilePhotoSrc(photoUrl);
+  const key = normalizeProfilePhotoUrl(photoUrl);
   if (key) cache.delete(key);
-}
-
-/** Testa se o navegador consegue carregar a imagem. */
-export function canLoadImageUrl(url: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve(true);
-    img.onerror = () => resolve(false);
-    img.referrerPolicy = 'no-referrer';
-    img.src = url;
-  });
 }
