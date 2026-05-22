@@ -24,6 +24,7 @@ import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { KanbanCardImage } from '@/components/KanbanCardImage';
 import { filesFromClipboardData } from '@/lib/clipboardImage';
 import { uploadKanbanImageForCard } from '@/lib/uploadKanbanImage';
+import { isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -131,6 +132,16 @@ const KanbanDev = () => {
 
   const sortedColumns = useMemo(() => [...columns].sort((a: any, b: any) => a.position - b.position), [columns]);
 
+  const completionColumnSlug = useMemo(
+    () => resolveCompletionColumnSlug(sortedColumns, 'dev'),
+    [sortedColumns],
+  );
+
+  const isDoneSlug = useCallback(
+    (slug: string) => isKanbanCompletionSlug(slug, completionColumnSlug),
+    [completionColumnSlug],
+  );
+
   const cardsByColumn = useMemo(() => {
     const map: Record<string, any[]> = {};
     sortedColumns.forEach((c: any) => { map[c.slug] = []; });
@@ -161,15 +172,13 @@ const KanbanDev = () => {
       // Apply text search (only on open/non-concluded cards)
       const q = searchQuery.trim().toLowerCase();
       if (q) {
-        const slug = (card.status || '').toLowerCase();
-        const isDone = slug.includes('conclu') || slug.includes('final') || slug.includes('done');
-        if (isDone) return;
+        if (isKanbanCompletionSlug(card.status, completionColumnSlug)) return;
         if (!(card.title || '').toLowerCase().includes(q)) return;
       }
       col.push(enriched);
     });
     return map;
-  }, [cards, cardLabels, analysts, developers, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, filterDevIds, searchQuery]);
+  }, [cards, cardLabels, analysts, developers, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, filterDevIds, searchQuery, completionColumnSlug]);
 
   const uploadAndSaveImages = async (cardId: string, files: File[]) => {
     let ok = 0;
@@ -432,16 +441,10 @@ const KanbanDev = () => {
     },
   });
 
-  // Helper: detecta se um slug de coluna representa "Concluídos"
-  const isDoneSlug = (slug: string) => {
-    const s = (slug || '').toLowerCase();
-    return s.includes('conclu') || s.includes('final') || s.includes('done');
-  };
-
   const getCardCompletedAt = useCallback((card: any): string | null => {
-    if (!card || !isDoneSlug(card.status)) return null;
+    if (!card || !isKanbanCompletionSlug(card.status, completionColumnSlug)) return null;
     return card.completed_at || null;
-  }, []);
+  }, [completionColumnSlug]);
 
   // Helper: garante existência da etiqueta "Concluído" e retorna seu id
   const ensureDoneLabel = useCallback(async (): Promise<string | null> => {
@@ -496,7 +499,7 @@ const KanbanDev = () => {
         old.filter((cl: any) => !(cl.card_id === cardId && cl.label_id === doneLabelId)),
       );
     }
-  }, [ensureDoneLabel, queryClient, labels, cardLabels]);
+  }, [ensureDoneLabel, queryClient, labels, cardLabels, isDoneSlug]);
 
   const onDragEnd = useCallback(async (result: DropResult) => {
     if (!result.destination || dragBusyRef.current) return;
@@ -596,7 +599,7 @@ const KanbanDev = () => {
           : `${actorName} moveu "${movedCard.title}" para "${colTitle}"`,
       });
     }
-  }, [queryClient, cards, sortedColumns, user, actorName, applyDoneLabelRule]);
+  }, [queryClient, cards, sortedColumns, user, actorName, applyDoneLabelRule, isDoneSlug]);
 
   const resetForm = () => {
     setTitle(''); setDescription(''); setAnalystId(''); setDeveloperId('');
@@ -840,7 +843,7 @@ const KanbanDev = () => {
                             >
                               <div className="flex items-start justify-between gap-2">
                                 <p className="font-medium text-sm flex-1 flex items-start gap-1 break-words" style={{ overflowWrap: 'anywhere' }}>
-                                  {card.status === 'finalizados' && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />}
+                                  {isDoneSlug(card.status) && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />}
                                   <span className="break-words">{card.title}</span>
                                 </p>
                                 <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>

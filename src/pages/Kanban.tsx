@@ -25,6 +25,7 @@ import { actorNameFromUser } from '@/lib/actorName';
 import { KanbanCardImage } from '@/components/KanbanCardImage';
 import { filesFromClipboardData } from '@/lib/clipboardImage';
 import { uploadKanbanImageForCard } from '@/lib/uploadKanbanImage';
+import { isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -131,6 +132,16 @@ const Kanban = () => {
     return [...columns].sort((a: any, b: any) => a.position - b.position);
   }, [columns]);
 
+  const completionColumnSlug = useMemo(
+    () => resolveCompletionColumnSlug(sortedColumns, 'support'),
+    [sortedColumns],
+  );
+
+  const isDoneSlug = useCallback(
+    (slug: string) => isKanbanCompletionSlug(slug, completionColumnSlug),
+    [completionColumnSlug],
+  );
+
   const cardsByColumn = useMemo(() => {
     const map: Record<string, any[]> = {};
     sortedColumns.forEach((c: any) => { map[c.slug] = []; });
@@ -158,15 +169,13 @@ const Kanban = () => {
       // Apply text search (only on open/non-concluded cards)
       const q = searchQuery.trim().toLowerCase();
       if (q) {
-        const slug = (card.status || '').toLowerCase();
-        const isDone = slug.includes('conclu') || slug.includes('final') || slug.includes('done');
-        if (isDone) return;
+        if (isKanbanCompletionSlug(card.status, completionColumnSlug)) return;
         if (!(card.title || '').toLowerCase().includes(q)) return;
       }
       col.push(enriched);
     });
     return map;
-  }, [cards, cardLabels, analysts, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, searchQuery]);
+  }, [cards, cardLabels, analysts, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, searchQuery, completionColumnSlug]);
 
   const uploadAndSaveImages = async (cardId: string, files: File[]) => {
     let ok = 0;
@@ -450,16 +459,10 @@ const Kanban = () => {
     },
   });
 
-  // Helper: detecta se um slug de coluna representa "Concluídos"
-  const isDoneSlug = (slug: string) => {
-    const s = (slug || '').toLowerCase();
-    return s.includes('conclu') || s.includes('final') || s.includes('done');
-  };
-
   const getCardCompletedAt = useCallback((card: any): string | null => {
-    if (!card || !isDoneSlug(card.status)) return null;
+    if (!card || !isKanbanCompletionSlug(card.status, completionColumnSlug)) return null;
     return card.completed_at || null;
-  }, []);
+  }, [completionColumnSlug]);
 
   // Helper: garante existência da etiqueta "Concluído" e retorna seu id
   const ensureDoneLabel = useCallback(async (): Promise<string | null> => {
@@ -515,7 +518,7 @@ const Kanban = () => {
         old.filter((cl: any) => !(cl.card_id === cardId && cl.label_id === doneLabelId)),
       );
     }
-  }, [ensureDoneLabel, queryClient, labels, cardLabels]);
+  }, [ensureDoneLabel, queryClient, labels, cardLabels, isDoneSlug]);
 
   // --- Optimistic drag and drop ---
   const onDragEnd = useCallback(async (result: DropResult) => {
@@ -608,7 +611,7 @@ const Kanban = () => {
         message: `${actorName} moveu o ticket "${movedCard.title}" para "${colTitle}"`,
       });
     }
-  }, [queryClient, cards, columns, user, applyDoneLabelRule]);
+  }, [queryClient, cards, columns, user, applyDoneLabelRule, isDoneSlug]);
 
   // Auto-open a card when navigated with ?card=<id> (e.g., from notifications)
   const [searchParams, setSearchParams] = useSearchParams();
