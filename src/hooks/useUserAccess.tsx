@@ -32,6 +32,8 @@ export function useUserAccess() {
 
 export function useAccessReady(): boolean {
   const { user } = useAuth();
-  const { data } = useUserAccess();
-  return Boolean(user?.id && data?.userId === user.id);
+  const { data, isPending } = useUserAccess();
+  const cached = readUserAccessCache(user?.id);
+  if (cached?.userId === user?.id) return true;
+  return Boolean(user?.id && data?.userId === user.id && !isPending);
 }

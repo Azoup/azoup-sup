@@ -15,10 +15,11 @@ import {
 import {
   dedupeCardLabelRows,
   labelsForCardFromRows,
-  removeDuplicateCardLabelsInDb,
   syncCardLabels,
   uniqueLabelIds,
 } from '@/lib/kanbanCardLabels';
+import { useChecklistProgressMap } from '@/hooks/useChecklistProgressMap';
+import { markBoardLocalWrite, consumeBoardRealtimeSkip } from '@/lib/boardRefreshGuard';
 import { logActivity } from '@/hooks/useActivityLog';
 import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { KanbanCardImage } from '@/components/KanbanCardImage';
@@ -106,24 +107,21 @@ const KanbanDev = () => {
   const cardLabels = dedupeCardLabelRows((board?.cardLabels ?? []) as { card_id: string; label_id: string }[]);
   const cardImages = (board?.cardImages ?? []) as any[];
   const isLoading = boardLoading && !board;
-
-  useEffect(() => {
-    if (!supabaseReady) return;
-    void removeDuplicateCardLabelsInDb('dev_kanban_card_labels').then(() => {
-      refreshDevKanbanBoard(queryClient);
-    });
-  }, [supabaseReady, queryClient]);
+  const checklistProgress = useChecklistProgressMap('dev', supabaseReady && !!board);
 
   useEffect(() => {
     const channel = supabase
       .channel('dev-kanban-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'dev_kanban_cards' }, () => {
+        if (consumeBoardRealtimeSkip()) return;
         refreshDevKanbanBoard(queryClient);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'dev_kanban_card_images' }, () => {
+        if (consumeBoardRealtimeSkip()) return;
         refreshDevKanbanBoard(queryClient);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'dev_kanban_columns' }, () => {
+        if (consumeBoardRealtimeSkip()) return;
         refreshDevKanbanBoard(queryClient);
       })
       .subscribe();
@@ -191,7 +189,7 @@ const KanbanDev = () => {
         toast.error('Erro ao fazer upload da imagem.');
       }
     }
-    if (ok > 0) refreshDevKanbanBoard(queryClient);
+    if (ok > 0) markBoardLocalWrite(ok);
     return ok;
   };
 
@@ -232,6 +230,7 @@ const KanbanDev = () => {
 
   const createCard = useMutation({
     mutationFn: async () => {
+      markBoardLocalWrite(3);
       const colCards = cardsByColumn[targetColumn] || [];
       const position = colCards.length;
       const { data, error } = await supabase.from('dev_kanban_cards').insert({
@@ -259,11 +258,25 @@ const KanbanDev = () => {
           message: `${actorName} criou o ticket "${title}"`,
         });
       }
+      return data;
     },
-    onSuccess: () => {
-      refreshDevKanbanBoard(queryClient);
-      refreshDevKanbanBoard(queryClient);
-      refreshDevKanbanBoard(queryClient);
+    onSuccess: (newCard: any) => {
+      if (newCard) {
+        markBoardLocalWrite(2);
+        patchDevKanbanBoardCards(queryClient, (list) => [...list, newCard]);
+        patchDevKanbanBoardCardLabels(queryClient, (rows) => {
+          const rest = rows.filter((r: any) => r.card_id !== newCard.id);
+          const next = selectedLabels.map((label_id) => {
+            const label = labels.find((l: any) => l.id === label_id);
+            return {
+              card_id: newCard.id,
+              label_id,
+              dev_kanban_labels: label ?? { id: label_id },
+            };
+          });
+          return [...rest, ...next];
+        });
+      }
       resetForm(); setCreateOpen(false);
       toast.success('Card criado!');
     },
@@ -272,6 +285,7 @@ const KanbanDev = () => {
 
   const updateCard = useMutation({
     mutationFn: async () => {
+      markBoardLocalWrite(3);
       if (!editingCard) return;
       const prevDevId = editingCard.developer_id || null;
       const newDevId = developerId || null;
@@ -313,11 +327,37 @@ const KanbanDev = () => {
       } catch (notifyErr) {
         console.warn('[kanban-dev] notificação:', notifyErr);
       }
+      return { cardId: editingCard.id };
     },
-    onSuccess: () => {
-      refreshDevKanbanBoard(queryClient);
-      refreshDevKanbanBoard(queryClient);
-      refreshDevKanbanBoard(queryClient);
+    onSuccess: (result?: { cardId: string }) => {
+      const cardId = result?.cardId ?? editingCard?.id;
+      if (!cardId) return;
+      markBoardLocalWrite(2);
+      patchDevKanbanBoardCards(queryClient, (list) =>
+        list.map((c: any) =>
+          c.id === cardId
+            ? {
+                ...c,
+                title,
+                description: description || null,
+                analyst_id: analystId || null,
+                developer_id: developerId || null,
+              }
+            : c,
+        ),
+      );
+      patchDevKanbanBoardCardLabels(queryClient, (rows) => {
+        const rest = rows.filter((r: any) => r.card_id !== cardId);
+        const next = selectedLabels.map((label_id) => {
+          const label = labels.find((l: any) => l.id === label_id);
+          return {
+            card_id: cardId,
+            label_id,
+            dev_kanban_labels: label ?? { id: label_id },
+          };
+        });
+        return [...rest, ...next];
+      });
       resetForm(); setEditOpen(false);
       toast.success('Card atualizado!');
     },
@@ -369,7 +409,6 @@ const KanbanDev = () => {
     },
     onSuccess: () => {
       refreshDevKanbanBoard(queryClient);
-      refreshDevKanbanBoard(queryClient);
       setEditingLabel(null);
       toast.success('Etiqueta atualizada!');
     },
@@ -382,7 +421,6 @@ const KanbanDev = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      refreshDevKanbanBoard(queryClient);
       refreshDevKanbanBoard(queryClient);
       setDeleteLabelId(null);
       toast.success('Etiqueta excluída!');
@@ -434,7 +472,6 @@ const KanbanDev = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      refreshDevKanbanBoard(queryClient);
       refreshDevKanbanBoard(queryClient);
       setDeleteColumnId(null);
       toast.success('Lista excluída!');
@@ -513,6 +550,7 @@ const KanbanDev = () => {
     const previousCards = queryClient.getQueryData<{ cards?: any[] }>(['dev-kanban-board'])?.cards;
 
     dragBusyRef.current = true;
+    markBoardLocalWrite(statusChanged ? 2 : 1);
 
     const completedAtOnMove =
       statusChanged && willBeDone
@@ -859,7 +897,7 @@ const KanbanDev = () => {
                                 {card.images?.length > 0 && (
                                   <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground"><Paperclip className="h-3 w-3" /> {card.images.length}</span>
                                 )}
-                                <ChecklistBadge cardId={card.id} cardType="dev" />
+                                <ChecklistBadge cardId={card.id} progressMap={checklistProgress} />
                               </div>
                               <div className="flex items-center justify-between gap-1 flex-wrap">
                                 {card.analyst && (

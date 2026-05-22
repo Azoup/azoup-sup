@@ -15,10 +15,11 @@ import {
 import {
   dedupeCardLabelRows,
   labelsForCardFromRows,
-  removeDuplicateCardLabelsInDb,
   syncCardLabels,
   uniqueLabelIds,
 } from '@/lib/kanbanCardLabels';
+import { useChecklistProgressMap } from '@/hooks/useChecklistProgressMap';
+import { markBoardLocalWrite, consumeBoardRealtimeSkip } from '@/lib/boardRefreshGuard';
 import { logActivity } from '@/hooks/useActivityLog';
 import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
 import { actorNameFromUser } from '@/lib/actorName';
@@ -104,24 +105,21 @@ const Kanban = () => {
   const cardLabels = dedupeCardLabelRows((board?.cardLabels ?? []) as { card_id: string; label_id: string }[]);
   const cardImages = (board?.cardImages ?? []) as any[];
   const isLoading = boardLoading && !board;
-
-  useEffect(() => {
-    if (!supabaseReady) return;
-    void removeDuplicateCardLabelsInDb('kanban_card_labels').then(() => {
-      invalidateKanbanBoard(queryClient);
-    });
-  }, [supabaseReady, queryClient]);
+  const checklistProgress = useChecklistProgressMap('kanban', supabaseReady && !!board);
 
   useEffect(() => {
     const channel = supabase
       .channel('kanban-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'kanban_cards' }, () => {
+        if (consumeBoardRealtimeSkip()) return;
         invalidateKanbanBoard(queryClient);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'kanban_card_images' }, () => {
+        if (consumeBoardRealtimeSkip()) return;
         invalidateKanbanBoard(queryClient);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'kanban_columns' }, () => {
+        if (consumeBoardRealtimeSkip()) return;
         invalidateKanbanBoard(queryClient);
       })
       .subscribe();
@@ -188,7 +186,7 @@ const Kanban = () => {
         toast.error('Erro ao fazer upload da imagem.');
       }
     }
-    if (ok > 0) invalidateKanbanBoard(queryClient);
+    if (ok > 0) markBoardLocalWrite(ok);
     return ok;
   };
 
@@ -242,6 +240,7 @@ const Kanban = () => {
 
   const createCard = useMutation({
     mutationFn: async () => {
+      markBoardLocalWrite(3);
       const colCards = cardsByColumn[targetColumn] || [];
       const position = colCards.length;
       const { data, error } = await supabase.from('kanban_cards').insert({
@@ -284,6 +283,7 @@ const Kanban = () => {
 
   const updateCard = useMutation({
     mutationFn: async () => {
+      markBoardLocalWrite(3);
       if (!editingCard) return;
       const prevAnalystId = editingCard.analyst_id || null;
       const newAnalystId = analystId || null;
@@ -385,7 +385,6 @@ const Kanban = () => {
     },
     onSuccess: () => {
       invalidateKanbanBoard(queryClient);
-      invalidateKanbanBoard(queryClient);
       setEditingLabel(null);
       toast.success('Etiqueta atualizada!');
     },
@@ -398,7 +397,6 @@ const Kanban = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      invalidateKanbanBoard(queryClient);
       invalidateKanbanBoard(queryClient);
       setDeleteLabelId(null);
       toast.success('Etiqueta excluída!');
@@ -452,7 +450,6 @@ const Kanban = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      invalidateKanbanBoard(queryClient);
       invalidateKanbanBoard(queryClient);
       setDeleteColumnId(null);
       toast.success('Lista excluída!');
@@ -533,6 +530,7 @@ const Kanban = () => {
     const previousCards = queryClient.getQueryData<{ cards?: any[] }>(['kanban-board'])?.cards;
 
     dragBusyRef.current = true;
+    markBoardLocalWrite(statusChanged ? 2 : 1);
 
     patchKanbanBoardCards(queryClient, (old) =>
       old.map((card: any) =>
@@ -894,7 +892,7 @@ const Kanban = () => {
                                       <Paperclip className="h-3 w-3" /> {card.images.length}
                                     </span>
                                   )}
-                                  <ChecklistBadge cardId={card.id} cardType="kanban" />
+                                  <ChecklistBadge cardId={card.id} progressMap={checklistProgress} />
                                 </div>
                                 <div className="flex items-center justify-between">
                                   {card.analyst && (

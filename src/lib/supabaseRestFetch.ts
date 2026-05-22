@@ -4,10 +4,21 @@ import { getConfiguredSupabaseProjectRef } from '@/lib/supabaseProject';
  * Proxy REST/Storage do Supabase via /api/rest-proxy.
  * Contorna falha ES256 no PostgREST (usuário cai em anon e RLS retorna vazio).
  */
+let cachedAccessToken: string | null = null;
+let cachedAccessTokenRef: string | null = null;
+
+export function clearSupabaseRestFetchTokenCache(): void {
+  cachedAccessToken = null;
+  cachedAccessTokenRef = null;
+}
+
 function getStoredAccessToken(): string | null {
   if (typeof window === 'undefined') return null;
   const ref = getConfiguredSupabaseProjectRef();
   if (!ref) return null;
+  if (cachedAccessToken && cachedAccessTokenRef === ref) {
+    return cachedAccessToken;
+  }
 
   for (let i = 0; i < window.localStorage.length; i++) {
     const key = window.localStorage.key(i);
@@ -20,7 +31,11 @@ function getStoredAccessToken(): string | null {
         currentSession?: { access_token?: string };
       };
       const token = data.access_token ?? data.currentSession?.access_token;
-      if (token) return token;
+      if (token) {
+        cachedAccessToken = token;
+        cachedAccessTokenRef = ref;
+        return token;
+      }
     } catch {
       /* ignore */
     }

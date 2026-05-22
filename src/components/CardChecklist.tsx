@@ -30,6 +30,11 @@ const NUMBERED_REGEX = /^\s*(\d+)[\.\)\-]\s+(.+)$/;
 export function CardChecklist({ cardId, cardType, description }: Props) {
   const qc = useQueryClient();
   const queryKey = ["card-checklist", cardType, cardId];
+  const progressMapKey = ["checklist-progress-map", cardType] as const;
+
+  const refreshProgressMap = () => {
+    void qc.invalidateQueries({ queryKey: progressMapKey });
+  };
   const [newItem, setNewItem] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
@@ -61,7 +66,10 @@ export function CardChecklist({ cardId, cardType, description }: Props) {
       const { error } = await (supabase as any).from("kanban_card_checklist").insert(rows);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey });
+      refreshProgressMap();
+    },
   });
 
   const toggleDone = useMutation({
@@ -81,7 +89,7 @@ export function CardChecklist({ cardId, cardType, description }: Props) {
       return { prev };
     },
     onError: (_e, _v, ctx) => ctx?.prev && qc.setQueryData(queryKey, ctx.prev),
-    onSettled: () => qc.invalidateQueries({ queryKey }),
+    onSettled: refreshProgressMap,
   });
 
   const updateText = useMutation({
@@ -94,7 +102,7 @@ export function CardChecklist({ cardId, cardType, description }: Props) {
     },
     onSuccess: () => {
       setEditingId(null);
-      qc.invalidateQueries({ queryKey });
+      void qc.invalidateQueries({ queryKey });
     },
   });
 
@@ -103,7 +111,10 @@ export function CardChecklist({ cardId, cardType, description }: Props) {
       const { error } = await (supabase as any).from("kanban_card_checklist").delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey });
+      refreshProgressMap();
+    },
   });
 
   // Auto-detect numbered list from description (only suggests if checklist is empty)

@@ -24,11 +24,12 @@ import NotFound from "./pages/NotFound";
 import DigisacDashboard from "./pages/DigisacDashboard";
 import { getFirstAllowedPath } from "@/lib/allowedRoutes";
 import { buildAuthPath } from "@/lib/authPaths";
+import { Loader2 } from "lucide-react";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 2 * 60 * 1000,
+      staleTime: 5 * 60 * 1000,
       gcTime: 15 * 60 * 1000,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
@@ -43,7 +44,11 @@ function RequireAuth({ children, screen }: { children: React.ReactNode; screen?:
   const { canView, isLoading: permsLoading } = usePermissions();
 
   if (authLoading || permsLoading) {
-    return null;
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
   }
 
   if (!user) {
@@ -63,7 +68,11 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   const { canView, isLoading: permsLoading } = usePermissions();
 
   if (loading || isLoading || permsLoading) {
-    return null;
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
   }
 
   if (!user) {
@@ -79,7 +88,11 @@ function AuthRoute() {
   const { canView, isLoading: permsLoading } = usePermissions();
 
   if (loading || permsLoading) {
-    return null;
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
   }
 
   if (user) {

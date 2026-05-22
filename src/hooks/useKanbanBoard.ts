@@ -3,7 +3,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { fetchKanbanBoard } from '@/lib/fetchKanbanBoard';
 import { readKanbanBoardCache, writeKanbanBoardCache } from '@/lib/kanbanBoardCache';
 
-const KANBAN_STALE_MS = 2 * 60 * 1000;
+const KANBAN_STALE_MS = 5 * 60 * 1000;
 
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -29,7 +29,7 @@ export function useKanbanBoard(enabled: boolean) {
 
 export function invalidateKanbanBoard(
   queryClient: ReturnType<typeof useQueryClient>,
-  delayMs = 400,
+  delayMs = 1200,
 ) {
   if (refreshTimer) clearTimeout(refreshTimer);
   refreshTimer = setTimeout(() => {

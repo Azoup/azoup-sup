@@ -4,6 +4,7 @@ import { adminConfigFromEnv } from "./api/lib/supabaseConfig";
 import { fetchUserAccessCore } from "./api/lib/userAccess";
 import { fetchAppBootstrapCore } from "./api/lib/appBootstrap";
 import { fetchKanbanBoardCore } from "./api/lib/kanbanBoard";
+import { fetchDevKanbanBoardCore } from "./api/lib/devKanbanBoard";
 import { proxyAuthenticatedSupabaseRequest, type RestProxyBody } from "./api/lib/restProxy";
 import { uploadPhotoCore, type UploadPhotoBody } from "./api/lib/uploadPhotoCore";
 import { uploadKanbanImageCore, type UploadKanbanImageBody } from "./api/lib/uploadKanbanImageCore";
@@ -159,6 +160,10 @@ export function adminApiDevPlugin(env: Record<string, string>): Plugin {
 
         if (url === "/api/kanban-board") {
           if (await handleGetApi(fetchKanbanBoardCore)) return;
+        }
+
+        if (url === "/api/dev-kanban-board") {
+          if (await handleGetApi(fetchDevKanbanBoardCore)) return;
         }
 
         if (url === "/api/upload-kanban-image") {
