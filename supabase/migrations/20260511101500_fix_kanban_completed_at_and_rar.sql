@@ -5,6 +5,9 @@ ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP WITH TIME ZONE;
 ALTER TABLE public.dev_kanban_cards
 ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP WITH TIME ZONE;
 
+ALTER TABLE public.dev_kanban_cards
+ADD COLUMN IF NOT EXISTS dev_notes TEXT;
+
 -- Ensure .rar MIME types are accepted in attachment buckets.
 UPDATE storage.buckets
 SET allowed_mime_types = ARRAY[

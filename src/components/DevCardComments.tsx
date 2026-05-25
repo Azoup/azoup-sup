@@ -13,6 +13,7 @@ import { Trash2, Send, Loader2 } from 'lucide-react';
 import { QueryLoadState } from '@/components/QueryLoadState';
 import { runTimedQuery } from '@/lib/supabaseTimedQuery';
 import { toast } from 'sonner';
+import { DEV_NOTES_SYSTEM_EMAIL } from '@/lib/devKanbanDevNotes';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -34,6 +35,7 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
           .from('dev_kanban_card_comments')
           .select('*')
           .eq('card_id', cardId)
+          .neq('user_email', DEV_NOTES_SYSTEM_EMAIL)
           .order('created_at', { ascending: false });
         if (error) throw error;
 

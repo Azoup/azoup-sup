@@ -25,6 +25,7 @@ import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { KanbanCardImage } from '@/components/KanbanCardImage';
 import { filesFromClipboardData } from '@/lib/clipboardImage';
 import { uploadKanbanImageForCard } from '@/lib/uploadKanbanImage';
+import { loadDevKanbanDevNotes, saveDevKanbanDevNotes } from '@/lib/devKanbanDevNotes';
 import { isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
@@ -80,6 +81,8 @@ const KanbanDev = () => {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [editingCard, setEditingCard] = useState<any>(null);
   const [viewingCard, setViewingCard] = useState<any>(null);
+  const [viewingDevNotes, setViewingDevNotes] = useState('');
+  const initialDevNotesRef = useRef('');
   const [newLabelName, setNewLabelName] = useState('');
   const [newLabelColor, setNewLabelColor] = useState('#3b82f6');
   const [editingLabel, setEditingLabel] = useState<any>(null);
@@ -237,7 +240,6 @@ const KanbanDev = () => {
       const { data, error } = await supabase.from('dev_kanban_cards').insert({
         title,
         description: description || null,
-        dev_notes: developerId ? (devNotes.trim() || null) : null,
         status: targetColumn,
         position,
         analyst_id: analystId || null,
@@ -246,6 +248,15 @@ const KanbanDev = () => {
         created_by: user!.id,
       }).select().single();
       if (error) throw error;
+      if (developerId) {
+        await saveDevKanbanDevNotes(
+          data.id,
+          devNotes.trim() || null,
+          user!.id,
+          user!.email || '',
+        );
+        data.dev_notes = devNotes.trim() || null;
+      }
       await syncCardLabels('dev_kanban_card_labels', data.id, selectedLabels);
       if (pendingImages.length > 0) {
         const uploaded = await uploadAndSaveImages(data.id, pendingImages);
@@ -298,7 +309,7 @@ const KanbanDev = () => {
       const newDevId = developerId || null;
       const titleChanged = editingCard.title !== title;
       const descChanged = (editingCard.description || '') !== (description || '');
-      const devNotesChanged = (editingCard.dev_notes || '') !== (devNotes.trim() || '');
+      const devNotesChanged = initialDevNotesRef.current !== (devNotes.trim() || '');
       const analystChanged = (editingCard.analyst_id || null) !== (analystId || null);
       const devChanged = prevDevId !== newDevId;
 
@@ -306,12 +317,17 @@ const KanbanDev = () => {
         .update({
           title,
           description: description || null,
-          dev_notes: newDevId ? (devNotes.trim() || null) : null,
           analyst_id: analystId || null,
           developer_id: newDevId,
         })
         .eq('id', editingCard.id);
       if (error) throw error;
+      await saveDevKanbanDevNotes(
+        editingCard.id,
+        newDevId ? (devNotes.trim() || null) : null,
+        user!.id,
+        user!.email || '',
+      );
       await syncCardLabels('dev_kanban_card_labels', editingCard.id, selectedLabels);
       if (pendingImages.length > 0) {
         await uploadAndSaveImages(editingCard.id, pendingImages);
@@ -670,16 +686,28 @@ const KanbanDev = () => {
     setEditingCard(card);
     setTitle(card.title);
     setDescription(card.description || '');
-    setDevNotes(card.dev_notes || '');
+    setDevNotes('');
+    initialDevNotesRef.current = '';
     setAnalystId(card.analyst_id || '');
     setDeveloperId(card.developer_id || '');
     setSelectedLabels(uniqueLabelIds((card.labels || []).map((l: any) => l?.id).filter(Boolean)));
     setPendingImages([]);
     setPendingFiles([]);
     setEditOpen(true);
+    void loadDevKanbanDevNotes(card.id, card.dev_notes).then((notes) => {
+      setDevNotes(notes);
+      initialDevNotesRef.current = notes;
+    }).catch(() => {
+      toast.error('Não foi possível carregar as observações DEV.');
+    });
   };
 
-  const openView = (card: any) => { setViewingCard(card); setViewOpen(true); };
+  const openView = (card: any) => {
+    setViewingCard(card);
+    setViewingDevNotes('');
+    setViewOpen(true);
+    void loadDevKanbanDevNotes(card.id, card.dev_notes).then(setViewingDevNotes).catch(() => {});
+  };
   const openCreate = (colSlug: string) => { resetForm(); setTargetColumn(colSlug); setCreateOpen(true); };
 
   const toggleLabel = useCallback((labelId: string) => {
@@ -980,13 +1008,13 @@ const KanbanDev = () => {
                   <p className="text-sm whitespace-pre-wrap">{viewingCard.description}</p>
                 </div>
               )}
-              {viewingCard.dev_notes && (
+              {viewingDevNotes && (
                 <div>
                   <p className="text-xs font-semibold text-muted-foreground mb-1">
                     Observações / correções (DEV)
                   </p>
                   <p className="text-sm whitespace-pre-wrap rounded-md border bg-muted/30 p-3">
-                    {viewingCard.dev_notes}
+                    {viewingDevNotes}
                   </p>
                 </div>
               )}
