@@ -72,6 +72,7 @@ const KanbanDev = () => {
   const [targetColumn, setTargetColumn] = useState('backlog');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [devNotes, setDevNotes] = useState('');
   const [analystId, setAnalystId] = useState('');
   const [developerId, setDeveloperId] = useState('');
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
@@ -234,9 +235,15 @@ const KanbanDev = () => {
       const colCards = cardsByColumn[targetColumn] || [];
       const position = colCards.length;
       const { data, error } = await supabase.from('dev_kanban_cards').insert({
-        title, description: description || null, status: targetColumn,
-        position, analyst_id: analystId || null, developer_id: developerId || null,
-        image_url: null, created_by: user!.id,
+        title,
+        description: description || null,
+        dev_notes: developerId ? (devNotes.trim() || null) : null,
+        status: targetColumn,
+        position,
+        analyst_id: analystId || null,
+        developer_id: developerId || null,
+        image_url: null,
+        created_by: user!.id,
       }).select().single();
       if (error) throw error;
       await syncCardLabels('dev_kanban_card_labels', data.id, selectedLabels);
@@ -291,11 +298,18 @@ const KanbanDev = () => {
       const newDevId = developerId || null;
       const titleChanged = editingCard.title !== title;
       const descChanged = (editingCard.description || '') !== (description || '');
+      const devNotesChanged = (editingCard.dev_notes || '') !== (devNotes.trim() || '');
       const analystChanged = (editingCard.analyst_id || null) !== (analystId || null);
       const devChanged = prevDevId !== newDevId;
 
       const { error } = await supabase.from('dev_kanban_cards')
-        .update({ title, description: description || null, analyst_id: analystId || null, developer_id: newDevId })
+        .update({
+          title,
+          description: description || null,
+          dev_notes: newDevId ? (devNotes.trim() || null) : null,
+          analyst_id: analystId || null,
+          developer_id: newDevId,
+        })
         .eq('id', editingCard.id);
       if (error) throw error;
       await syncCardLabels('dev_kanban_card_labels', editingCard.id, selectedLabels);
@@ -316,7 +330,7 @@ const KanbanDev = () => {
             actionType: 'assignee', actorId: user?.id, actorName,
             message: `${actorName} alterou o responsável do ticket "${title}"`,
           });
-        } else if (titleChanged || descChanged || analystChanged) {
+        } else if (titleChanged || descChanged || devNotesChanged || analystChanged) {
           await notifyDevAndAnalyst({
             cardId: editingCard.id, cardTitle: title,
             developerId: newDevId, analystId: analystId || null,
@@ -340,6 +354,7 @@ const KanbanDev = () => {
                 ...c,
                 title,
                 description: description || null,
+                dev_notes: developerId ? (devNotes.trim() || null) : null,
                 analyst_id: analystId || null,
                 developer_id: developerId || null,
               }
@@ -640,14 +655,22 @@ const KanbanDev = () => {
   }, [queryClient, cards, sortedColumns, user, actorName, applyDoneLabelRule, isDoneSlug]);
 
   const resetForm = () => {
-    setTitle(''); setDescription(''); setAnalystId(''); setDeveloperId('');
-    setSelectedLabels([]); setPendingImages([]); setPendingFiles([]); setEditingCard(null);
+    setTitle('');
+    setDescription('');
+    setDevNotes('');
+    setAnalystId('');
+    setDeveloperId('');
+    setSelectedLabels([]);
+    setPendingImages([]);
+    setPendingFiles([]);
+    setEditingCard(null);
   };
 
   const openEdit = (card: any) => {
     setEditingCard(card);
     setTitle(card.title);
     setDescription(card.description || '');
+    setDevNotes(card.dev_notes || '');
     setAnalystId(card.analyst_id || '');
     setDeveloperId(card.developer_id || '');
     setSelectedLabels(uniqueLabelIds((card.labels || []).map((l: any) => l?.id).filter(Boolean)));
@@ -953,8 +976,18 @@ const KanbanDev = () => {
             <div className="space-y-4">
               {viewingCard.description && (
                 <div>
-                  <p className="text-xs font-semibold text-muted-foreground mb-1">Observações</p>
+                  <p className="text-xs font-semibold text-muted-foreground mb-1">Observações do ticket</p>
                   <p className="text-sm whitespace-pre-wrap">{viewingCard.description}</p>
+                </div>
+              )}
+              {viewingCard.dev_notes && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-1">
+                    Observações / correções (DEV)
+                  </p>
+                  <p className="text-sm whitespace-pre-wrap rounded-md border bg-muted/30 p-3">
+                    {viewingCard.dev_notes}
+                  </p>
                 </div>
               )}
               {viewingCardImages.length > 0 && (
@@ -1034,6 +1067,7 @@ const KanbanDev = () => {
           <DevCardFormContent
             title={title} setTitle={setTitle}
             description={description} setDescription={setDescription}
+            devNotes={devNotes} setDevNotes={setDevNotes}
             analystId={analystId} setAnalystId={setAnalystId}
             developerId={developerId} setDeveloperId={setDeveloperId}
             analysts={analysts} developers={developers} labels={labels}
@@ -1061,6 +1095,7 @@ const KanbanDev = () => {
           <DevCardFormContent
             title={title} setTitle={setTitle}
             description={description} setDescription={setDescription}
+            devNotes={devNotes} setDevNotes={setDevNotes}
             analystId={analystId} setAnalystId={setAnalystId}
             developerId={developerId} setDeveloperId={setDeveloperId}
             analysts={analysts} developers={developers} labels={labels}
@@ -1185,6 +1220,7 @@ const KanbanDev = () => {
 /* Card Form for DEV Kanban */
 function DevCardFormContent({
   title, setTitle, description, setDescription,
+  devNotes, setDevNotes,
   analystId, setAnalystId, developerId, setDeveloperId,
   analysts, developers, labels,
   selectedLabels, toggleLabel,
@@ -1195,6 +1231,7 @@ function DevCardFormContent({
 }: {
   title: string; setTitle: (v: string) => void;
   description: string; setDescription: (v: string) => void;
+  devNotes: string; setDevNotes: (v: string) => void;
   analystId: string; setAnalystId: (v: string) => void;
   developerId: string; setDeveloperId: (v: string) => void;
   analysts: any[]; developers: any[]; labels: any[];
@@ -1255,14 +1292,17 @@ function DevCardFormContent({
         autoComplete="off"
         className="focus-visible:ring-offset-0"
       />
-      <Textarea
-        placeholder="Observações (use CTRL+V para colar imagens)"
-        value={description}
-        onChange={e => setDescription(e.target.value)}
-        onPaste={handlePaste}
-        rows={8}
-        className="min-h-[120px] max-h-[min(40vh,320px)] resize-y overflow-y-auto focus-visible:ring-offset-0"
-      />
+      <div className="space-y-1">
+        <p className="text-xs font-medium text-muted-foreground">Observações do ticket</p>
+        <Textarea
+          placeholder="Contexto do suporte / analista (use CTRL+V para colar imagens)"
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          onPaste={handlePaste}
+          rows={5}
+          className="min-h-[100px] max-h-[min(30vh,240px)] resize-y overflow-y-auto focus-visible:ring-offset-0"
+        />
+      </div>
       <Select value={analystId} onValueChange={setAnalystId}>
         <SelectTrigger><SelectValue placeholder="Analista responsável" /></SelectTrigger>
         <SelectContent>
@@ -1275,6 +1315,22 @@ function DevCardFormContent({
           {developers.map((d: any) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
         </SelectContent>
       </Select>
+      {developerId ? (
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-muted-foreground">Observações / correções (DEV)</p>
+          <Textarea
+            placeholder="Descreva alterações técnicas, correções aplicadas, detalhes da implementação..."
+            value={devNotes}
+            onChange={e => setDevNotes(e.target.value)}
+            rows={6}
+            className="min-h-[120px] max-h-[min(35vh,280px)] resize-y overflow-y-auto focus-visible:ring-offset-0"
+          />
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground rounded-md border border-dashed p-2">
+          Selecione um desenvolvedor responsável para registrar observações e correções técnicas.
+        </p>
+      )}
 
       {labels.length > 0 && (
         <div className="space-y-1">
