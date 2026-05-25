@@ -36,8 +36,11 @@ const DEFAULT_USER_PERMISSIONS: Record<string, boolean> = {
 
 export function usePermissions() {
   const { user } = useAuth();
+  const accessReady = useAccessReady();
+  const { data } = useUserAccess();
 
-  if (!user?.id) {
+  const userId = user?.id;
+  if (!userId) {
     return {
       permissions: {},
       isLoading: false,
@@ -46,8 +49,6 @@ export function usePermissions() {
     };
   }
 
-  const accessReady = useAccessReady();
-  const { data } = useUserAccess();
   const isAdmin = accessReady && data?.role === 'admin';
   const permissions = accessReady ? (data?.permissions ?? null) : null;
   const isLoading = !accessReady;
