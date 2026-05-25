@@ -6,12 +6,12 @@ import { useRole } from '@/hooks/useRole';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
-import { resolveUserPhoto } from '@/lib/resolveUserPhotoUrl';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Trash2, Send, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { notifySupportResponsible } from '@/hooks/useDevNotifications';
 import { actorNameFromUser } from '@/lib/actorName';
+import { fetchCommentAuthorProfiles } from '@/lib/commentAuthorProfiles';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -39,28 +39,7 @@ async function fetchCardComments(cardId: string): Promise<CommentRow[]> {
   if (error) throw error;
 
   const rows = data ?? [];
-  const userIds = [...new Set(rows.map((c) => c.user_id))];
-  let profileMap: Record<string, { name: string; photo_url: string }> = {};
-
-  if (userIds.length > 0) {
-    const [{ data: profiles }, { data: analysts }, { data: developers }] = await Promise.all([
-      supabase.from('profiles').select('id, display_name, photo_url').in('id', userIds),
-      supabase.from('analysts').select('name, photo_url'),
-      supabase.from('developers').select('name, photo_url'),
-    ]);
-    (profiles ?? []).forEach((p) => {
-      const resolved = resolveUserPhoto({
-        profilePhoto: p.photo_url,
-        displayName: p.display_name,
-        analysts: analysts ?? [],
-        developers: developers ?? [],
-      });
-      profileMap[p.id] = {
-        name: p.display_name || '',
-        photo_url: resolved.photo_url,
-      };
-    });
-  }
+  const profileMap = await fetchCommentAuthorProfiles(rows.map((c) => c.user_id));
 
   return rows.map((c) => ({
     ...c,
@@ -100,14 +79,18 @@ export function CardComments({ cardId }: CardCommentsProps) {
 
   const addComment = useMutation({
     mutationFn: async (content: string) => {
-      const { error } = await supabase.from('kanban_card_comments').insert({
-        card_id: cardId,
-        user_id: user!.id,
-        user_email: user!.email || '',
-        content,
-      });
+      const { data, error } = await supabase
+        .from('kanban_card_comments')
+        .insert({
+          card_id: cardId,
+          user_id: user!.id,
+          user_email: user!.email || '',
+          content,
+        })
+        .select()
+        .single();
       if (error) throw error;
-      return content;
+      return data;
     },
     onMutate: async (content: string) => {
       await queryClient.cancelQueries({ queryKey: ['card-comments', cardId] });
@@ -136,8 +119,18 @@ export function CardComments({ cardId }: CardCommentsProps) {
       if (ctx?.content) setText(ctx.content);
       toast.error('Erro ao adicionar comentário');
     },
-    onSuccess: (_content) => {
-      void queryClient.invalidateQueries({ queryKey: ['card-comments', cardId] });
+    onSuccess: (inserted) => {
+      if (inserted) {
+        queryClient.setQueryData<CommentRow[]>(['card-comments', cardId], (old = []) => {
+          const withoutOptimistic = old.filter((c) => !c.id.startsWith('optimistic-'));
+          const row: CommentRow = {
+            ...inserted,
+            display_name: actorNameFromUser(user),
+            photo_url: (user?.user_metadata as { avatar_url?: string })?.avatar_url || '',
+          };
+          return [row, ...withoutOptimistic];
+        });
+      }
       void (async () => {
         try {
           const { data: card } = await supabase
@@ -167,9 +160,12 @@ export function CardComments({ cardId }: CardCommentsProps) {
     mutationFn: async (id: string) => {
       const { error } = await supabase.from('kanban_card_comments').delete().eq('id', id);
       if (error) throw error;
+      return id;
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['card-comments', cardId] });
+    onSuccess: (id) => {
+      queryClient.setQueryData<CommentRow[]>(['card-comments', cardId], (old = []) =>
+        old.filter((c) => c.id !== id),
+      );
       toast.success('Comentário excluído');
     },
     onError: () => toast.error('Erro ao excluir comentário'),

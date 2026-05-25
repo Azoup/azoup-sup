@@ -132,7 +132,7 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
         .maybeSingle();
       if (card && (card.developer_id || card.analyst_id)) {
         const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Alguém';
-        await notifyDevAndAnalyst({
+        void notifyDevAndAnalyst({
           cardId, cardTitle: card.title,
           developerId: card.developer_id, analystId: card.analyst_id,
           actionType: 'attachment', actorId: user?.id, actorName,

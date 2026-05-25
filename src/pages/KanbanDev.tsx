@@ -10,8 +10,10 @@ import { isSupabaseLockError, withSupabaseRetry } from '@/lib/supabaseRetry';
 import {
   patchDevKanbanBoardCards,
   patchDevKanbanBoardCardLabels,
+  patchDevKanbanBoardCardImages,
   patchDevKanbanBoardColumns,
 } from '@/lib/devKanbanBoardPatch';
+import { uploadKanbanImagesParallel } from '@/lib/uploadKanbanCardAssets';
 import {
   dedupeCardLabelRows,
   labelsForCardFromRows,
@@ -24,7 +26,6 @@ import { logActivity } from '@/hooks/useActivityLog';
 import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { KanbanCardImage } from '@/components/KanbanCardImage';
 import { filesFromClipboardData } from '@/lib/clipboardImage';
-import { uploadKanbanImageForCard } from '@/lib/uploadKanbanImage';
 import { loadDevKanbanDevNotes, saveDevKanbanDevNotes } from '@/lib/devKanbanDevNotes';
 import { isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -182,20 +183,62 @@ const KanbanDev = () => {
     return map;
   }, [cards, cardLabels, analysts, developers, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, filterDevIds, searchQuery, completionColumnSlug]);
 
-  const uploadAndSaveImages = async (cardId: string, files: File[]) => {
-    let ok = 0;
-    for (let i = 0; i < files.length; i++) {
-      try {
-        await uploadKanbanImageForCard('dev_kanban_card_images', cardId, files[i], i);
-        ok++;
-      } catch (e) {
-        console.error('[kanban-dev] upload imagem', e);
-        toast.error('Erro ao fazer upload da imagem.');
+  const runPostSaveBackground = useCallback(
+    async (opts: {
+      cardId: string;
+      cardTitle: string;
+      imageFiles: File[];
+      attachmentFiles: File[];
+      developerId: string | null;
+      analystId: string | null;
+      notify?: { actionType: 'assignee' | 'edit'; message: string };
+      logLabel?: string;
+    }) => {
+      const { cardId, cardTitle, imageFiles, attachmentFiles, developerId, analystId, notify, logLabel } = opts;
+
+      if (imageFiles.length > 0) {
+        const { uploaded, failed } = await uploadKanbanImagesParallel(
+          'dev_kanban_card_images',
+          cardId,
+          imageFiles,
+        );
+        if (failed > 0) {
+          toast.error(
+            failed === imageFiles.length
+              ? 'Algumas imagens não foram enviadas.'
+              : `${failed} imagem(ns) não enviada(s).`,
+          );
+        } else if (uploaded > 0) {
+          toast.success(`${uploaded} imagem(ns) anexada(s).`);
+        }
       }
-    }
-    if (ok > 0) markBoardLocalWrite(ok);
-    return ok;
-  };
+
+      if (attachmentFiles.length > 0) {
+        await uploadAndSaveFiles(cardId, attachmentFiles);
+        queryClient.invalidateQueries({ queryKey: ['dev-card-files', cardId] });
+      }
+
+      if (logLabel) void logActivity(logLabel, cardTitle);
+
+      if (notify && (developerId || analystId)) {
+        try {
+          await notifyDevAndAnalyst({
+            cardId,
+            cardTitle,
+            developerId,
+            analystId,
+            actionType: notify.actionType,
+            actorId: user?.id,
+            actorName,
+            message: notify.message,
+          });
+        } catch (notifyErr) {
+          console.warn('[kanban-dev] notificação:', notifyErr);
+        }
+      }
+    },
+    [actorName, queryClient, user?.id],
+  );
 
   const uploadAndSaveFiles = async (cardId: string, files: File[]) => {
     for (const file of files) {
@@ -234,7 +277,9 @@ const KanbanDev = () => {
 
   const createCard = useMutation({
     mutationFn: async () => {
-      markBoardLocalWrite(3);
+      markBoardLocalWrite(10);
+      const imageFiles = [...pendingImages];
+      const attachmentFiles = [...pendingFiles];
       const colCards = cardsByColumn[targetColumn] || [];
       const position = colCards.length;
       const { data, error } = await supabase.from('dev_kanban_cards').insert({
@@ -258,29 +303,24 @@ const KanbanDev = () => {
         data.dev_notes = devNotes.trim() || null;
       }
       await syncCardLabels('dev_kanban_card_labels', data.id, selectedLabels);
-      if (pendingImages.length > 0) {
-        const uploaded = await uploadAndSaveImages(data.id, pendingImages);
-        if (uploaded < pendingImages.length) {
-          throw new Error('Algumas imagens não foram enviadas. Tente colar novamente.');
-        }
-      }
-      if (pendingFiles.length > 0) {
-        await uploadAndSaveFiles(data.id, pendingFiles);
-      }
-      await logActivity('Criou card no Kanban DEV', title);
-      if (developerId || analystId) {
-        await notifyDevAndAnalyst({
-          cardId: data.id, cardTitle: title,
-          developerId: developerId || null, analystId: analystId || null,
-          actionType: 'assignee', actorId: user?.id, actorName,
-          message: `${actorName} criou o ticket "${title}"`,
-        });
-      }
-      return data;
+      return {
+        card: data,
+        imageFiles,
+        attachmentFiles,
+        notify:
+          developerId || analystId
+            ? {
+                actionType: 'assignee' as const,
+                message: `${actorName} criou o ticket "${title}"`,
+              }
+            : undefined,
+        logLabel: 'Criou card no Kanban DEV',
+      };
     },
-    onSuccess: (newCard: any) => {
+    onSuccess: (result) => {
+      const newCard = result?.card;
       if (newCard) {
-        markBoardLocalWrite(2);
+        markBoardLocalWrite(4);
         patchDevKanbanBoardCards(queryClient, (list) => [...list, newCard]);
         patchDevKanbanBoardCardLabels(queryClient, (rows) => {
           const rest = rows.filter((r: any) => r.card_id !== newCard.id);
@@ -295,16 +335,31 @@ const KanbanDev = () => {
           return [...rest, ...next];
         });
       }
-      resetForm(); setCreateOpen(false);
+      resetForm();
+      setCreateOpen(false);
       toast.success('Card criado!');
+      if (result?.card) {
+        void runPostSaveBackground({
+          cardId: result.card.id,
+          cardTitle: title,
+          imageFiles: result.imageFiles,
+          attachmentFiles: result.attachmentFiles,
+          developerId: developerId || null,
+          analystId: analystId || null,
+          notify: result.notify,
+          logLabel: result.logLabel,
+        });
+      }
     },
     onError: (e: Error) => toast.error(e?.message ? `Erro ao criar card: ${e.message}` : 'Erro ao criar card.'),
   });
 
   const updateCard = useMutation({
     mutationFn: async () => {
-      markBoardLocalWrite(3);
+      markBoardLocalWrite(10);
       if (!editingCard) return;
+      const imageFiles = [...pendingImages];
+      const attachmentFiles = [...pendingFiles];
       const prevDevId = editingCard.developer_id || null;
       const newDevId = developerId || null;
       const titleChanged = editingCard.title !== title;
@@ -329,40 +384,32 @@ const KanbanDev = () => {
         user!.email || '',
       );
       await syncCardLabels('dev_kanban_card_labels', editingCard.id, selectedLabels);
-      if (pendingImages.length > 0) {
-        await uploadAndSaveImages(editingCard.id, pendingImages);
-      }
-      if (pendingFiles.length > 0) {
-        await uploadAndSaveFiles(editingCard.id, pendingFiles);
-        queryClient.invalidateQueries({ queryKey: ['dev-card-files', editingCard.id] });
-      }
-      void logActivity('Editou card no Kanban DEV', title);
 
-      try {
-        if (devChanged) {
-          await notifyDevAndAnalyst({
-            cardId: editingCard.id, cardTitle: title,
-            developerId: newDevId, analystId: analystId || null,
-            actionType: 'assignee', actorId: user?.id, actorName,
-            message: `${actorName} alterou o responsável do ticket "${title}"`,
-          });
-        } else if (titleChanged || descChanged || devNotesChanged || analystChanged) {
-          await notifyDevAndAnalyst({
-            cardId: editingCard.id, cardTitle: title,
-            developerId: newDevId, analystId: analystId || null,
-            actionType: 'edit', actorId: user?.id, actorName,
-            message: `${actorName} editou o ticket "${title}"`,
-          });
-        }
-      } catch (notifyErr) {
-        console.warn('[kanban-dev] notificação:', notifyErr);
+      let notify: { actionType: 'assignee' | 'edit'; message: string } | undefined;
+      if (devChanged) {
+        notify = {
+          actionType: 'assignee',
+          message: `${actorName} alterou o responsável do ticket "${title}"`,
+        };
+      } else if (titleChanged || descChanged || devNotesChanged || analystChanged) {
+        notify = {
+          actionType: 'edit',
+          message: `${actorName} editou o ticket "${title}"`,
+        };
       }
-      return { cardId: editingCard.id };
+
+      return {
+        cardId: editingCard.id,
+        imageFiles,
+        attachmentFiles,
+        notify,
+        logLabel: 'Editou card no Kanban DEV',
+      };
     },
-    onSuccess: (result?: { cardId: string }) => {
+    onSuccess: (result) => {
       const cardId = result?.cardId ?? editingCard?.id;
       if (!cardId) return;
-      markBoardLocalWrite(2);
+      markBoardLocalWrite(4);
       patchDevKanbanBoardCards(queryClient, (list) =>
         list.map((c: any) =>
           c.id === cardId
@@ -389,8 +436,21 @@ const KanbanDev = () => {
         });
         return [...rest, ...next];
       });
-      resetForm(); setEditOpen(false);
+      resetForm();
+      setEditOpen(false);
       toast.success('Card atualizado!');
+      if (result) {
+        void runPostSaveBackground({
+          cardId,
+          cardTitle: title,
+          imageFiles: result.imageFiles,
+          attachmentFiles: result.attachmentFiles,
+          developerId: developerId || null,
+          analystId: analystId || null,
+          notify: result.notify,
+          logLabel: result.logLabel,
+        });
+      }
     },
     onError: (e: Error) => toast.error(e?.message ? `Erro ao atualizar card: ${e.message}` : 'Erro ao atualizar card.'),
   });
@@ -411,9 +471,13 @@ const KanbanDev = () => {
     mutationFn: async (imageId: string) => {
       const { error } = await supabase.from('dev_kanban_card_images').delete().eq('id', imageId);
       if (error) throw error;
+      return imageId;
     },
-    onSuccess: () => {
-      refreshDevKanbanBoard(queryClient);
+    onSuccess: (imageId) => {
+      markBoardLocalWrite(2);
+      patchDevKanbanBoardCardImages(queryClient, (rows) =>
+        rows.filter((img: any) => img.id !== imageId),
+      );
       toast.success('Imagem removida!');
     },
   });

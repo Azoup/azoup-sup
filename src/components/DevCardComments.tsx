@@ -7,18 +7,48 @@ import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
-import { resolveUserPhoto } from '@/lib/resolveUserPhotoUrl';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Trash2, Send, Loader2 } from 'lucide-react';
 import { QueryLoadState } from '@/components/QueryLoadState';
-import { runTimedQuery } from '@/lib/supabaseTimedQuery';
 import { toast } from 'sonner';
 import { DEV_NOTES_SYSTEM_EMAIL } from '@/lib/devKanbanDevNotes';
+import { fetchCommentAuthorProfiles } from '@/lib/commentAuthorProfiles';
+import { actorNameFromUser } from '@/lib/actorName';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 interface DevCardCommentsProps {
   cardId: string;
+}
+
+type DevCommentRow = {
+  id: string;
+  card_id: string;
+  user_id: string;
+  user_email: string;
+  content: string;
+  created_at: string;
+  display_name: string;
+  photo_url: string;
+};
+
+async function fetchDevCardComments(cardId: string): Promise<DevCommentRow[]> {
+  const { data, error } = await supabase
+    .from('dev_kanban_card_comments')
+    .select('*')
+    .eq('card_id', cardId)
+    .neq('user_email', DEV_NOTES_SYSTEM_EMAIL)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+
+  const rows = data ?? [];
+  const profileMap = await fetchCommentAuthorProfiles(rows.map((c) => c.user_id));
+
+  return rows.map((c) => ({
+    ...c,
+    display_name: profileMap[c.user_id]?.name || c.user_email?.split('@')[0] || '?',
+    photo_url: profileMap[c.user_id]?.photo_url || '',
+  }));
 }
 
 export function DevCardComments({ cardId }: DevCardCommentsProps) {
@@ -29,43 +59,9 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
 
   const { data: comments = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['dev-card-comments', cardId],
-    queryFn: async () =>
-      runTimedQuery(async () => {
-        const { data, error } = await supabase
-          .from('dev_kanban_card_comments')
-          .select('*')
-          .eq('card_id', cardId)
-          .neq('user_email', DEV_NOTES_SYSTEM_EMAIL)
-          .order('created_at', { ascending: false });
-        if (error) throw error;
-
-        const userIds = [...new Set((data || []).map((c: any) => c.user_id))];
-        let profileMap: Record<string, { name: string; photo_url: string }> = {};
-        if (userIds.length > 0) {
-          const [{ data: profiles }, { data: analysts }, { data: developers }] = await Promise.all([
-            supabase.from('profiles').select('id, display_name, photo_url').in('id', userIds),
-            supabase.from('analysts').select('name, photo_url'),
-            supabase.from('developers').select('name, photo_url'),
-          ]);
-          (profiles || []).forEach((p: any) => {
-            const name = p.display_name || '';
-            const resolved = resolveUserPhoto({
-              profilePhoto: p.photo_url,
-              displayName: name,
-              analysts: analysts ?? [],
-              developers: developers ?? [],
-            });
-            profileMap[p.id] = { name, photo_url: resolved.photo_url };
-          });
-        }
-
-        return (data || []).map((c: any) => ({
-          ...c,
-          display_name: profileMap[c.user_id]?.name || c.user_email?.split('@')[0] || '?',
-          photo_url: profileMap[c.user_id]?.photo_url || '',
-        }));
-      }),
+    queryFn: () => fetchDevCardComments(cardId),
     enabled: !!cardId,
+    staleTime: 30_000,
     retry: 1,
   });
 
@@ -78,61 +74,114 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
         table: 'dev_kanban_card_comments',
         filter: `card_id=eq.${cardId}`,
       }, () => {
-        queryClient.invalidateQueries({ queryKey: ['dev-card-comments', cardId] });
+        void queryClient.invalidateQueries({ queryKey: ['dev-card-comments', cardId] });
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [cardId, queryClient]);
 
   const addComment = useMutation({
-    mutationFn: async () => {
-      const content = text.trim();
-      const { error } = await supabase.from('dev_kanban_card_comments').insert({
+    mutationFn: async (content: string) => {
+      const { data, error } = await supabase
+        .from('dev_kanban_card_comments')
+        .insert({
+          card_id: cardId,
+          user_id: user!.id,
+          user_email: user!.email || '',
+          content,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onMutate: async (content: string) => {
+      await queryClient.cancelQueries({ queryKey: ['dev-card-comments', cardId] });
+      const previous = queryClient.getQueryData<DevCommentRow[]>(['dev-card-comments', cardId]);
+      const optimistic: DevCommentRow = {
+        id: `optimistic-${Date.now()}`,
         card_id: cardId,
         user_id: user!.id,
         user_email: user!.email || '',
         content,
-      });
-      if (error) throw error;
-
-      // Notify ticket developer AND analyst about the new comment
-      const { data: card } = await supabase
-        .from('dev_kanban_cards')
-        .select('title, developer_id, analyst_id')
-        .eq('id', cardId)
-        .maybeSingle();
-      if (card && (card.developer_id || card.analyst_id)) {
-        const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Alguém';
-        await notifyDevAndAnalyst({
-          cardId, cardTitle: card.title,
-          developerId: card.developer_id, analystId: card.analyst_id,
-          actionType: 'comment', actorId: user?.id, actorName,
-          message: `${actorName} comentou no ticket "${card.title}"`,
+        created_at: new Date().toISOString(),
+        display_name: actorNameFromUser(user),
+        photo_url: (user?.user_metadata as { avatar_url?: string })?.avatar_url || '',
+      };
+      queryClient.setQueryData<DevCommentRow[]>(['dev-card-comments', cardId], (old = []) => [
+        optimistic,
+        ...old,
+      ]);
+      setText('');
+      return { previous, content };
+    },
+    onError: (_err, _content, ctx) => {
+      if (ctx?.previous) {
+        queryClient.setQueryData(['dev-card-comments', cardId], ctx.previous);
+      }
+      if (ctx?.content) setText(ctx.content);
+      toast.error('Erro ao adicionar comentário');
+    },
+    onSuccess: (inserted, _content, ctx) => {
+      if (inserted) {
+        queryClient.setQueryData<DevCommentRow[]>(['dev-card-comments', cardId], (old = []) => {
+          const withoutOptimistic = old.filter((c) => !c.id.startsWith('optimistic-'));
+          const profileMap = queryClient.getQueryData<Record<string, { name: string; photo_url: string }>>(
+            ['dev-card-comment-author', user?.id],
+          );
+          const row: DevCommentRow = {
+            ...inserted,
+            display_name: profileMap?.[inserted.user_id]?.name || actorNameFromUser(user),
+            photo_url: profileMap?.[inserted.user_id]?.photo_url || '',
+          };
+          return [row, ...withoutOptimistic];
         });
       }
+      void (async () => {
+        try {
+          const { data: card } = await supabase
+            .from('dev_kanban_cards')
+            .select('title, developer_id, analyst_id')
+            .eq('id', cardId)
+            .maybeSingle();
+          if (!card || (!card.developer_id && !card.analyst_id)) return;
+          const actorName = actorNameFromUser(user);
+          await notifyDevAndAnalyst({
+            cardId,
+            cardTitle: card.title,
+            developerId: card.developer_id,
+            analystId: card.analyst_id,
+            actionType: 'comment',
+            actorId: user?.id,
+            actorName,
+            message: `${actorName} comentou no ticket "${card.title}"`,
+          });
+        } catch (e) {
+          console.warn('[DevCardComments] notify failed:', e);
+        }
+      })();
     },
-    onSuccess: () => {
-      setText('');
-      queryClient.invalidateQueries({ queryKey: ['dev-card-comments', cardId] });
-    },
-    onError: () => toast.error('Erro ao adicionar comentário'),
   });
 
   const deleteComment = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from('dev_kanban_card_comments').delete().eq('id', id);
       if (error) throw error;
+      return id;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dev-card-comments', cardId] });
+    onSuccess: (id) => {
+      queryClient.setQueryData<DevCommentRow[]>(['dev-card-comments', cardId], (old = []) =>
+        old.filter((c) => c.id !== id),
+      );
       toast.success('Comentário excluído');
     },
     onError: () => toast.error('Erro ao excluir comentário'),
   });
 
   const handleSubmit = () => {
-    if (!text.trim()) return;
-    addComment.mutate();
+    const content = text.trim();
+    if (!content || addComment.isPending) return;
+    addComment.mutate(content);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -169,7 +218,7 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
       ) : (
         <ScrollArea className="max-h-60">
           <div className="space-y-3 pr-2">
-            {comments.map((c: any) => (
+            {comments.map((c) => (
               <div key={c.id} className="flex gap-2 group">
                 <ProfileAvatar
                   className="h-7 w-7 shrink-0 mt-0.5"
@@ -182,8 +231,9 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
                     <span className="text-[10px] text-muted-foreground">
                       {format(new Date(c.created_at), "dd/MM/yy HH:mm", { locale: ptBR })}
                     </span>
-                    {(c.user_id === user?.id || isAdmin) && (
+                    {(c.user_id === user?.id || isAdmin) && !c.id.startsWith('optimistic-') && (
                       <button
+                        type="button"
                         onClick={() => deleteComment.mutate(c.id)}
                         className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity ml-auto"
                       >

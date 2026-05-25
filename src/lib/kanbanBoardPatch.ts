@@ -45,3 +45,13 @@ export function patchKanbanBoardColumns(
     columns: updater(b.columns),
   }));
 }
+
+export function patchKanbanBoardCardImages(
+  queryClient: QueryClient,
+  updater: (cardImages: unknown[]) => unknown[],
+): void {
+  updateKanbanBoardCache(queryClient, (b) => ({
+    ...b,
+    cardImages: updater(b.cardImages),
+  }));
+}
