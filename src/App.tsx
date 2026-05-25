@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -39,11 +40,18 @@ const queryClient = new QueryClient({
   },
 });
 
+function useHadAuthenticatedUser(user: ReturnType<typeof useAuth>['user']) {
+  const hadUserRef = useRef(false);
+  if (user) hadUserRef.current = true;
+  return hadUserRef.current;
+}
+
 function RequireAuth({ children, screen }: { children: React.ReactNode; screen?: string }) {
   const { user, loading: authLoading } = useAuth();
   const { canView, isLoading: permsLoading } = usePermissions();
+  const hadUser = useHadAuthenticatedUser(user);
 
-  if (authLoading || permsLoading) {
+  if (authLoading || permsLoading || (!user && hadUser)) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -66,8 +74,9 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const { isAdmin, isLoading } = useRole();
   const { canView, isLoading: permsLoading } = usePermissions();
+  const hadUser = useHadAuthenticatedUser(user);
 
-  if (loading || isLoading || permsLoading) {
+  if (loading || isLoading || permsLoading || (!user && hadUser)) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -86,8 +95,9 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 function AuthRoute() {
   const { user, loading } = useAuth();
   const { canView, isLoading: permsLoading } = usePermissions();
+  const hadUser = useHadAuthenticatedUser(user);
 
-  if (loading || permsLoading) {
+  if (loading || permsLoading || (hadUser && !user)) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />

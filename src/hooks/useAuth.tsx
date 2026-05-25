@@ -32,19 +32,27 @@ function pendingLogout(search: string): boolean {
   return hasLogoutFlag() || isLogoutQuery(search);
 }
 
-async function resolveValidSession(): Promise<Session | null> {
+function isValidSessionForProject(session: Session | null): boolean {
+  if (!session?.access_token) return false;
   const urlRef = getConfiguredSupabaseProjectRef();
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) return null;
-
   const tokenRef = projectRefFromAccessToken(session.access_token);
   if (urlRef && tokenRef && urlRef !== tokenRef) {
     console.warn(formatSupabaseProjectMismatchMessage(urlRef, tokenRef));
-    await supabase.auth.signOut({ scope: 'local' });
-    clearSupabaseAuthStorageExcept(urlRef);
+    return false;
+  }
+  return true;
+}
+
+async function resolveValidSession(): Promise<Session | null> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!isValidSessionForProject(session)) {
+    if (session?.access_token) {
+      const urlRef = getConfiguredSupabaseProjectRef();
+      await supabase.auth.signOut({ scope: 'local' });
+      if (urlRef) clearSupabaseAuthStorageExcept(urlRef);
+    }
     return null;
   }
-
   return session;
 }
 
@@ -62,11 +70,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     clearLocalSession();
     setSession(null);
     setLoading(false);
+  }, []);
+
+  /** Responde só a ?logout=1 / flag — sem reinicializar auth em cada rota. */
+  useEffect(() => {
+    if (!pendingLogout(location.search)) return;
+    applySignedOut();
     if (isLogoutQuery(location.search)) {
       window.history.replaceState({}, '', buildAuthPath());
     }
-  }, [location.search]);
+  }, [location.search, applySignedOut]);
 
+  /** Inicialização e listener de sessão — uma vez no mount. */
   useEffect(() => {
     let mounted = true;
 
@@ -74,11 +89,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (mounted) setLoading(false);
     };
 
-    if (signedOutRef.current || pendingLogout(location.search)) {
-      applySignedOut();
+    if (signedOutRef.current) {
+      finishLoading();
       const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
         if (!mounted || !signedOutRef.current) return;
-        if (event === 'SIGNED_IN' && nextSession?.access_token) {
+        if (event === 'SIGNED_IN' && nextSession?.access_token && isValidSessionForProject(nextSession)) {
           signedOutRef.current = false;
           setSession(nextSession);
         }
@@ -89,23 +104,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       };
     }
 
-    const onAuthPage = isAuthPathname(location.pathname);
-    if (onAuthPage) {
-      finishLoading();
-    }
-
-    const timeoutMs = onAuthPage ? 800 : AUTH_INIT_TIMEOUT_MS;
-    withTimeout(resolveValidSession(), timeoutMs, 'Inicialização de sessão expirou')
+    withTimeout(resolveValidSession(), AUTH_INIT_TIMEOUT_MS)
       .then((validSession) => {
         if (!mounted || signedOutRef.current) return;
-        setSession(validSession);
+        if (validSession) setSession(validSession);
       })
       .catch((err) => {
         if (!mounted || signedOutRef.current) return;
         if (!(err instanceof TimeoutError)) {
           clearLocalSession();
+          setSession(null);
         }
-        setSession(null);
       })
       .finally(() => {
         finishLoading();
@@ -118,8 +127,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         signedOutRef.current = false;
       }
 
+      if (event === 'SIGNED_OUT') {
+        if (!signedOutRef.current) {
+          setSession(null);
+        }
+        finishLoading();
+        return;
+      }
+
       if (!nextSession?.access_token) {
-        setSession(null);
         finishLoading();
         return;
       }
@@ -129,9 +145,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
-      const urlRef = getConfiguredSupabaseProjectRef();
-      const tokenRef = projectRefFromAccessToken(nextSession.access_token);
-      if (urlRef && tokenRef && urlRef !== tokenRef) {
+      if (!isValidSessionForProject(nextSession)) {
         clearLocalSession();
         setSession(null);
         finishLoading();
@@ -140,20 +154,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       setSession(nextSession);
       finishLoading();
-
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        void supabase.auth.setSession({
-          access_token: nextSession.access_token,
-          refresh_token: nextSession.refresh_token ?? '',
-        });
-      }
     });
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [location.pathname, location.search, applySignedOut]);
+  }, [applySignedOut]);
 
   const signOut = () => {
     signedOutRef.current = true;

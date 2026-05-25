@@ -27,9 +27,12 @@ export function AuthSessionSync() {
     lastTokenRef.current = session.access_token;
     bootstrapRef.current = false;
 
-    void supabase.auth.setSession({
-      access_token: session.access_token,
-      refresh_token: session.refresh_token ?? '',
+    void supabase.auth.getSession().then(({ data: { session: clientSession } }) => {
+      if (clientSession?.access_token === session.access_token) return;
+      void supabase.auth.setSession({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token ?? '',
+      });
     });
 
     const userId = user?.id;
