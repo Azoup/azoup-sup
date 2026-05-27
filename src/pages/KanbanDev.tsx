@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import { useSupabaseReady } from '@/hooks/useSupabaseReady';
 import { useDevKanbanBoard, refreshDevKanbanBoard, flushDevKanbanBoardRefresh } from '@/hooks/useDevKanbanBoard';
+import { clearDevKanbanBoardCache } from '@/lib/devKanbanBoardCache';
 import { isSupabaseLockError, withSupabaseRetry } from '@/lib/supabaseRetry';
 import {
   patchDevKanbanBoardCards,
@@ -27,7 +28,7 @@ import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { KanbanCardImage } from '@/components/KanbanCardImage';
 import { filesFromClipboardData } from '@/lib/clipboardImage';
 import { loadDevKanbanDevNotes, saveDevKanbanDevNotes } from '@/lib/devKanbanDevNotes';
-import { devTicketLabel, devTicketMatchesSearch, formatDevTicketNumber } from '@/lib/devKanbanTicketNumber';
+import { devTicketLabel, devTicketMatchesSearch } from '@/lib/devKanbanTicketNumber';
 import { isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
@@ -42,6 +43,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { toast } from 'sonner';
 import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar, Search } from 'lucide-react';
 import { DevCardComments } from '@/components/DevCardComments';
+import { DevTicketNumberBadge } from '@/components/DevTicketNumberBadge';
 import { DevCardFiles } from '@/components/DevCardFiles';
 import { CardChecklist } from '@/components/CardChecklist';
 import { ChecklistBadge } from '@/components/ChecklistBadge';
@@ -103,6 +105,7 @@ const KanbanDev = () => {
   const [editColumnColor, setEditColumnColor] = useState('');
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
   const dragBusyRef = useRef(false);
+  const ticketNumberRefetchDone = useRef(false);
 
   const { data: board, isLoading: boardLoading } = useDevKanbanBoard(supabaseReady);
   const columns = (board?.columns ?? []) as any[];
@@ -114,6 +117,18 @@ const KanbanDev = () => {
   const cardImages = (board?.cardImages ?? []) as any[];
   const isLoading = boardLoading && !board;
   const checklistProgress = useChecklistProgressMap('dev', supabaseReady && !!board);
+
+  useEffect(() => {
+    if (!board?.cards?.length || boardLoading || ticketNumberRefetchDone.current) return;
+    const hasTicketNumber = (board.cards as { ticket_number?: number | null }[]).some(
+      (c) => c.ticket_number != null,
+    );
+    if (!hasTicketNumber) {
+      ticketNumberRefetchDone.current = true;
+      clearDevKanbanBoardCache();
+      flushDevKanbanBoardRefresh(queryClient);
+    }
+  }, [board?.cards, boardLoading, queryClient]);
 
   useEffect(() => {
     const channel = supabase
@@ -997,20 +1012,18 @@ const KanbanDev = () => {
                               className={`bg-card rounded-md border p-3 shadow-sm space-y-2 cursor-pointer hover:shadow-md transition-shadow break-words ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''}`}
                               style={{ wordWrap: 'break-word', overflowWrap: 'anywhere', ...provided.draggableProps.style }}
                             >
-                              <div className="flex items-start justify-between gap-2">
-                                <p className="font-medium text-sm flex-1 flex items-start gap-1 break-words" style={{ overflowWrap: 'anywhere' }}>
-                                  {isDoneSlug(card.status) && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />}
-                                  {card.ticket_number != null && (
-                                    <span className="shrink-0 font-mono text-[11px] text-muted-foreground mt-0.5">
-                                      {formatDevTicketNumber(card.ticket_number)}
-                                    </span>
-                                  )}
-                                  <span className="break-words">{card.title}</span>
-                                </p>
+                              <div className="flex items-center justify-between gap-2">
+                                <DevTicketNumberBadge ticketNumber={card.ticket_number} />
                                 <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                                   <button onClick={() => openEdit(card)} className="text-muted-foreground hover:text-primary"><Pencil className="h-3 w-3" /></button>
                                   <button onClick={() => deleteCard.mutate(card.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
                                 </div>
+                              </div>
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="font-medium text-sm flex-1 flex items-start gap-1 break-words" style={{ overflowWrap: 'anywhere' }}>
+                                  {isDoneSlug(card.status) && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />}
+                                  <span className="break-words">{card.title}</span>
+                                </p>
                               </div>
                               {card.description && <p className="text-xs text-muted-foreground line-clamp-2 break-words" style={{ overflowWrap: 'anywhere' }}>{card.description}</p>}
                               <div className="flex items-center gap-2 flex-wrap">
@@ -1069,18 +1082,12 @@ const KanbanDev = () => {
       <Dialog open={viewOpen} onOpenChange={setViewOpen}>
         <DialogContent className="max-w-lg sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex flex-wrap items-center gap-2">
-              {viewingCard?.ticket_number != null && (
-                <span className="font-mono text-sm font-normal text-muted-foreground">
-                  {formatDevTicketNumber(viewingCard.ticket_number)}
-                </span>
-              )}
-              <span>{viewingCard?.title}</span>
-            </DialogTitle>
+            <DialogTitle>{viewingCard?.title}</DialogTitle>
             <DialogDescription>{sortedColumns.find((c: any) => c.slug === viewingCard?.status)?.title}</DialogDescription>
           </DialogHeader>
           {viewingCard && (
             <div className="space-y-4">
+              <DevTicketNumberBadge ticketNumber={viewingCard.ticket_number} variant="field" />
               {viewingCard.description && (
                 <div>
                   <p className="text-xs font-semibold text-muted-foreground mb-1">Observações do ticket</p>
@@ -1195,16 +1202,16 @@ const KanbanDev = () => {
         >
           <div className="shrink-0 px-6 pt-6 pb-2 pr-14">
             <DialogHeader>
-              <DialogTitle className="flex flex-wrap items-center gap-2">
-                Editar Card
-                {editingCard?.ticket_number != null && (
-                  <span className="font-mono text-sm font-normal text-muted-foreground">
-                    {formatDevTicketNumber(editingCard.ticket_number)}
-                  </span>
-                )}
-              </DialogTitle>
+              <DialogTitle>Editar Card</DialogTitle>
               <DialogDescription>Altere os dados do card.</DialogDescription>
             </DialogHeader>
+            {editingCard?.ticket_number != null && (
+              <DevTicketNumberBadge
+                ticketNumber={editingCard.ticket_number}
+                variant="field"
+                className="mx-6 mb-2"
+              />
+            )}
           </div>
           <DevCardFormContent
             title={title} setTitle={setTitle}
