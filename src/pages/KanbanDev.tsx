@@ -188,13 +188,13 @@ const KanbanDev = () => {
       if (filterDevIds.length > 0) {
         if (!card.developer_id || !filterDevIds.includes(card.developer_id)) return;
       }
-      // Apply text search (only on open/non-concluded cards)
-      const q = searchQuery.trim().toLowerCase();
+      const q = searchQuery.trim();
       if (q) {
-        if (isKanbanCompletionSlug(card.status, completionColumnSlug)) return;
-        const titleMatch = (card.title || '').toLowerCase().includes(q);
+        const qLower = q.toLowerCase();
         const ticketMatch = devTicketMatchesSearch(card.ticket_number, q);
+        const titleMatch = (card.title || '').toLowerCase().includes(qLower);
         if (!titleMatch && !ticketMatch) return;
+        if (!ticketMatch && isKanbanCompletionSlug(card.status, completionColumnSlug)) return;
       }
       col.push(enriched);
     });
@@ -885,7 +885,7 @@ const KanbanDev = () => {
           <Input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Buscar por ticket (#), cliente ou título..."
+            placeholder="Buscar por nº do ticket, cliente ou título..."
             className="h-8 pl-8 pr-8 text-xs"
           />
           {searchQuery && (

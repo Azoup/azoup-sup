@@ -6,9 +6,9 @@ import {
 } from './devKanbanTicketNumber';
 
 describe('formatDevTicketNumber', () => {
-  it('formats with zero padding', () => {
-    expect(formatDevTicketNumber(1)).toBe('#0001');
-    expect(formatDevTicketNumber(42)).toBe('#0042');
+  it('formats with zero padding without hash', () => {
+    expect(formatDevTicketNumber(1)).toBe('0001');
+    expect(formatDevTicketNumber(42)).toBe('0042');
   });
 
   it('returns empty for invalid values', () => {
@@ -19,7 +19,7 @@ describe('formatDevTicketNumber', () => {
 
 describe('devTicketLabel', () => {
   it('includes formatted number and title', () => {
-    expect(devTicketLabel(7, 'Bug login')).toBe('#0007 "Bug login"');
+    expect(devTicketLabel(7, 'Bug login')).toBe('0007 "Bug login"');
   });
 });
 
