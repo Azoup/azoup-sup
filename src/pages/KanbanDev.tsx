@@ -27,6 +27,7 @@ import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { KanbanCardImage } from '@/components/KanbanCardImage';
 import { filesFromClipboardData } from '@/lib/clipboardImage';
 import { loadDevKanbanDevNotes, saveDevKanbanDevNotes } from '@/lib/devKanbanDevNotes';
+import { devTicketLabel, devTicketMatchesSearch, formatDevTicketNumber } from '@/lib/devKanbanTicketNumber';
 import { isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
@@ -176,7 +177,9 @@ const KanbanDev = () => {
       const q = searchQuery.trim().toLowerCase();
       if (q) {
         if (isKanbanCompletionSlug(card.status, completionColumnSlug)) return;
-        if (!(card.title || '').toLowerCase().includes(q)) return;
+        const titleMatch = (card.title || '').toLowerCase().includes(q);
+        const ticketMatch = devTicketMatchesSearch(card.ticket_number, q);
+        if (!titleMatch && !ticketMatch) return;
       }
       col.push(enriched);
     });
@@ -311,7 +314,7 @@ const KanbanDev = () => {
           developerId || analystId
             ? {
                 actionType: 'assignee' as const,
-                message: `${actorName} criou o ticket "${title}"`,
+                message: `${actorName} criou o ticket ${devTicketLabel(data.ticket_number, title)}`,
               }
             : undefined,
         logLabel: 'Criou card no Kanban DEV',
@@ -389,12 +392,12 @@ const KanbanDev = () => {
       if (devChanged) {
         notify = {
           actionType: 'assignee',
-          message: `${actorName} alterou o responsável do ticket "${title}"`,
+          message: `${actorName} alterou o responsável do ticket ${devTicketLabel(editingCard.ticket_number, title)}`,
         };
       } else if (titleChanged || descChanged || devNotesChanged || analystChanged) {
         notify = {
           actionType: 'edit',
-          message: `${actorName} editou o ticket "${title}"`,
+          message: `${actorName} editou o ticket ${devTicketLabel(editingCard.ticket_number, title)}`,
         };
       }
 
@@ -728,8 +731,8 @@ const KanbanDev = () => {
         actorId: user?.id,
         actorName,
         message: isMoveToDone
-          ? `${actorName} concluiu o ticket "${movedCard.title}" em ${new Date().toLocaleString('pt-BR')}`
-          : `${actorName} moveu "${movedCard.title}" para "${colTitle}"`,
+          ? `${actorName} concluiu o ticket ${devTicketLabel(movedCard.ticket_number, movedCard.title)} em ${new Date().toLocaleString('pt-BR')}`
+          : `${actorName} moveu ${devTicketLabel(movedCard.ticket_number, movedCard.title)} para "${colTitle}"`,
       });
     }
   }, [queryClient, cards, sortedColumns, user, actorName, applyDoneLabelRule, isDoneSlug]);
@@ -867,7 +870,7 @@ const KanbanDev = () => {
           <Input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Buscar por cliente ou título..."
+            placeholder="Buscar por ticket (#), cliente ou título..."
             className="h-8 pl-8 pr-8 text-xs"
           />
           {searchQuery && (
@@ -997,6 +1000,11 @@ const KanbanDev = () => {
                               <div className="flex items-start justify-between gap-2">
                                 <p className="font-medium text-sm flex-1 flex items-start gap-1 break-words" style={{ overflowWrap: 'anywhere' }}>
                                   {isDoneSlug(card.status) && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />}
+                                  {card.ticket_number != null && (
+                                    <span className="shrink-0 font-mono text-[11px] text-muted-foreground mt-0.5">
+                                      {formatDevTicketNumber(card.ticket_number)}
+                                    </span>
+                                  )}
                                   <span className="break-words">{card.title}</span>
                                 </p>
                                 <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
@@ -1061,7 +1069,14 @@ const KanbanDev = () => {
       <Dialog open={viewOpen} onOpenChange={setViewOpen}>
         <DialogContent className="max-w-lg sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{viewingCard?.title}</DialogTitle>
+            <DialogTitle className="flex flex-wrap items-center gap-2">
+              {viewingCard?.ticket_number != null && (
+                <span className="font-mono text-sm font-normal text-muted-foreground">
+                  {formatDevTicketNumber(viewingCard.ticket_number)}
+                </span>
+              )}
+              <span>{viewingCard?.title}</span>
+            </DialogTitle>
             <DialogDescription>{sortedColumns.find((c: any) => c.slug === viewingCard?.status)?.title}</DialogDescription>
           </DialogHeader>
           {viewingCard && (
@@ -1180,7 +1195,14 @@ const KanbanDev = () => {
         >
           <div className="shrink-0 px-6 pt-6 pb-2 pr-14">
             <DialogHeader>
-              <DialogTitle>Editar Card</DialogTitle>
+              <DialogTitle className="flex flex-wrap items-center gap-2">
+                Editar Card
+                {editingCard?.ticket_number != null && (
+                  <span className="font-mono text-sm font-normal text-muted-foreground">
+                    {formatDevTicketNumber(editingCard.ticket_number)}
+                  </span>
+                )}
+              </DialogTitle>
               <DialogDescription>Altere os dados do card.</DialogDescription>
             </DialogHeader>
           </div>

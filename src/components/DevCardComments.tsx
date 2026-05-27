@@ -12,6 +12,7 @@ import { Trash2, Send, Loader2 } from 'lucide-react';
 import { QueryLoadState } from '@/components/QueryLoadState';
 import { toast } from 'sonner';
 import { DEV_NOTES_SYSTEM_EMAIL } from '@/lib/devKanbanDevNotes';
+import { devTicketLabel } from '@/lib/devKanbanTicketNumber';
 import { fetchCommentAuthorProfiles } from '@/lib/commentAuthorProfiles';
 import { actorNameFromUser } from '@/lib/actorName';
 import { format } from 'date-fns';
@@ -141,7 +142,7 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
         try {
           const { data: card } = await supabase
             .from('dev_kanban_cards')
-            .select('title, developer_id, analyst_id')
+            .select('title, ticket_number, developer_id, analyst_id')
             .eq('id', cardId)
             .maybeSingle();
           if (!card || (!card.developer_id && !card.analyst_id)) return;
@@ -154,7 +155,7 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
             actionType: 'comment',
             actorId: user?.id,
             actorName,
-            message: `${actorName} comentou no ticket "${card.title}"`,
+            message: `${actorName} comentou no ticket ${devTicketLabel(card.ticket_number, card.title)}`,
           });
         } catch (e) {
           console.warn('[DevCardComments] notify failed:', e);

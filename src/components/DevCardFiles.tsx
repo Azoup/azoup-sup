@@ -16,6 +16,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { QueryLoadState } from '@/components/QueryLoadState';
 import { runTimedQuery } from '@/lib/supabaseTimedQuery';
+import { devTicketLabel } from '@/lib/devKanbanTicketNumber';
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
 
@@ -127,7 +128,7 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
       // Notify developer AND analyst about the new attachment
       const { data: card } = await supabase
         .from('dev_kanban_cards')
-        .select('title, developer_id, analyst_id')
+        .select('title, ticket_number, developer_id, analyst_id')
         .eq('id', cardId)
         .maybeSingle();
       if (card && (card.developer_id || card.analyst_id)) {
@@ -136,7 +137,7 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
           cardId, cardTitle: card.title,
           developerId: card.developer_id, analystId: card.analyst_id,
           actionType: 'attachment', actorId: user?.id, actorName,
-          message: `${actorName} anexou "${file.name}" ao ticket "${card.title}"`,
+          message: `${actorName} anexou "${file.name}" ao ticket ${devTicketLabel(card.ticket_number, card.title)}`,
         });
       }
 

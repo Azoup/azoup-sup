@@ -255,6 +255,7 @@ export type Database = {
           image_url: string | null
           position: number
           status: string
+          ticket_number: number
           title: string
           updated_at: string
         }
@@ -270,6 +271,7 @@ export type Database = {
           image_url?: string | null
           position?: number
           status?: string
+          ticket_number?: number
           title: string
           updated_at?: string
         }
@@ -285,6 +287,7 @@ export type Database = {
           image_url?: string | null
           position?: number
           status?: string
+          ticket_number?: number
           title?: string
           updated_at?: string
         }
