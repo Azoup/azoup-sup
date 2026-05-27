@@ -28,7 +28,7 @@ import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { KanbanCardImage } from '@/components/KanbanCardImage';
 import { filesFromClipboardData } from '@/lib/clipboardImage';
 import { loadDevKanbanDevNotes, saveDevKanbanDevNotes } from '@/lib/devKanbanDevNotes';
-import { devTicketLabel, devTicketMatchesSearch } from '@/lib/devKanbanTicketNumber';
+import { devTicketLabel, devTicketMatchesSearch, isDevTicketNumberQuery } from '@/lib/devKanbanTicketNumber';
 import { isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
@@ -190,11 +190,14 @@ const KanbanDev = () => {
       }
       const q = searchQuery.trim();
       if (q) {
-        const qLower = q.toLowerCase();
-        const ticketMatch = devTicketMatchesSearch(card.ticket_number, q);
-        const titleMatch = (card.title || '').toLowerCase().includes(qLower);
-        if (!titleMatch && !ticketMatch) return;
-        if (!ticketMatch && isKanbanCompletionSlug(card.status, completionColumnSlug)) return;
+        if (isDevTicketNumberQuery(q)) {
+          if (!devTicketMatchesSearch(card.ticket_number, q)) return;
+        } else {
+          const qLower = q.toLowerCase();
+          const titleMatch = (card.title || '').toLowerCase().includes(qLower);
+          if (!titleMatch) return;
+          if (isKanbanCompletionSlug(card.status, completionColumnSlug)) return;
+        }
       }
       col.push(enriched);
     });

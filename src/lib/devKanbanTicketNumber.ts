@@ -13,23 +13,29 @@ export function devTicketLabel(ticketNumber: number | null | undefined, title: s
   return `${formatted} "${title}"`;
 }
 
-/** Verifica se a busca corresponde ao número do ticket (42, 0042 ou #42). */
+/** Busca contém apenas dígitos (com # opcional no início). */
+export function isDevTicketNumberQuery(query: string): boolean {
+  const trimmed = query.trim();
+  return trimmed.length > 0 && /^#?\d+$/.test(trimmed);
+}
+
+/** Dígitos digitados pelo usuário (sem #). */
+export function devTicketSearchDigits(query: string): string {
+  return query.trim().replace(/^#/, '');
+}
+
+/**
+ * Corresponde ao prefixo exato do número exibido (0002 → só ticket 0002, não 20/200).
+ * Aceita 2, 02, 002 ou 0002 para o mesmo ticket.
+ */
 export function devTicketMatchesSearch(
   ticketNumber: number | null | undefined,
   query: string,
 ): boolean {
-  if (ticketNumber == null || !query.trim()) return false;
-  const q = query.trim().toLowerCase();
-  const formatted = formatDevTicketNumber(ticketNumber).toLowerCase();
-  if (formatted.includes(q) || formatted === q) return true;
+  if (ticketNumber == null || !isDevTicketNumberQuery(query)) return false;
 
-  const digits = q.replace(/^#/, '').replace(/\D/g, '');
-  if (!digits) return false;
+  const digits = devTicketSearchDigits(query);
+  const formatted = formatDevTicketNumber(ticketNumber);
 
-  const paddedQuery = digits.padStart(TICKET_PAD, '0');
-  if (formatted === paddedQuery || formatted.startsWith(paddedQuery)) return true;
-
-  const normalized = String(Math.trunc(ticketNumber));
-  const normalizedQuery = digits.replace(/^0+/, '') || '0';
-  return normalized === normalizedQuery || normalized.startsWith(normalizedQuery);
+  return formatted.startsWith(digits);
 }
