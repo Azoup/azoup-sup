@@ -15,6 +15,15 @@ export async function loadDevKanbanDevNotes(
 ): Promise<string> {
   if (fromColumn?.trim()) return fromColumn.trim();
 
+  const { data: cardRow, error: cardErr } = await supabase
+    .from('dev_kanban_cards')
+    .select('dev_notes')
+    .eq('id', cardId)
+    .maybeSingle();
+
+  if (cardErr && !isDevNotesSchemaError(cardErr.message)) throw cardErr;
+  if (cardRow?.dev_notes?.trim()) return cardRow.dev_notes.trim();
+
   const { data, error } = await supabase
     .from('dev_kanban_card_comments')
     .select('content')

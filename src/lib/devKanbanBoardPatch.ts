@@ -1,4 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query';
+import { writeDevKanbanBoardCache } from '@/lib/devKanbanBoardCache';
 
 export type DevKanbanBoardData = {
   columns: unknown[];
@@ -19,7 +20,9 @@ export function updateDevKanbanBoardCache(
 ): void {
   queryClient.setQueryData<DevKanbanBoardData>(DEV_KANBAN_BOARD_QUERY_KEY, (old) => {
     if (!old) return old;
-    return { ...updater(old), cachedAt: Date.now() };
+    const next = { ...updater(old), cachedAt: Date.now() };
+    writeDevKanbanBoardCache(next);
+    return next;
   });
 }
 
