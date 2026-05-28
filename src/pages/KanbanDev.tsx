@@ -75,6 +75,7 @@ const KanbanDev = () => {
   const [viewOpen, setViewOpen] = useState(false);
   const [labelOpen, setLabelOpen] = useState(false);
   const [targetColumn, setTargetColumn] = useState('backlog');
+  const [moveToColumnSlug, setMoveToColumnSlug] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [devNotes, setDevNotes] = useState('');
@@ -370,16 +371,56 @@ const KanbanDev = () => {
       const devNotesChanged = initialDevNotesRef.current !== (devNotes.trim() || '');
       const analystChanged = (editingCard.analyst_id || null) !== (analystId || null);
       const devChanged = prevDevId !== newDevId;
+      const statusChanged =
+        !!moveToColumnSlug && moveToColumnSlug !== editingCard.status;
+      const wasDone = isDoneSlug(editingCard.status);
+      const willBeDone = statusChanged && isDoneSlug(moveToColumnSlug);
 
-      const { error } = await supabase.from('dev_kanban_cards')
-        .update({
-          title,
-          description: description || null,
-          analyst_id: analystId || null,
-          developer_id: newDevId,
-        })
+      let newPosition = editingCard.position ?? 0;
+      if (statusChanged) {
+        const destCards = cards.filter(
+          (c: any) => c.status === moveToColumnSlug && c.id !== editingCard.id,
+        );
+        newPosition =
+          destCards.length > 0
+            ? Math.max(...destCards.map((c: any) => c.position ?? 0)) + 1
+            : 0;
+      }
+
+      const updatePayload: Record<string, unknown> = {
+        title,
+        description: description || null,
+        analyst_id: analystId || null,
+        developer_id: newDevId,
+      };
+      if (statusChanged) {
+        updatePayload.status = moveToColumnSlug;
+        updatePayload.position = newPosition;
+        if (willBeDone) updatePayload.completed_at = new Date().toISOString();
+        else if (wasDone && !willBeDone) updatePayload.completed_at = null;
+      }
+
+      let { error } = await supabase
+        .from('dev_kanban_cards')
+        .update(updatePayload)
         .eq('id', editingCard.id);
+
+      if (error && statusChanged && `${error.message}`.toLowerCase().includes('completed_at')) {
+        const retryPayload = { ...updatePayload };
+        delete retryPayload.completed_at;
+        const retry = await supabase
+          .from('dev_kanban_cards')
+          .update(retryPayload)
+          .eq('id', editingCard.id);
+        error = retry.error;
+      }
       if (error) throw error;
+
+      if (statusChanged) {
+        await withSupabaseRetry(() =>
+          applyDoneLabelRule(editingCard.id, editingCard.status, moveToColumnSlug),
+        );
+      }
       await saveDevKanbanDevNotes(
         editingCard.id,
         newDevId ? (devNotes.trim() || null) : null,
@@ -407,6 +448,15 @@ const KanbanDev = () => {
         attachmentFiles,
         notify,
         logLabel: 'Editou card no Kanban DEV',
+        statusMove: statusChanged
+          ? {
+              fromSlug: editingCard.status,
+              toSlug: moveToColumnSlug,
+              newPosition,
+              wasDone,
+              willBeDone: !!willBeDone,
+            }
+          : undefined,
       };
     },
     onSuccess: (result) => {
@@ -414,18 +464,25 @@ const KanbanDev = () => {
       if (!cardId) return;
       markBoardLocalWrite(4);
       patchDevKanbanBoardCards(queryClient, (list) =>
-        list.map((c: any) =>
-          c.id === cardId
-            ? {
-                ...c,
-                title,
-                description: description || null,
-                dev_notes: developerId ? (devNotes.trim() || null) : null,
-                analyst_id: analystId || null,
-                developer_id: developerId || null,
-              }
-            : c,
-        ),
+        list.map((c: any) => {
+          if (c.id !== cardId) return c;
+          const next: any = {
+            ...c,
+            title,
+            description: description || null,
+            dev_notes: developerId ? (devNotes.trim() || null) : null,
+            analyst_id: analystId || null,
+            developer_id: developerId || null,
+          };
+          if (result?.statusMove) {
+            const { toSlug, newPosition, wasDone, willBeDone } = result.statusMove;
+            next.status = toSlug;
+            next.position = newPosition;
+            if (willBeDone) next.completed_at = new Date().toISOString();
+            else if (wasDone && !willBeDone) next.completed_at = null;
+          }
+          return next;
+        }),
       );
       patchDevKanbanBoardCardLabels(queryClient, (rows) => {
         const rest = rows.filter((r: any) => r.card_id !== cardId);
@@ -453,6 +510,24 @@ const KanbanDev = () => {
           notify: result.notify,
           logLabel: result.logLabel,
         });
+        if (result.statusMove && editingCard) {
+          const { fromSlug, toSlug } = result.statusMove;
+          const colTitle =
+            sortedColumns.find((c: any) => c.slug === toSlug)?.title || toSlug;
+          const isMoveToDone = !isDoneSlug(fromSlug) && isDoneSlug(toSlug);
+          void notifyDevAndAnalyst({
+            cardId,
+            cardTitle: title,
+            developerId: developerId || editingCard.developer_id || null,
+            analystId: analystId || editingCard.analyst_id || null,
+            actionType: 'status',
+            actorId: user?.id,
+            actorName,
+            message: isMoveToDone
+              ? `${actorName} concluiu o ticket ${devTicketLabel(editingCard.ticket_number, title)} em ${new Date().toLocaleString('pt-BR')}`
+              : `${actorName} moveu ${devTicketLabel(editingCard.ticket_number, title)} para "${colTitle}"`,
+          });
+        }
       }
     },
     onError: (e: Error) => toast.error(e?.message ? `Erro ao atualizar card: ${e.message}` : 'Erro ao atualizar card.'),
@@ -747,10 +822,12 @@ const KanbanDev = () => {
     setPendingImages([]);
     setPendingFiles([]);
     setEditingCard(null);
+    setMoveToColumnSlug('');
   };
 
   const openEdit = (card: any) => {
     setEditingCard(card);
+    setMoveToColumnSlug(card.status || '');
     setTitle(card.title);
     setDescription(card.description || '');
     setDevNotes('');
@@ -1209,6 +1286,10 @@ const KanbanDev = () => {
             pendingImages={pendingImages} setPendingImages={setPendingImages}
             pendingFiles={pendingFiles} setPendingFiles={setPendingFiles}
             existingImages={editingCardImages} onDeleteImage={(id) => deleteImage.mutate(id)}
+            columns={sortedColumns}
+            moveToColumn={moveToColumnSlug}
+            setMoveToColumn={setMoveToColumnSlug}
+            showMoveTo
             onSubmit={() => updateCard.mutate()} loading={updateCard.isPending}
           />
         </DialogContent>
@@ -1333,6 +1414,7 @@ function DevCardFormContent({
   pendingImages, setPendingImages,
   pendingFiles, setPendingFiles,
   existingImages, onDeleteImage,
+  columns, moveToColumn, setMoveToColumn, showMoveTo,
   onSubmit, loading,
 }: {
   title: string; setTitle: (v: string) => void;
@@ -1345,6 +1427,10 @@ function DevCardFormContent({
   pendingImages: File[]; setPendingImages: (f: File[]) => void;
   pendingFiles: File[]; setPendingFiles: (f: File[]) => void;
   existingImages: any[]; onDeleteImage: (id: string) => void;
+  columns?: { slug: string; title: string }[];
+  moveToColumn?: string;
+  setMoveToColumn?: (v: string) => void;
+  showMoveTo?: boolean;
   onSubmit: () => void; loading: boolean;
 }) {
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
@@ -1421,6 +1507,23 @@ function DevCardFormContent({
           {developers.map((d: any) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
         </SelectContent>
       </Select>
+      {showMoveTo && columns && columns.length > 0 && moveToColumn !== undefined && setMoveToColumn && (
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-muted-foreground">Mover para</p>
+          <Select value={moveToColumn} onValueChange={setMoveToColumn}>
+            <SelectTrigger>
+              <SelectValue placeholder="Selecione a lista" />
+            </SelectTrigger>
+            <SelectContent>
+              {columns.map((col) => (
+                <SelectItem key={col.slug} value={col.slug}>
+                  {col.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       {developerId ? (
         <div className="space-y-1">
           <p className="text-xs font-medium text-muted-foreground">Observações / correções (DEV)</p>
