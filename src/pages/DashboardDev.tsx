@@ -88,11 +88,26 @@ const DashboardDev = () => {
   const inProgressCards = filteredCards.filter((c: any) => c.status === 'em-andamento').length;
 
   const statusData = useMemo(() => {
-    return columns.map((col: any) => ({
+    const colSlugs = new Set(columns.map((col: any) => col.slug));
+    const rows = columns.map((col: any) => ({
       name: col.title,
       cards: filteredCards.filter((c: any) => c.status === col.slug).length,
     }));
+    const orphanCards = filteredCards.filter((c: any) => !colSlugs.has(c.status)).length;
+    if (orphanCards > 0) {
+      rows.push({ name: 'Sem lista correspondente', cards: orphanCards });
+    }
+    return rows;
   }, [filteredCards, columns]);
+
+  const statusChartLayout = useMemo(() => {
+    const rowCount = Math.max(statusData.length, 1);
+    const maxLabelLen = statusData.reduce((max, row) => Math.max(max, row.name.length), 8);
+    return {
+      height: Math.max(280, rowCount * 44 + 40),
+      yAxisWidth: Math.min(220, Math.max(104, Math.ceil(maxLabelLen * 7.2))),
+    };
+  }, [statusData]);
 
   const devData = useMemo(() => {
     const map: Record<string, number> = {};
@@ -236,18 +251,46 @@ const DashboardDev = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader><CardTitle className="text-sm">Cards por Status</CardTitle></CardHeader>
+          <Card className={statusData.length > 4 ? 'lg:col-span-2' : undefined}>
+            <CardHeader>
+              <CardTitle className="text-sm">Cards por Status (listas do Kanban DEV)</CardTitle>
+            </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={statusData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                  <YAxis allowDecimals={false} />
-                  <Tooltip />
-                  <Bar dataKey="cards" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              {statusData.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-8 text-center">
+                  Nenhuma lista configurada no Kanban DEV.
+                </p>
+              ) : (
+                <ResponsiveContainer width="100%" height={statusChartLayout.height}>
+                  <BarChart
+                    data={statusData}
+                    layout="vertical"
+                    margin={{ top: 8, right: 16, left: 4, bottom: 8 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      width={statusChartLayout.yAxisWidth}
+                      tick={{ fontSize: 11 }}
+                      interval={0}
+                    />
+                    <Tooltip
+                      formatter={(value: number) => [`${value} card(s)`, 'Total']}
+                      labelFormatter={(label) => `Lista: ${label}`}
+                      contentStyle={{ fontSize: '12px' }}
+                    />
+                    <Bar
+                      dataKey="cards"
+                      fill="hsl(var(--primary))"
+                      radius={[0, 4, 4, 0]}
+                      minPointSize={2}
+                      label={{ position: 'right', fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </CardContent>
           </Card>
 
