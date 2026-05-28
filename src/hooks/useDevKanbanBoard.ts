@@ -4,7 +4,8 @@ import { fetchDevKanbanBoard } from '@/lib/fetchDevKanbanBoard';
 import { readDevKanbanBoardCache, writeDevKanbanBoardCache } from '@/lib/devKanbanBoardCache';
 import { DEV_KANBAN_BOARD_QUERY_KEY } from '@/lib/devKanbanBoardPatch';
 
-const DEV_KANBAN_STALE_MS = 5 * 60 * 1000;
+const DEV_KANBAN_STALE_MS = 30 * 1000;
+const DEV_KANBAN_REALTIME_REFETCH_MS = 400;
 
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -25,14 +26,14 @@ export function useDevKanbanBoard(enabled: boolean) {
     initialDataUpdatedAt: cached?.cachedAt,
     staleTime: DEV_KANBAN_STALE_MS,
     gcTime: 15 * 60 * 1000,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
 }
 
 export function refreshDevKanbanBoard(
   queryClient: ReturnType<typeof useQueryClient>,
-  delayMs = 1200,
+  delayMs = DEV_KANBAN_REALTIME_REFETCH_MS,
 ) {
   if (refreshTimer) clearTimeout(refreshTimer);
   refreshTimer = setTimeout(() => {

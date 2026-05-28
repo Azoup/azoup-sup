@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { buildChecklistProgressMap, type ChecklistProgressMap } from '@/lib/checklistProgress';
 
-const STALE_MS = 5 * 60 * 1000;
+const STALE_MS = 30 * 1000;
 
 /** Um único fetch para todos os cards do board (evita N+1 no ChecklistBadge). */
 export function useChecklistProgressMap(
@@ -22,8 +22,8 @@ export function useChecklistProgressMap(
     enabled,
     staleTime: STALE_MS,
     gcTime: 15 * 60 * 1000,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
   return data ?? {};
 }

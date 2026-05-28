@@ -24,34 +24,28 @@ describe('devTicketLabel', () => {
   });
 });
 
-describe('isDevTicketNumberQuery', () => {
-  it('detects numeric ticket searches', () => {
-    expect(isDevTicketNumberQuery('0002')).toBe(true);
-    expect(isDevTicketNumberQuery('#42')).toBe(true);
-    expect(isDevTicketNumberQuery('bug')).toBe(false);
-  });
-});
-
 describe('devTicketMatchesSearch', () => {
-  it('matches exact ticket by padded or short form', () => {
-    expect(devTicketMatchesSearch(42, '0042')).toBe(true);
-    expect(devTicketMatchesSearch(42, '42')).toBe(true);
-    expect(devTicketMatchesSearch(42, '#0042')).toBe(true);
+  it('matches only the exact ticket for 0002', () => {
     expect(devTicketMatchesSearch(2, '0002')).toBe(true);
-  });
-
-  it('does not match other tickets when searching 0002', () => {
-    expect(devTicketMatchesSearch(2, '0002')).toBe(true);
+    expect(devTicketMatchesSearch(2, '2')).toBe(true);
+    expect(devTicketMatchesSearch(2, '02')).toBe(true);
     expect(devTicketMatchesSearch(20, '0002')).toBe(false);
     expect(devTicketMatchesSearch(21, '0002')).toBe(false);
+    expect(devTicketMatchesSearch(22, '0002')).toBe(false);
     expect(devTicketMatchesSearch(200, '0002')).toBe(false);
     expect(devTicketMatchesSearch(12, '0002')).toBe(false);
   });
 
-  it('supports prefix while typing', () => {
-    expect(devTicketMatchesSearch(2, '000')).toBe(true);
-    expect(devTicketMatchesSearch(20, '000')).toBe(true);
-    expect(devTicketMatchesSearch(100, '000')).toBe(false);
+  it('matches only the exact ticket for 0022', () => {
+    expect(devTicketMatchesSearch(22, '0022')).toBe(true);
+    expect(devTicketMatchesSearch(22, '22')).toBe(true);
+    expect(devTicketMatchesSearch(2, '0022')).toBe(false);
+  });
+
+  it('does not match partial prefixes like 000', () => {
+    expect(devTicketMatchesSearch(2, '000')).toBe(false);
+    expect(devTicketMatchesSearch(1, '000')).toBe(false);
+    expect(devTicketMatchesSearch(22, '000')).toBe(false);
   });
 
   it('returns false for non-numeric queries', () => {

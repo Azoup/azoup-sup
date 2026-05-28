@@ -25,8 +25,8 @@ export function devTicketSearchDigits(query: string): string {
 }
 
 /**
- * Corresponde ao prefixo exato do número exibido (0002 → só ticket 0002, não 20/200).
- * Aceita 2, 02, 002 ou 0002 para o mesmo ticket.
+ * Correspondência exata ao número exibido no card.
+ * 0002 → só ticket 0002; 0022 → só ticket 0022; 2/02/002/0002 → ticket 0002.
  */
 export function devTicketMatchesSearch(
   ticketNumber: number | null | undefined,
@@ -36,6 +36,7 @@ export function devTicketMatchesSearch(
 
   const digits = devTicketSearchDigits(query);
   const formatted = formatDevTicketNumber(ticketNumber);
+  const paddedQuery = digits.padStart(TICKET_PAD, '0');
 
-  return formatted.startsWith(digits);
+  return formatted === paddedQuery;
 }

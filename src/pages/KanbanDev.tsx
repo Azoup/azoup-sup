@@ -22,7 +22,7 @@ import {
   uniqueLabelIds,
 } from '@/lib/kanbanCardLabels';
 import { useChecklistProgressMap } from '@/hooks/useChecklistProgressMap';
-import { markBoardLocalWrite, consumeBoardRealtimeSkip } from '@/lib/boardRefreshGuard';
+import { markBoardLocalWrite } from '@/lib/boardRefreshGuard';
 import { logActivity } from '@/hooks/useActivityLog';
 import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { KanbanCardImage } from '@/components/KanbanCardImage';
@@ -130,25 +130,6 @@ const KanbanDev = () => {
     }
   }, [board?.cards, boardLoading, queryClient]);
 
-  useEffect(() => {
-    const channel = supabase
-      .channel('dev-kanban-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'dev_kanban_cards' }, () => {
-        if (consumeBoardRealtimeSkip()) return;
-        refreshDevKanbanBoard(queryClient);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'dev_kanban_card_images' }, () => {
-        if (consumeBoardRealtimeSkip()) return;
-        refreshDevKanbanBoard(queryClient);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'dev_kanban_columns' }, () => {
-        if (consumeBoardRealtimeSkip()) return;
-        refreshDevKanbanBoard(queryClient);
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [queryClient]);
-
   const sortedColumns = useMemo(() => [...columns].sort((a: any, b: any) => a.position - b.position), [columns]);
 
   const completionColumnSlug = useMemo(
@@ -191,11 +172,12 @@ const KanbanDev = () => {
       const q = searchQuery.trim();
       if (q) {
         if (isDevTicketNumberQuery(q)) {
-          if (!devTicketMatchesSearch(card.ticket_number, q)) return;
+          if (card.ticket_number == null || !devTicketMatchesSearch(card.ticket_number, q)) return;
         } else {
           const qLower = q.toLowerCase();
           const titleMatch = (card.title || '').toLowerCase().includes(qLower);
-          if (!titleMatch) return;
+          const descMatch = (card.description || '').toLowerCase().includes(qLower);
+          if (!titleMatch && !descMatch) return;
           if (isKanbanCompletionSlug(card.status, completionColumnSlug)) return;
         }
       }

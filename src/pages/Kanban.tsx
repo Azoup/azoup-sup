@@ -21,7 +21,7 @@ import {
   uniqueLabelIds,
 } from '@/lib/kanbanCardLabels';
 import { useChecklistProgressMap } from '@/hooks/useChecklistProgressMap';
-import { markBoardLocalWrite, consumeBoardRealtimeSkip } from '@/lib/boardRefreshGuard';
+import { markBoardLocalWrite } from '@/lib/boardRefreshGuard';
 import { logActivity } from '@/hooks/useActivityLog';
 import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
 import { actorNameFromUser } from '@/lib/actorName';
@@ -107,25 +107,6 @@ const Kanban = () => {
   const cardImages = (board?.cardImages ?? []) as any[];
   const isLoading = boardLoading && !board;
   const checklistProgress = useChecklistProgressMap('kanban', supabaseReady && !!board);
-
-  useEffect(() => {
-    const channel = supabase
-      .channel('kanban-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'kanban_cards' }, () => {
-        if (consumeBoardRealtimeSkip()) return;
-        invalidateKanbanBoard(queryClient);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'kanban_card_images' }, () => {
-        if (consumeBoardRealtimeSkip()) return;
-        invalidateKanbanBoard(queryClient);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'kanban_columns' }, () => {
-        if (consumeBoardRealtimeSkip()) return;
-        invalidateKanbanBoard(queryClient);
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [queryClient]);
 
   const sortedColumns = useMemo(() => {
     return [...columns].sort((a: any, b: any) => a.position - b.position);
