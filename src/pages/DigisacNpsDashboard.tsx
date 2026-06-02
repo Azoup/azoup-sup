@@ -172,40 +172,61 @@ export default function DigisacNpsDashboard() {
             overview: EMPTY_NPS_OVERVIEW,
           }));
 
-    const txtHasData = (txtImport?.overview.total ?? 0) > 0 || (txtImport?.analysts.some((a) => a.total > 0) ?? false);
-    const apiHasData = apiOverview.total > 0 || apiAnalysts.some((a) => a.total > 0);
+    const txtHasData =
+      (txtImport?.overview?.total ?? 0) > 0 ||
+      (txtImport?.analysts?.some((a) => a.total > 0) ?? false);
+    const apiHasData = apiOverview.total > 0 || (apiAnalysts?.some((a) => a.total > 0) ?? false);
 
     if (txtHasData && txtImport) {
       const merged = mergeAnalystRowsWithMapped(txtImport, analystsList ?? []);
-      const filtered = filterAnalystView(merged.overview, merged.analysts);
-      return { ...filtered, dataSource: "txt" as DataSource };
+      const filtered = filterAnalystView(merged.overview ?? EMPTY_NPS_OVERVIEW, merged.analysts ?? []);
+      return {
+        overview: filtered.overview,
+        displayAnalysts: filtered.analysts,
+        dataSource: "txt" as DataSource,
+      };
     }
 
     if (apiHasData) {
       const filtered = filterAnalystView(apiOverview, apiAnalysts);
-      return { ...filtered, dataSource: "api" as DataSource };
+      return {
+        overview: filtered.overview,
+        displayAnalysts: filtered.analysts,
+        dataSource: "api" as DataSource,
+      };
     }
 
     if (txtImport) {
       const merged = mergeAnalystRowsWithMapped(txtImport, analystsList ?? []);
-      const filtered = filterAnalystView(merged.overview, merged.analysts);
-      return { ...filtered, dataSource: "txt" as DataSource };
+      const filtered = filterAnalystView(merged.overview ?? EMPTY_NPS_OVERVIEW, merged.analysts ?? []);
+      return {
+        overview: filtered.overview,
+        displayAnalysts: filtered.analysts,
+        dataSource: "txt" as DataSource,
+      };
     }
 
     const filtered = filterAnalystView(apiOverview, apiAnalysts);
-    return { ...filtered, dataSource: "none" as DataSource };
+    return {
+      overview: filtered.overview ?? EMPTY_NPS_OVERVIEW,
+      displayAnalysts: filtered.analysts ?? [],
+      dataSource: "none" as DataSource,
+    };
   }, [data, txtImport, analystsList, analystId]);
 
-  const pieData = useMemo(() => {
-    if (!overview || overview.total <= 0) return [];
-    return [
-      { name: "Promotores", value: overview.promoters.count, color: NPS_COLORS.promoters, pct: overview.promoters.percent },
-      { name: "Neutros", value: overview.neutrals.count, color: NPS_COLORS.neutrals, pct: overview.neutrals.percent },
-      { name: "Detratores", value: overview.detractors.count, color: NPS_COLORS.detractors, pct: overview.detractors.percent },
-    ].filter((d) => d.value > 0);
-  }, [overview]);
+  const safeOverview = overview ?? EMPTY_NPS_OVERVIEW;
+  const safeAnalysts = displayAnalysts ?? [];
 
-  const hasData = (overview?.total ?? 0) > 0 || displayAnalysts.some((a) => a.total > 0);
+  const pieData = useMemo(() => {
+    if (safeOverview.total <= 0) return [];
+    return [
+      { name: "Promotores", value: safeOverview.promoters?.count ?? 0, color: NPS_COLORS.promoters, pct: safeOverview.promoters?.percent ?? 0 },
+      { name: "Neutros", value: safeOverview.neutrals?.count ?? 0, color: NPS_COLORS.neutrals, pct: safeOverview.neutrals?.percent ?? 0 },
+      { name: "Detratores", value: safeOverview.detractors?.count ?? 0, color: NPS_COLORS.detractors, pct: safeOverview.detractors?.percent ?? 0 },
+    ].filter((d) => d.value > 0);
+  }, [safeOverview]);
+
+  const hasData = safeOverview.total > 0 || safeAnalysts.some((a) => a.total > 0);
   const showEmpty = !isLoading && !isError && !hasData;
 
   const handleTxtFile = async (file: File) => {
@@ -222,9 +243,7 @@ export default function DigisacNpsDashboard() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const npsCategories = overview
-    ? [overview.promoters, overview.neutrals, overview.detractors]
-    : [];
+  const npsCategories = [safeOverview.promoters, safeOverview.neutrals, safeOverview.detractors];
 
   return (
     <div className="container mx-auto py-8 space-y-8 fade-in max-w-full overflow-x-hidden">
@@ -327,9 +346,9 @@ export default function DigisacNpsDashboard() {
             </CardTitle>
             <CardDescription>
               Distribuição no período
-              {overview?.npsScore != null && (
+              {safeOverview.npsScore != null && (
                 <span className="ml-2 font-semibold text-foreground">
-                  Score: {overview.npsScore.toFixed(2)}
+                  Score: {safeOverview.npsScore.toFixed(2)}
                 </span>
               )}
             </CardDescription>
@@ -363,10 +382,10 @@ export default function DigisacNpsDashboard() {
                       <RechartsTooltip formatter={(v: number, _n, p) => [`${v} (${(p?.payload as { pct?: number })?.pct?.toFixed(2) ?? 0}%)`, ""]} />
                     </PieChart>
                   </ResponsiveContainer>
-                  {overview?.npsScore != null && (
+                  {safeOverview.npsScore != null && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                       <div className="text-center">
-                        <p className="text-2xl font-bold text-foreground">{overview.npsScore.toFixed(2)}</p>
+                        <p className="text-2xl font-bold text-foreground">{safeOverview.npsScore.toFixed(2)}</p>
                         <p className="text-xs text-muted-foreground">NPS</p>
                       </div>
                     </div>
@@ -425,13 +444,13 @@ export default function DigisacNpsDashboard() {
           <CardContent>
             {isLoading && !txtImport ? (
               <p className="text-sm text-muted-foreground py-8 text-center">Carregando…</p>
-            ) : displayAnalysts.length === 0 ? (
+            ) : safeAnalysts.length === 0 ? (
               <p className="text-sm text-muted-foreground py-8 text-center">
                 Nenhum analista mapeado. Configure em Dashboard Digisac → Mapeamento Digisac.
               </p>
             ) : (
               <ul className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
-                {[...displayAnalysts]
+                {[...safeAnalysts]
                   .sort((a, b) => b.total - a.total)
                   .map((a) => (
                     <li
@@ -459,7 +478,7 @@ export default function DigisacNpsDashboard() {
         </Card>
       </div>
 
-      {displayAnalysts.length > 0 && hasData && (
+      {safeAnalysts.length > 0 && hasData && (
         <Card>
           <CardHeader>
             <CardTitle>Comparativo por analista</CardTitle>
@@ -478,7 +497,7 @@ export default function DigisacNpsDashboard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {[...displayAnalysts]
+                {[...safeAnalysts]
                   .sort((a, b) => b.total - a.total)
                   .map((a) => (
                     <TableRow key={a.userId} className={a.total === 0 ? "opacity-50" : undefined}>

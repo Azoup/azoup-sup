@@ -213,10 +213,17 @@ export function normalizeNpsDashboardResponse(payload: unknown): DigisacNpsDashb
     })
     .filter((row): row is NpsAnalystRow => !!row?.userId);
 
+  const overview = normalizeNpsOverviewPayload(root.overview ?? root);
+
+  const analystsWithSafeOverview = analysts.map((row) => ({
+    ...row,
+    overview: normalizeNpsOverviewPayload(row.overview ?? row),
+  }));
+
   return {
     departmentId: String(root.departmentId ?? ''),
     departmentName: String(root.departmentName ?? 'Suporte'),
-    overview: normalizeNpsOverviewPayload(root.overview ?? root),
-    analysts,
+    overview,
+    analysts: analystsWithSafeOverview,
   };
 }

@@ -297,7 +297,8 @@ export function mergeAnalystRowsWithMapped(
     nameMap.set(normalizeNameKey(a.name), a);
   }
 
-  const parsedByKey = new Map(parsed.analysts.map((a) => [normalizeNameKey(a.name), a]));
+  const parsedAnalysts = parsed.analysts ?? [];
+  const parsedByKey = new Map(parsedAnalysts.map((a) => [normalizeNameKey(a.name), a]));
 
   const merged: NpsAnalystRow[] = mapped.map((m) => {
     const key = normalizeNameKey(m.name);
@@ -311,11 +312,15 @@ export function mergeAnalystRowsWithMapped(
     };
   });
 
-  for (const a of parsed.analysts) {
+  for (const a of parsedAnalysts) {
     const key = normalizeNameKey(a.name);
     if (!nameMap.has(key)) merged.push(a);
   }
 
   merged.sort((a, b) => b.total - a.total);
-  return { ...parsed, analysts: merged };
+  return {
+    ...parsed,
+    overview: parsed.overview ?? countsToOverview(emptyNpsCounts()),
+    analysts: merged,
+  };
 }
