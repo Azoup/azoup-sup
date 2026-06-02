@@ -6,6 +6,11 @@ import {
   findDigisacDepartmentAnalystRule,
 } from "../_shared/digisacDepartmentAnalystScope.ts";
 import { resolveDigisacQueryPlan } from "../_shared/digisacApiQueryPlan.ts";
+import {
+  buildDigisacAnswersOverviewParams,
+  mapDigisacAnswersOverview,
+  pickSuporteDepartmentId,
+} from "../_shared/digisacAnswersOverview.ts";
 import { formatDigisacDateOnly, toDigisacPeriodIso } from "../_shared/digisacPeriod.ts";
 import {
   ADMIN_USER_ACTIONS,
@@ -614,7 +619,14 @@ Deno.serve(async (req) => {
       }
 
       // Permission check (digisac_dashboard) — admins always allowed
-      const protectedActions = new Set(["geral", "analistas", "listar_departments", "listar_digisac_users", "listar_analysts"]);
+      const protectedActions = new Set([
+        "geral",
+        "analistas",
+        "nps_dashboard",
+        "listar_departments",
+        "listar_digisac_users",
+        "listar_analysts",
+      ]);
       if (protectedActions.has(action ?? "")) {
         const adminClient = createClient(
           Deno.env.get("SUPABASE_URL") ?? "",
@@ -781,6 +793,136 @@ Deno.serve(async (req) => {
       };
 
       return jsonResponse(outData);
+    }
+
+    if (action === "nps_dashboard") {
+      const today = getTodayBrazilDate();
+      const startDate = formatDateOnly(typeof payload?.startDate === "string" ? payload.startDate : undefined) ?? today;
+      const endDate = formatDateOnly(typeof payload?.endDate === "string" ? payload.endDate : undefined) ?? startDate;
+      const startTime = typeof payload?.startTime === "string" ? payload.startTime : undefined;
+      const endTime = typeof payload?.endTime === "string" ? payload.endTime : undefined;
+      const from = toDigisacPeriodIso(startDate, "start", startTime)!;
+      const to = toDigisacPeriodIso(endDate, "end", endTime)!;
+
+      const evaluationType = typeof payload?.evaluationType === "string"
+        && (payload.evaluationType === "csat" || payload.evaluationType === "nps")
+        ? payload.evaluationType
+        : "nps";
+      const periodType = typeof payload?.periodType === "string"
+        && ["all", "close", "open"].includes(payload.periodType)
+        ? payload.periodType as "all" | "close" | "open"
+        : "all";
+      const serviceId = typeof payload?.serviceId === "string" ? payload.serviceId : undefined;
+
+      let departmentId = typeof payload?.departmentId === "string" && payload.departmentId
+        ? payload.departmentId
+        : "all";
+      const departmentNameFromPayload = typeof payload?.departmentName === "string"
+        ? payload.departmentName.trim()
+        : "";
+
+      const adminClient = createClient(
+        Deno.env.get("SUPABASE_URL") ?? "",
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      );
+      const mappingsResult = await adminClient.from("digisac_analyst_mapping").select("digisac_user_id, analyst_id");
+      if (mappingsResult.error) throw mappingsResult.error;
+      const mappings = mappingsResult.data ?? [];
+
+      if (!departmentId || departmentId === "all") {
+        const deptCacheKey = "digisac_departments";
+        let departments: Array<{ id: string; name: string }> | undefined = cache[deptCacheKey]?.data;
+        if (!departments || Date.now() - cache[deptCacheKey].timestamp >= LIST_CACHE_TTL_MS) {
+          const r = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/departments");
+          if (r.ok) {
+            const list = Array.isArray(r.data?.data) ? r.data.data : Array.isArray(r.data) ? r.data : [];
+            departments = list
+              .filter((d: { id?: string; deletedAt?: unknown }) => d?.id && !d.deletedAt)
+              .map((d: { id: string; name?: string }) => ({ id: String(d.id), name: d.name || "Sem nome" }));
+            cache[deptCacheKey] = { data: departments, timestamp: Date.now() };
+          }
+        }
+        const suporteId = pickSuporteDepartmentId(departments ?? []);
+        if (suporteId) departmentId = suporteId;
+      }
+
+      const departmentName = departmentNameFromPayload
+        || (departmentId !== "all" ? await getDepartmentNameById(digisacUrl, digisacToken, departmentId) : undefined)
+        || "Suporte";
+
+      const requestedUserIds = normalizeRequestedUserIds(payload, mappings);
+      const validMappedUsers = await loadValidMappedAnalystUsers(adminClient, digisacUrl, digisacToken);
+      const effectiveUserIds = resolveAnalystUserIds(requestedUserIds, validMappedUsers);
+      const nameById = new Map(validMappedUsers.map((u) => [u.id, u.name]));
+
+      const fetchOverview = async (userId?: string) => {
+        const params = buildDigisacAnswersOverviewParams({
+          from,
+          to,
+          departmentId,
+          userId,
+          type: evaluationType,
+          periodType,
+          serviceId,
+        });
+        const r = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/answers/overview", params);
+        if (!r.ok) {
+          throw new Error(`Erro API Digisac (avaliações): ${r.status}`);
+        }
+        return mapDigisacAnswersOverview(r.data);
+      };
+
+      const cacheKey = `nps_dashboard_${from}_${to}_${departmentId}_${evaluationType}_${periodType}_${serviceId ?? ""}_${effectiveUserIds.join(",") || "all"}`;
+      const cached = cache[cacheKey]?.data;
+      if (cached && Date.now() - cache[cacheKey].timestamp < DASHBOARD_CACHE_TTL_MS) {
+        return jsonResponse(cached);
+      }
+
+      const chartUserId = effectiveUserIds.length === 1 ? effectiveUserIds[0] : undefined;
+      const overviewMapped = await fetchOverview(chartUserId);
+
+      const analystsToQuery = effectiveUserIds.length > 0
+        ? effectiveUserIds
+        : validMappedUsers.map((u) => u.id);
+
+      const analystRows = await Promise.all(
+        analystsToQuery.map(async (uid) => {
+          try {
+            const mapped = await fetchOverview(uid);
+            return {
+              userId: uid,
+              name: nameById.get(uid) ?? "Analista",
+              total: mapped.total,
+              overview: mapped,
+            };
+          } catch (err) {
+            console.warn("[Digisac NPS] Falha analista", uid, err);
+            return {
+              userId: uid,
+              name: nameById.get(uid) ?? "Analista",
+              total: 0,
+              overview: {
+                total: 0,
+                npsScore: null,
+                promoters: { count: 0, percent: 0 },
+                neutrals: { count: 0, percent: 0 },
+                detractors: { count: 0, percent: 0 },
+              },
+            };
+          }
+        }),
+      );
+
+      analystRows.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+
+      const out = {
+        departmentId,
+        departmentName,
+        overview: overviewMapped,
+        analysts: analystRows,
+      };
+      cache[cacheKey] = { data: out, timestamp: Date.now() };
+      return jsonResponse(out);
     }
 
     if (action === "listar_analysts") {

@@ -10,6 +10,14 @@ import {
   type DigisacDashboardQueryFilters,
 } from "@/integrations/digisac/dashboardFilters";
 import { filterDigisacAnalystStatsForDepartment } from "@/lib/digisacDepartmentAnalystScope";
+import {
+  mergeDigisacNpsFilters,
+  type DigisacNpsQueryFilters,
+} from "@/integrations/digisac/npsFilters";
+import {
+  normalizeNpsDashboardResponse,
+  type DigisacNpsDashboardResponse,
+} from "@/integrations/digisac/npsNormalize";
 
 export type { DigisacDashboardQueryFilters };
 export {
@@ -18,6 +26,8 @@ export {
 } from "@/integrations/digisac/dashboardFilters";
 
 export type { DigisacAnalystStats, DigisacGeralResponse };
+export type { DigisacNpsQueryFilters, DigisacNpsDashboardResponse };
+export { mergeDigisacNpsFilters } from "@/integrations/digisac/npsFilters";
 
 export interface DigisacDepartment {
   id: string;
@@ -92,6 +102,22 @@ async function invokeDigisac<T>(action: string, payload: Record<string, any> = {
   return data as T;
 }
 
+function buildNpsPayload(filters: DigisacNpsQueryFilters) {
+  const merged = mergeDigisacNpsFilters(filters);
+  return {
+    startDate: normalizeDateOnly(merged.startDate),
+    endDate: normalizeDateOnly(merged.endDate),
+    startTime: merged.startTime?.trim() || undefined,
+    endTime: merged.endTime?.trim() || undefined,
+    departmentId: merged.departmentId,
+    departmentName: merged.departmentName?.trim() || undefined,
+    userId: merged.userId,
+    evaluationType: merged.evaluationType,
+    periodType: merged.periodType,
+    ...(merged.serviceId ? { serviceId: merged.serviceId } : {}),
+  };
+}
+
 function buildDashboardPayload(filters: DigisacDashboardQueryFilters) {
   const merged = mergeDigisacDashboardFilters(filters);
   return {
@@ -115,6 +141,11 @@ export const digisacApi = {
   async getDashboardGeral(filters: DigisacDashboardQueryFilters = {}): Promise<DigisacGeralResponse> {
     const data = await invokeDigisac<unknown>('geral', buildDashboardPayload(filters));
     return normalizeGeralResponse(data);
+  },
+
+  async getNpsDashboard(filters: DigisacNpsQueryFilters = {}): Promise<DigisacNpsDashboardResponse> {
+    const data = await invokeDigisac<unknown>('nps_dashboard', buildNpsPayload(filters));
+    return normalizeNpsDashboardResponse(data);
   },
 
   async getDashboardAnalistas(filters: DigisacDashboardQueryFilters = {}): Promise<DigisacAnalystStats[]> {

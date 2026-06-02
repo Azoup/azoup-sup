@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, FileSpreadsheet, BarChart3, UserCircle, Code2, FolderKanban, ChevronDown, GripVertical } from 'lucide-react';
+import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, FileSpreadsheet, BarChart3, UserCircle, Code2, FolderKanban, ChevronDown, GripVertical, Star } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/hooks/useAuth';
 import { useSignOut } from '@/hooks/useSignOut';
@@ -49,6 +49,7 @@ const DEFAULT_MENU: MenuItem[] = [
   { id: 'dashboard', type: 'leaf', title: 'Dashboard Dúvidas', url: '/dashboard', icon: BarChart3 },
   { id: 'dashboard-bu', type: 'leaf', title: 'Dashboard B.U', url: '/dashboard-bu', icon: Building2 },
   { id: 'digisac-dashboard', type: 'leaf', title: 'Dashboard Digisac', url: '/digisac-dashboard', icon: Headset },
+  { id: 'digisac-nps', type: 'leaf', title: 'Dashboard NPS', url: '/digisac-nps', icon: Star },
   { id: 'entries', type: 'leaf', title: 'Lançamentos Dúvidas', url: '/entries', icon: PenLine },
   { id: 'entries-bu', type: 'leaf', title: 'Lançamentos B.U', url: '/entries-bu', icon: FileSpreadsheet },
   {
