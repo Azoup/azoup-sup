@@ -5,11 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DigisacMappingModal } from "@/components/DigisacMappingModal";
-import {
-  digisacApi,
-  DIGISAC_DASHBOARD_FILTER_DEFAULTS,
-  type DigisacDashboardQueryFilters,
-} from "@/integrations/digisac/api";
+import { digisacApi, mergeDigisacDashboardFilters, type DigisacDashboardQueryFilters } from "@/integrations/digisac/api";
 import { Clock, Ticket, Users, Filter, MessageSquare, Hourglass, Timer, CheckCircle2, CircleDot, RefreshCw, AlertCircle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, LabelList } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -38,40 +34,15 @@ export default function DigisacDashboard() {
   const [endDate, setEndDate] = useState(today);
   const [departmentId, setDepartmentId] = useState<string>("all");
   const [analystId, setAnalystId] = useState<string>("all");
-  const [periodType, setPeriodType] = useState<DigisacDashboardQueryFilters["periodType"]>(
-    DIGISAC_DASHBOARD_FILTER_DEFAULTS.periodType,
+  const [filters, setFilters] = useState<DigisacDashboardQueryFilters>(() =>
+    mergeDigisacDashboardFilters({
+      startDate: today,
+      endDate: today,
+      departmentId: "all",
+      userId: "all",
+    }),
   );
-  const [ticketStatus, setTicketStatus] = useState<DigisacDashboardQueryFilters["status"]>(
-    DIGISAC_DASHBOARD_FILTER_DEFAULTS.status,
-  );
-  const [userParticipation, setUserParticipation] = useState<DigisacDashboardQueryFilters["userParticipation"]>(
-    DIGISAC_DASHBOARD_FILTER_DEFAULTS.userParticipation,
-  );
-  const [departmentParticipation, setDepartmentParticipation] = useState<
-    DigisacDashboardQueryFilters["departmentParticipation"]
-  >(DIGISAC_DASHBOARD_FILTER_DEFAULTS.departmentParticipation);
-  const [serviceId, setServiceId] = useState("");
-  const [filters, setFilters] = useState<DigisacDashboardQueryFilters>({
-    startDate: today,
-    endDate: today,
-    departmentId: "all",
-    userId: "all",
-    ...DIGISAC_DASHBOARD_FILTER_DEFAULTS,
-  });
   const [refreshTick, setRefreshTick] = useState(0);
-
-  const buildQueryFilters = (): DigisacDashboardQueryFilters => ({
-    startDate: filters.startDate,
-    endDate: filters.endDate,
-    departmentId: filters.departmentId,
-    userId: filters.userId,
-    periodType: filters.periodType,
-    status: filters.status,
-    userParticipation: filters.userParticipation,
-    departmentParticipation: filters.departmentParticipation,
-    serviceId: filters.serviceId,
-    grouping: filters.grouping,
-  });
 
   const { data: departments } = useQuery({
     queryKey: ['digisac-departments'],
@@ -89,7 +60,7 @@ export default function DigisacDashboard() {
 
   const { data: geral, isLoading: isLoadingGeral, isError: isErrorGeral, error: errorGeral } = useQuery({
     queryKey: ['digisac-geral', filters, refreshTick],
-    queryFn: () => digisacApi.getDashboardGeral(buildQueryFilters()),
+    queryFn: () => digisacApi.getDashboardGeral(filters),
     enabled: shouldLoadDashboard,
     staleTime: 0,
     refetchInterval: 30 * 1000,
@@ -98,25 +69,21 @@ export default function DigisacDashboard() {
 
   const { data: analistas, isLoading: isLoadingAnalistas, isError: isErrorAnalistas, error: errorAnalistas } = useQuery({
     queryKey: ['digisac-analistas', filters, refreshTick],
-    queryFn: () => digisacApi.getDashboardAnalistas(buildQueryFilters()),
+    queryFn: () => digisacApi.getDashboardAnalistas(filters),
     enabled: shouldLoadDashboard,
     staleTime: 0,
     refetchInterval: 30 * 1000,
     refetchOnWindowFocus: true,
   });
 
-  const syncFiltersFromControls = (): DigisacDashboardQueryFilters => ({
-    startDate,
-    endDate,
-    departmentId,
-    userId: analystId,
-    periodType,
-    status: ticketStatus,
-    userParticipation,
-    departmentParticipation,
-    serviceId: serviceId.trim() || undefined,
-    grouping: "",
-  });
+  /** Parâmetros visíveis na tela + padrões da API Digisac (ocultos: periodType, status, participação, etc.). */
+  const syncFiltersFromControls = (): DigisacDashboardQueryFilters =>
+    mergeDigisacDashboardFilters({
+      startDate,
+      endDate,
+      departmentId,
+      userId: analystId,
+    });
 
   const refreshDigisacDashboard = () => {
     setFilters(syncFiltersFromControls());
@@ -227,85 +194,6 @@ export default function DigisacDashboard() {
           <div className="shrink-0"><DigisacMappingModal /></div>
         </div>
       </div>
-
-      <Card className="glass-card border-none shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Filtros Digisac (estatísticas de atendimento)</CardTitle>
-          <CardDescription>
-            Mesmos parâmetros do endpoint <code className="text-xs">/api/v1/dashboard/general</code> usado no painel Digisac.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">Tipo de período</span>
-              <Select value={periodType} onValueChange={(v) => setPeriodType(v as DigisacDashboardQueryFilters["periodType"])}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="openDate">Data de abertura</SelectItem>
-                  <SelectItem value="closeDate">Data de fechamento</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">Status do chamado</span>
-              <Select value={ticketStatus} onValueChange={(v) => setTicketStatus(v as DigisacDashboardQueryFilters["status"])}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="open">Abertos</SelectItem>
-                  <SelectItem value="close">Fechados</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">Participação do usuário</span>
-              <Select
-                value={userParticipation}
-                onValueChange={(v) => setUserParticipation(v as DigisacDashboardQueryFilters["userParticipation"])}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="last">Último (last)</SelectItem>
-                  <SelectItem value="middle">Meio (middle)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">Participação do departamento</span>
-              <Select
-                value={departmentParticipation}
-                onValueChange={(v) =>
-                  setDepartmentParticipation(v as DigisacDashboardQueryFilters["departmentParticipation"])
-                }
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="last">Último (last)</SelectItem>
-                  <SelectItem value="middle">Meio (middle)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1 sm:col-span-2 lg:col-span-1">
-              <span className="text-xs text-muted-foreground">ID do serviço (opcional)</span>
-              <Input
-                value={serviceId}
-                onChange={(e) => setServiceId(e.target.value)}
-                placeholder="serviceId"
-                className="h-9"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {hasError && (
         <div className="bg-destructive/15 text-destructive p-4 rounded-md flex items-center gap-3">
