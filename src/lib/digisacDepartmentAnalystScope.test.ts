@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  filterDigisacAnalystStatsForDepartment,
   filterDigisacUsersForDepartment,
   isDigisacDepartmentWithScopedAnalysts,
 } from './digisacDepartmentAnalystScope';
@@ -19,9 +20,19 @@ describe('digisacDepartmentAnalystScope', () => {
 
   it('restringe após tempo de resposta a Beatriz', () => {
     expect(isDigisacDepartmentWithScopedAnalysts('Após tempo de resposta')).toBe(true);
+    expect(isDigisacDepartmentWithScopedAnalysts('Apos Tempo de Resposta')).toBe(true);
     const filtered = filterDigisacUsersForDepartment('Após tempo de resposta', team);
     expect(filtered).toHaveLength(1);
     expect(filtered[0].name).toBe('Beatriz Oliveira');
+  });
+
+  it('restringe mesmo com todos os analistas no filtro (só Beatriz na API)', () => {
+    const stats = [
+      { name: 'Anna Carollina', tma: 1 },
+      { name: 'Beatriz Oliveira', tma: 2 },
+    ];
+    const filtered = filterDigisacAnalystStatsForDepartment('Após expediente', stats);
+    expect(filtered.map((s) => s.name)).toEqual(['Beatriz Oliveira']);
   });
 
   it('mantém todos em departamento comum', () => {

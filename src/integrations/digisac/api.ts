@@ -9,6 +9,7 @@ import {
   mergeDigisacDashboardFilters,
   type DigisacDashboardQueryFilters,
 } from "@/integrations/digisac/dashboardFilters";
+import { filterDigisacAnalystStatsForDepartment } from "@/lib/digisacDepartmentAnalystScope";
 
 export type { DigisacDashboardQueryFilters };
 export {
@@ -96,7 +97,10 @@ function buildDashboardPayload(filters: DigisacDashboardQueryFilters) {
   return {
     startDate: normalizeDateOnly(merged.startDate),
     endDate: normalizeDateOnly(merged.endDate),
+    startTime: merged.startTime?.trim() || undefined,
+    endTime: merged.endTime?.trim() || undefined,
     departmentId: merged.departmentId,
+    departmentName: merged.departmentName?.trim() || undefined,
     userId: merged.userId,
     periodType: merged.periodType,
     departmentParticipation: merged.departmentParticipation,
@@ -114,13 +118,14 @@ export const digisacApi = {
   },
 
   async getDashboardAnalistas(filters: DigisacDashboardQueryFilters = {}): Promise<DigisacAnalystStats[]> {
+    const merged = mergeDigisacDashboardFilters(filters);
     const data = await invokeDigisac<unknown>('analistas', {
       ...buildDashboardPayload(filters),
-      /** Vários userId na query (breakdown por analista), como na tela Digisac com equipe. */
       digisacAnalystDashboardDepartmentScope:
-        filters.departmentId && filters.departmentId !== 'all' ? 'filter' : 'all',
+        merged.departmentId && merged.departmentId !== 'all' ? 'filter' : 'all',
     });
-    return normalizeAnalistasResponse(data);
+    const rows = normalizeAnalistasResponse(data);
+    return filterDigisacAnalystStatsForDepartment(merged.departmentName, rows);
   },
 
   async getDepartments(): Promise<DigisacDepartment[]> {

@@ -6,6 +6,11 @@ export type DigisacTicketStatus = 'all' | 'open' | 'close';
 export type DigisacDashboardQueryFilters = {
   startDate?: string;
   endDate?: string;
+  /** Horário Brasília HH:mm (opcional; padrão 00:00 início e 23:59 fim). */
+  startTime?: string;
+  endTime?: string;
+  /** Nome do departamento Digisac (para escopo de analistas sem depender só do ID). */
+  departmentName?: string;
   departmentId?: string;
   /** ID do usuário Digisac ou `all`. */
   userId?: string;

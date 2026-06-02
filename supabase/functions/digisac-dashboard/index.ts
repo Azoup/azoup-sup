@@ -1,7 +1,11 @@
 import "https://deno.land/x/xhr@0.3.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 import { corsHeaders } from "../_shared/cors.ts";
-import { filterDigisacUsersForDepartment } from "../_shared/digisacDepartmentAnalystScope.ts";
+import {
+  filterDigisacUsersForDepartment,
+  findDigisacDepartmentAnalystRule,
+} from "../_shared/digisacDepartmentAnalystScope.ts";
+import { formatDigisacDateOnly, toDigisacPeriodIso } from "../_shared/digisacPeriod.ts";
 import {
   ADMIN_USER_ACTIONS,
   assertCallerIsAdmin,
@@ -65,28 +69,7 @@ const buildErrorPayload = (action: string | undefined, message: string, extra: R
 const handledErrorResponse = (action: string | undefined, message: string, extra: Record<string, unknown> = {}) =>
   jsonResponse(buildErrorPayload(action, message, extra), 200);
 
-const formatDateOnly = (value?: string) => {
-  if (!value || typeof value !== "string") return undefined;
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (match) return `${match[1]}-${match[2]}-${match[3]}`;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return undefined;
-  return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, "0")}-${String(parsed.getUTCDate()).padStart(2, "0")}`;
-};
-
-const toDigisacPeriod = (dateOnly: string | undefined, boundary: "start" | "end") => {
-  const normalized = formatDateOnly(dateOnly);
-  if (!normalized) return undefined;
-  const [year, month, day] = normalized.split("-").map(Number);
-  
-  // Para o início do período: 00:00:00 no horário de Brasília (UTC-3) -> 03:00:00 UTC
-  // Para o fim do período: 23:59:59 no horário de Brasília (UTC-3) -> 02:59:59 UTC do DIA SEGUINTE
-  const utcDate = boundary === "start"
-    ? new Date(Date.UTC(year, month - 1, day, 3, 0, 0, 0))
-    : new Date(Date.UTC(year, month - 1, day + 1, 2, 59, 59, 999));
-    
-  return utcDate.toISOString();
-};
+const formatDateOnly = (value?: string) => formatDigisacDateOnly(value);
 
 const getTodayBrazilDate = () => {
   const now = new Date();
@@ -500,6 +483,22 @@ const buildDigisacGeneralDashboardParams = (input: {
   return params;
 };
 
+const filterPayloadToUserIds = (payload: unknown, allowedIds: Set<string>) => {
+  if (!allowedIds.size) return payload;
+  const items = Array.isArray(payload)
+    ? payload
+    : firstArray(payload as Record<string, unknown>, ["items", "data", "rows", "users"]);
+  const filtered = items.filter((row: Record<string, unknown>) => {
+    const id = String(row?.userId ?? row?.id ?? (row?.user as Record<string, unknown>)?.id ?? "").trim();
+    return id && allowedIds.has(id);
+  });
+  if (Array.isArray(payload)) return filtered;
+  if (payload && typeof payload === "object") {
+    return { ...(payload as Record<string, unknown>), items: filtered };
+  }
+  return { items: filtered };
+};
+
 const mergeByUserPayloadWithExpectedIds = (
   payload: any,
   expectedUserIds: string[],
@@ -649,9 +648,11 @@ Deno.serve(async (req) => {
       const today = getTodayBrazilDate();
       const startDate = formatDateOnly(typeof payload?.startDate === "string" ? payload.startDate : undefined) ?? today;
       const endDate = formatDateOnly(typeof payload?.endDate === "string" ? payload.endDate : undefined) ?? startDate;
+      const startTime = typeof payload?.startTime === "string" ? payload.startTime : undefined;
+      const endTime = typeof payload?.endTime === "string" ? payload.endTime : undefined;
       const departmentId = typeof payload?.departmentId === "string" && payload.departmentId ? payload.departmentId : "all";
-      const startPeriod = toDigisacPeriod(startDate, "start")!;
-      const endPeriod = toDigisacPeriod(endDate, "end")!;
+      const startPeriod = toDigisacPeriodIso(startDate, "start", startTime)!;
+      const endPeriod = toDigisacPeriodIso(endDate, "end", endTime)!;
       const adminClient = createClient(
         Deno.env.get("SUPABASE_URL") ?? "",
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
@@ -662,22 +663,36 @@ Deno.serve(async (req) => {
 
       const requestedUserIds = normalizeRequestedUserIds(payload, mappings);
       const validMappedUsers = await loadValidMappedAnalystUsers(adminClient, digisacUrl, digisacToken);
-      const departmentNameForScope = departmentId !== "all"
-        ? await getDepartmentNameById(digisacUrl, digisacToken, departmentId)
-        : undefined;
+      const departmentNameFromPayload = typeof payload?.departmentName === "string"
+        ? payload.departmentName.trim()
+        : "";
+      const departmentNameForScope = departmentNameFromPayload
+        || (departmentId !== "all" ? await getDepartmentNameById(digisacUrl, digisacToken, departmentId) : undefined);
+      const isClosureDepartment = !!findDigisacDepartmentAnalystRule(departmentNameForScope);
       const scopedMappedUsers = filterDigisacUsersForDepartment(
         departmentNameForScope,
         validMappedUsers,
       );
-      if (departmentNameForScope && scopedMappedUsers.length < validMappedUsers.length) {
+      if (isClosureDepartment) {
         console.log(
-          "[Digisac] Departamento com escopo restrito:",
+          "[Digisac] Departamento de encerramento:",
           departmentNameForScope,
-          "→ analistas:",
+          "→ somente:",
           scopedMappedUsers.map((u) => u.name).join(", "),
         );
       }
-      const effectiveUserIds = resolveAnalystUserIds(requestedUserIds, scopedMappedUsers);
+      let effectiveUserIds = resolveAnalystUserIds(requestedUserIds, scopedMappedUsers);
+      if (isClosureDepartment && scopedMappedUsers.length > 0) {
+        const scopedIds = new Set(scopedMappedUsers.map((u) => u.id));
+        if (requestedUserIds.length === 0) {
+          effectiveUserIds = scopedMappedUsers.map((u) => u.id);
+        } else {
+          effectiveUserIds = effectiveUserIds.filter((id) => scopedIds.has(id));
+          if (effectiveUserIds.length === 0) {
+            effectiveUserIds = scopedMappedUsers.map((u) => u.id);
+          }
+        }
+      }
       const userParticipation = resolveUserParticipation(payload);
       const departmentParticipation = resolveDepartmentParticipation(payload);
       const periodType = resolvePeriodType(payload);
@@ -687,7 +702,11 @@ Deno.serve(async (req) => {
       const departmentIdForAnalysts = resolveDepartmentIdForAnalystsGeneral(payload, departmentId);
 
       const digisacUserIdsForRequest = action === "geral"
-        ? (effectiveUserIds.length === 1 ? [effectiveUserIds[0]] : [])
+        ? (isClosureDepartment && effectiveUserIds.length > 0
+          ? effectiveUserIds.slice(0, 1)
+          : effectiveUserIds.length === 1
+          ? [effectiveUserIds[0]]
+          : [])
         : effectiveUserIds;
 
       const cacheScope = action === "geral"
@@ -730,8 +749,10 @@ Deno.serve(async (req) => {
 
       let outData = response.data;
       if (action === "analistas") {
+        const allowed = new Set(effectiveUserIds);
+        const stripped = filterPayloadToUserIds(response.data, allowed);
         const nameById = new Map(scopedMappedUsers.map((u) => [u.id, u.name]));
-        outData = mergeByUserPayloadWithExpectedIds(response.data, effectiveUserIds, nameById);
+        outData = mergeByUserPayloadWithExpectedIds(stripped, effectiveUserIds, nameById);
       }
 
       cache[cacheKey] = {

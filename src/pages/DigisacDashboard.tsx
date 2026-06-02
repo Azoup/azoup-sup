@@ -37,6 +37,8 @@ export default function DigisacDashboard() {
   const today = getTodayDateStringBrazil();
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
+  const [startTime, setStartTime] = useState("00:00");
+  const [endTime, setEndTime] = useState("23:59");
   const [departmentId, setDepartmentId] = useState<string>("all");
   const [analystId, setAnalystId] = useState<string>("all");
   const [filters, setFilters] = useState<DigisacDashboardQueryFilters>(() =>
@@ -81,12 +83,20 @@ export default function DigisacDashboard() {
     refetchOnWindowFocus: true,
   });
 
+  const departmentNameForControls = useMemo(
+    () => departments?.find((d) => d.id === departmentId)?.name,
+    [departments, departmentId],
+  );
+
   /** Parâmetros visíveis na tela + padrões da API Digisac (ocultos: periodType, status, participação, etc.). */
   const syncFiltersFromControls = (): DigisacDashboardQueryFilters =>
     mergeDigisacDashboardFilters({
       startDate,
       endDate,
+      startTime,
+      endTime,
       departmentId,
+      departmentName: departmentNameForControls,
       userId: analystId,
     });
 
@@ -175,11 +185,17 @@ export default function DigisacDashboard() {
         <div className="flex flex-wrap items-end gap-3 w-full sm:w-auto">
           <div className="flex flex-col gap-1 min-w-[130px] flex-1 sm:flex-none">
             <span className="text-xs text-muted-foreground">Data Inicial</span>
-            <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full sm:w-[140px] h-9" />
+            <div className="flex gap-1">
+              <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full sm:w-[130px] h-9" />
+              <Input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className="w-[88px] h-9 shrink-0" title="Horário inicial (Brasília)" />
+            </div>
           </div>
           <div className="flex flex-col gap-1 min-w-[130px] flex-1 sm:flex-none">
             <span className="text-xs text-muted-foreground">Data Final</span>
-            <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full sm:w-[140px] h-9" />
+            <div className="flex gap-1">
+              <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full sm:w-[130px] h-9" />
+              <Input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} className="w-[88px] h-9 shrink-0" title="Horário final (Brasília)" />
+            </div>
           </div>
           <div className="flex flex-col gap-1 min-w-[160px] flex-1 basis-full sm:basis-auto sm:flex-none">
             <span className="text-xs text-muted-foreground">Departamento</span>

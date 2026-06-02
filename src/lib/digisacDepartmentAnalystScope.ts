@@ -13,23 +13,29 @@ type DepartmentRule = {
   matchesAnalyst: (normalizedAnalyst: string) => boolean;
 };
 
+/** Beatriz encerra chamados transferidos para estes departamentos. */
+export function isBeatrizClosureAnalyst(normalizedAnalyst: string): boolean {
+  return normalizedAnalyst.includes("beatriz") && normalizedAnalyst.includes("oliveira");
+}
+
 /**
- * Departamentos em que só parte da equipe atua no Digisac.
- * Após expediente / após tempo de resposta: encerramento por Beatriz Oliveira.
+ * Departamentos em que a equipe repassa o chamado e Beatriz Oliveira finaliza.
+ * TMA e gráficos devem considerar só quem encerra (Beatriz), mesmo com "Todos os analistas".
  */
 const DEPARTMENT_ANALYST_RULES: DepartmentRule[] = [
   {
     matchesDepartment: (d) =>
+      (d.includes("expediente") && (d.includes("apos") || d.includes("depois") || d.includes("pos"))) ||
       d.includes("apos expediente") ||
-      d.includes("depois do expediente") ||
       d.includes("depois expediente"),
-    matchesAnalyst: (a) => a.includes("beatriz") && a.includes("oliveira"),
+    matchesAnalyst: isBeatrizClosureAnalyst,
   },
   {
     matchesDepartment: (d) =>
-      d.includes("apos tempo de resposta") ||
-      (d.includes("tempo de resposta") && d.includes("apos")),
-    matchesAnalyst: (a) => a.includes("beatriz") && a.includes("oliveira"),
+      d.includes("tempo de resposta") ||
+      d.includes("apos tempo") ||
+      (d.includes("resposta") && (d.includes("apos") || d.includes("depois"))),
+    matchesAnalyst: isBeatrizClosureAnalyst,
   },
 ];
 
@@ -52,7 +58,9 @@ export function filterDigisacUsersForDepartment<T extends { id: string; name: st
   const rule = findDigisacDepartmentAnalystRule(departmentName);
   if (!rule) return users;
   const filtered = users.filter((u) => rule.matchesAnalyst(normalizeDigisacScopeName(u.name)));
-  return filtered.length > 0 ? filtered : users;
+  if (filtered.length > 0) return filtered;
+  const beatriz = users.filter((u) => isBeatrizClosureAnalyst(normalizeDigisacScopeName(u.name)));
+  return beatriz.length > 0 ? beatriz : users;
 }
 
 export function filterDigisacAnalystStatsForDepartment<T extends { name: string }>(
@@ -61,5 +69,8 @@ export function filterDigisacAnalystStatsForDepartment<T extends { name: string 
 ): T[] {
   const rule = findDigisacDepartmentAnalystRule(departmentName);
   if (!rule) return stats;
-  return stats.filter((row) => rule.matchesAnalyst(normalizeDigisacScopeName(row.name)));
+  const filtered = stats.filter((row) => rule.matchesAnalyst(normalizeDigisacScopeName(row.name)));
+  if (filtered.length > 0) return filtered;
+  const beatriz = stats.filter((row) => isBeatrizClosureAnalyst(normalizeDigisacScopeName(row.name)));
+  return beatriz.length > 0 ? beatriz : stats;
 }
