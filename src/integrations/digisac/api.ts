@@ -5,6 +5,16 @@ import {
   type DigisacAnalystStats,
   type DigisacGeralResponse,
 } from "@/integrations/digisac/dashboardNormalize";
+import {
+  mergeDigisacDashboardFilters,
+  type DigisacDashboardQueryFilters,
+} from "@/integrations/digisac/dashboardFilters";
+
+export type { DigisacDashboardQueryFilters };
+export {
+  DIGISAC_DASHBOARD_FILTER_DEFAULTS,
+  mergeDigisacDashboardFilters,
+} from "@/integrations/digisac/dashboardFilters";
 
 export type { DigisacAnalystStats, DigisacGeralResponse };
 
@@ -81,33 +91,34 @@ async function invokeDigisac<T>(action: string, payload: Record<string, any> = {
   return data as T;
 }
 
+function buildDashboardPayload(filters: DigisacDashboardQueryFilters) {
+  const merged = mergeDigisacDashboardFilters(filters);
+  return {
+    startDate: normalizeDateOnly(merged.startDate),
+    endDate: normalizeDateOnly(merged.endDate),
+    departmentId: merged.departmentId,
+    userId: merged.userId,
+    periodType: merged.periodType,
+    departmentParticipation: merged.departmentParticipation,
+    userParticipation: merged.userParticipation,
+    status: merged.status,
+    grouping: merged.grouping,
+    ...(merged.serviceId ? { serviceId: merged.serviceId } : {}),
+  };
+}
+
 export const digisacApi = {
-  async getDashboardGeral(startDate?: string, endDate?: string, departmentId?: string, userId?: string): Promise<DigisacGeralResponse> {
-    const data = await invokeDigisac<unknown>('geral', {
-      startDate: normalizeDateOnly(startDate),
-      endDate: normalizeDateOnly(endDate),
-      departmentId: departmentId || 'all',
-      userId: userId || 'all',
-      /** Igual ao web Digisac (estatísticas antigas / geral). */
-      userParticipation: 'last',
-      departmentParticipation: 'last',
-    });
+  async getDashboardGeral(filters: DigisacDashboardQueryFilters = {}): Promise<DigisacGeralResponse> {
+    const data = await invokeDigisac<unknown>('geral', buildDashboardPayload(filters));
     return normalizeGeralResponse(data);
   },
 
-  async getDashboardAnalistas(startDate?: string, endDate?: string, departmentId?: string, userId?: string): Promise<DigisacAnalystStats[]> {
+  async getDashboardAnalistas(filters: DigisacDashboardQueryFilters = {}): Promise<DigisacAnalystStats[]> {
     const data = await invokeDigisac<unknown>('analistas', {
-      startDate: normalizeDateOnly(startDate),
-      endDate: normalizeDateOnly(endDate),
-      departmentId: departmentId || 'all',
-      userId: userId || 'all',
-      userParticipation: 'last',
-      departmentParticipation: 'last',
-      /**
-       * Igual à URL da tela nova do Digisac (`departmentId=all` + vários userId).
-       * Para restringir ao departamento do filtro, envie `digisacAnalystDashboardDepartmentScope: "filter"` na edge (futuro UI).
-       */
-      digisacAnalystDashboardDepartmentScope: 'all',
+      ...buildDashboardPayload(filters),
+      /** Vários userId na query (breakdown por analista), como na tela Digisac com equipe. */
+      digisacAnalystDashboardDepartmentScope:
+        filters.departmentId && filters.departmentId !== 'all' ? 'filter' : 'all',
     });
     return normalizeAnalistasResponse(data);
   },

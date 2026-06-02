@@ -301,16 +301,36 @@ const loadDigisacUsers = async (baseUrl: string, token: string) => {
   return users;
 };
 
-const normalizeRequestedUserIds = (payload: Record<string, unknown>) => {
+const normalizeRequestedUserIds = (
+  payload: Record<string, unknown>,
+  mappings: Array<{ digisac_user_id: string; analyst_id: string }> = [],
+) => {
   const userIds = Array.isArray(payload.userIds)
     ? payload.userIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0 && value !== "all")
     : [];
   const singleUserId = typeof payload.userId === "string" && payload.userId.trim().length > 0 && payload.userId !== "all"
-    ? payload.userId
+    ? payload.userId.trim()
     : undefined;
 
-  if (userIds.length > 0) return userIds;
-  if (singleUserId) return [singleUserId];
+  const digisacIds = new Set(mappings.map((m) => String(m.digisac_user_id)));
+  const analystIdToDigisac = new Map(mappings.map((m) => [String(m.analyst_id), String(m.digisac_user_id)]));
+
+  const resolveOne = (raw: string): string | undefined => {
+    if (digisacIds.has(raw)) return raw;
+    return analystIdToDigisac.get(raw);
+  };
+
+  const resolved: string[] = [];
+  for (const id of userIds) {
+    const r = resolveOne(id);
+    if (r) resolved.push(r);
+  }
+  if (resolved.length > 0) return [...new Set(resolved)];
+
+  if (singleUserId) {
+    const r = resolveOne(singleUserId);
+    if (r) return [r];
+  }
   return [];
 };
 
@@ -362,20 +382,32 @@ const resolveAnalystUserIds = (
   return validUsers.map((user) => user.id);
 };
 
-/** `payload` pode forçar `last`/`all` (igual query string do web Digisac). */
+const resolvePeriodType = (payload: Record<string, unknown>) => {
+  const p = typeof payload.periodType === "string" ? payload.periodType.trim() : "";
+  if (p === "closeDate" || p === "openDate") return p;
+  return "openDate";
+};
+
+const resolveTicketStatus = (payload: Record<string, unknown>) => {
+  const p = typeof payload.status === "string" ? payload.status.trim().toLowerCase() : "";
+  if (p === "open" || p === "close" || p === "all") return p;
+  return "all";
+};
+
+/** `payload` pode forçar `last`/`middle` (API Digisac). */
 const resolveUserParticipation = (payload: Record<string, unknown>) => {
   const p = typeof payload.userParticipation === "string" ? payload.userParticipation.trim().toLowerCase() : "";
-  if (p === "all" || p === "last") return p;
-  const v = Deno.env.get("DIGISAC_USER_PARTICIPATION")?.trim();
-  if (v === "all" || v === "last") return v;
+  if (p === "last" || p === "middle") return p;
+  const v = Deno.env.get("DIGISAC_USER_PARTICIPATION")?.trim()?.toLowerCase();
+  if (v === "last" || v === "middle") return v;
   return "last";
 };
 
 const resolveDepartmentParticipation = (payload: Record<string, unknown>) => {
   const p = typeof payload.departmentParticipation === "string" ? payload.departmentParticipation.trim().toLowerCase() : "";
-  if (p === "all" || p === "last") return p;
-  const v = Deno.env.get("DIGISAC_DEPARTMENT_PARTICIPATION")?.trim();
-  if (v === "all" || v === "last") return v;
+  if (p === "last" || p === "middle") return p;
+  const v = Deno.env.get("DIGISAC_DEPARTMENT_PARTICIPATION")?.trim()?.toLowerCase();
+  if (v === "last" || v === "middle") return v;
   return "last";
 };
 
@@ -397,74 +429,53 @@ const resolveDepartmentIdForAnalystsGeneral = (
 };
 
 /**
- * Dashboard geral: com o mesmo critério da Digisac ao filtrar só departamento/período,
- * usar `userId=all` (toda a equipe no escopo). Só restringe a um atendente quando o filtro do app pede um analista.
+ * Monta query string oficial: `GET /api/v1/dashboard/general`
+ * Um usuário → `userId=<id>`; vários → `userId[]` + `userIdsList[]`; nenhum → `userId=all`.
  */
-const buildGeneralDashboardParams = (
-  startPeriod: string,
-  endPeriod: string,
-  departmentId: string,
-  singleMappedDigisacUserId: string | undefined,
-  userParticipation: string,
-  departmentParticipation: string,
-) => {
+const buildDigisacGeneralDashboardParams = (input: {
+  startPeriod: string;
+  endPeriod: string;
+  departmentId: string;
+  digisacUserIds: string[];
+  periodType: string;
+  userParticipation: string;
+  departmentParticipation: string;
+  status: string;
+  grouping?: string;
+  serviceId?: string;
+}) => {
   const params = new URLSearchParams({
-    startPeriod,
-    endPeriod,
-    periodType: "openDate",
-    userParticipation,
-    departmentParticipation,
-    status: "all",
+    startPeriod: input.startPeriod,
+    endPeriod: input.endPeriod,
+    periodType: input.periodType,
+    userParticipation: input.userParticipation,
+    departmentParticipation: input.departmentParticipation,
+    status: input.status,
     userStatus: "all",
     withTotals: "true",
   });
-  params.set("grouping", "");
+  params.set("grouping", input.grouping ?? "");
 
-  if (departmentId && departmentId !== "all") params.set("departmentId", departmentId);
+  params.set(
+    "departmentId",
+    input.departmentId && input.departmentId !== "all" ? input.departmentId : "all",
+  );
 
-  if (singleMappedDigisacUserId && singleMappedDigisacUserId.trim().length > 0) {
-    params.set("userId", singleMappedDigisacUserId.trim());
-  } else {
+  if (input.serviceId?.trim()) params.set("serviceId", input.serviceId.trim());
+
+  const ids = input.digisacUserIds.map((id) => id.trim()).filter(Boolean);
+  if (ids.length === 0) {
     params.set("userId", "all");
+  } else if (ids.length === 1) {
+    params.set("userId", ids[0]);
+  } else {
+    for (const userId of ids) {
+      params.append("userId[]", userId);
+      params.append("userIdsList[]", userId);
+    }
   }
 
-  console.log("PARAMS FINAIS (geral):", params.toString());
-  return params;
-};
-
-/**
- * Tela nova Digisac: `GET /api/v1/dashboard/general` com `userId[]` + `userIdsList[]` (não `/dashboard/by-user`).
- */
-const buildAnalystsGeneralDashboardParams = (
-  startPeriod: string,
-  endPeriod: string,
-  departmentIdForRequest: string,
-  requestedUserIds: string[],
-  userParticipation: string,
-  departmentParticipation: string,
-) => {
-  const params = new URLSearchParams({
-    startPeriod,
-    endPeriod,
-    periodType: "openDate",
-    userParticipation,
-    departmentParticipation,
-    status: "all",
-    userStatus: "all",
-    withTotals: "true",
-  });
-  params.set("grouping", "");
-
-  params.set("departmentId", departmentIdForRequest);
-
-  for (const userId of requestedUserIds) {
-    const id = userId.trim();
-    if (!id) continue;
-    params.append("userId[]", id);
-    params.append("userIdsList[]", id);
-  }
-
-  console.log("PARAMS FINAIS (analistas / general multi-user):", params.toString());
+  console.log("PARAMS FINAIS (dashboard/general):", params.toString());
   return params;
 };
 
@@ -618,27 +629,35 @@ Deno.serve(async (req) => {
       const startDate = formatDateOnly(typeof payload?.startDate === "string" ? payload.startDate : undefined) ?? today;
       const endDate = formatDateOnly(typeof payload?.endDate === "string" ? payload.endDate : undefined) ?? startDate;
       const departmentId = typeof payload?.departmentId === "string" && payload.departmentId ? payload.departmentId : "all";
-      const requestedUserIds = normalizeRequestedUserIds(payload);
       const startPeriod = toDigisacPeriod(startDate, "start")!;
       const endPeriod = toDigisacPeriod(endDate, "end")!;
       const adminClient = createClient(
         Deno.env.get("SUPABASE_URL") ?? "",
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
       );
+      const mappingsResult = await adminClient.from("digisac_analyst_mapping").select("digisac_user_id, analyst_id");
+      if (mappingsResult.error) throw mappingsResult.error;
+      const mappings = mappingsResult.data ?? [];
+
+      const requestedUserIds = normalizeRequestedUserIds(payload, mappings);
       const validMappedUsers = await loadValidMappedAnalystUsers(adminClient, digisacUrl, digisacToken);
       const effectiveUserIds = resolveAnalystUserIds(requestedUserIds, validMappedUsers);
-      const generalSingleUserId =
-        requestedUserIds.length === 1 && resolveAnalystUserIds(requestedUserIds, validMappedUsers).length === 1
-          ? requestedUserIds[0]
-          : undefined;
       const userParticipation = resolveUserParticipation(payload);
       const departmentParticipation = resolveDepartmentParticipation(payload);
+      const periodType = resolvePeriodType(payload);
+      const status = resolveTicketStatus(payload);
+      const serviceId = typeof payload.serviceId === "string" ? payload.serviceId : undefined;
+      const grouping = typeof payload.grouping === "string" ? payload.grouping : "";
       const departmentIdForAnalysts = resolveDepartmentIdForAnalystsGeneral(payload, departmentId);
 
+      const digisacUserIdsForRequest = action === "geral"
+        ? (effectiveUserIds.length === 1 ? [effectiveUserIds[0]] : [])
+        : effectiveUserIds;
+
       const cacheScope = action === "geral"
-        ? (generalSingleUserId ?? "all")
+        ? (digisacUserIdsForRequest[0] ?? "all")
         : (effectiveUserIds.join(",") || "none");
-      const cacheKey = `dashboard_proxy_${action}_${startPeriod}_${endPeriod}_${departmentId}_${departmentIdForAnalysts}_${userParticipation}_${departmentParticipation}_${cacheScope}`;
+      const cacheKey = `dashboard_proxy_${action}_${startPeriod}_${endPeriod}_${departmentId}_${departmentIdForAnalysts}_${periodType}_${status}_${userParticipation}_${departmentParticipation}_${serviceId ?? ""}_${cacheScope}`;
 
       const cached = cache[cacheKey]?.data;
       if (cached && Date.now() - cache[cacheKey].timestamp < DASHBOARD_CACHE_TTL_MS) {
@@ -653,23 +672,18 @@ Deno.serve(async (req) => {
         return jsonResponse(emptyPayload);
       }
 
-      const params = action === "geral"
-        ? buildGeneralDashboardParams(
-          startPeriod,
-          endPeriod,
-          departmentId,
-          generalSingleUserId,
-          userParticipation,
-          departmentParticipation,
-        )
-        : buildAnalystsGeneralDashboardParams(
-          startPeriod,
-          endPeriod,
-          departmentIdForAnalysts,
-          effectiveUserIds,
-          userParticipation,
-          departmentParticipation,
-        );
+      const params = buildDigisacGeneralDashboardParams({
+        startPeriod,
+        endPeriod,
+        departmentId: action === "geral" ? departmentId : departmentIdForAnalysts,
+        digisacUserIds: digisacUserIdsForRequest,
+        periodType,
+        userParticipation,
+        departmentParticipation,
+        status,
+        grouping,
+        serviceId,
+      });
       const response = await fetchDigisac(digisacUrl, digisacToken, endpoint, params);
       if (!response.ok) {
         return handledErrorResponse(action, `Erro API Digisac: ${response.status}`, {
