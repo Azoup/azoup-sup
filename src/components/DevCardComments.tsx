@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -13,7 +13,13 @@ import { QueryLoadState } from '@/components/QueryLoadState';
 import { toast } from 'sonner';
 import { DEV_NOTES_SYSTEM_EMAIL } from '@/lib/devKanbanDevNotes';
 import { devTicketLabel } from '@/lib/devKanbanTicketNumber';
-import { fetchCommentAuthorProfiles } from '@/lib/commentAuthorProfiles';
+import {
+  commentAuthorProfileQueryKey,
+  enrichCommentWithAuthorProfile,
+  fetchCommentAuthorProfile,
+  fetchCommentAuthorProfiles,
+} from '@/lib/commentAuthorProfiles';
+import { useCommentAuthorProfile } from '@/hooks/useCommentAuthorProfile';
 import { actorNameFromUser } from '@/lib/actorName';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -45,11 +51,7 @@ async function fetchDevCardComments(cardId: string): Promise<DevCommentRow[]> {
   const rows = data ?? [];
   const profileMap = await fetchCommentAuthorProfiles(rows.map((c) => c.user_id));
 
-  return rows.map((c) => ({
-    ...c,
-    display_name: profileMap[c.user_id]?.name || c.user_email?.split('@')[0] || '?',
-    photo_url: profileMap[c.user_id]?.photo_url || '',
-  }));
+  return rows.map((c) => enrichCommentWithAuthorProfile(c, profileMap));
 }
 
 export function DevCardComments({ cardId }: DevCardCommentsProps) {
@@ -57,6 +59,7 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
   const { isAdmin } = useRole();
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
+  const { data: selfProfile } = useCommentAuthorProfile(user?.id);
 
   const { data: comments = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['dev-card-comments', cardId],
@@ -81,6 +84,19 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
     return () => { supabase.removeChannel(channel); };
   }, [cardId, queryClient]);
 
+  const resolveSelfAuthor = useCallback(() => {
+    const cached = user?.id
+      ? queryClient.getQueryData<{ name: string; photo_url: string }>(
+          commentAuthorProfileQueryKey(user.id),
+        )
+      : undefined;
+    const profile = selfProfile ?? cached;
+    return {
+      display_name: profile?.name || actorNameFromUser(user),
+      photo_url: profile?.photo_url || '',
+    };
+  }, [queryClient, selfProfile, user]);
+
   const addComment = useMutation({
     mutationFn: async (content: string) => {
       const { data, error } = await supabase
@@ -94,11 +110,30 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
         .select()
         .single();
       if (error) throw error;
-      return data;
+      const profileMap = await fetchCommentAuthorProfiles([user!.id]);
+      if (user?.id && profileMap[user.id]) {
+        queryClient.setQueryData(commentAuthorProfileQueryKey(user.id), profileMap[user.id]);
+      }
+      return { inserted: data, profileMap };
     },
     onMutate: async (content: string) => {
       await queryClient.cancelQueries({ queryKey: ['dev-card-comments', cardId] });
       const previous = queryClient.getQueryData<DevCommentRow[]>(['dev-card-comments', cardId]);
+      let author = resolveSelfAuthor();
+      if (!author.photo_url && user?.id) {
+        try {
+          const profile = await fetchCommentAuthorProfile(user.id);
+          if (profile) {
+            queryClient.setQueryData(commentAuthorProfileQueryKey(user.id), profile);
+            author = {
+              display_name: profile.name || author.display_name,
+              photo_url: profile.photo_url,
+            };
+          }
+        } catch {
+          /* mantém fallback */
+        }
+      }
       const optimistic: DevCommentRow = {
         id: `optimistic-${Date.now()}`,
         card_id: cardId,
@@ -106,8 +141,8 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
         user_email: user!.email || '',
         content,
         created_at: new Date().toISOString(),
-        display_name: actorNameFromUser(user),
-        photo_url: (user?.user_metadata as { avatar_url?: string })?.avatar_url || '',
+        display_name: author.display_name,
+        photo_url: author.photo_url,
       };
       queryClient.setQueryData<DevCommentRow[]>(['dev-card-comments', cardId], (old = []) => [
         optimistic,
@@ -123,18 +158,15 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
       if (ctx?.content) setText(ctx.content);
       toast.error('Erro ao adicionar comentário');
     },
-    onSuccess: (inserted, _content, ctx) => {
-      if (inserted) {
+    onSuccess: (result) => {
+      if (result?.inserted) {
         queryClient.setQueryData<DevCommentRow[]>(['dev-card-comments', cardId], (old = []) => {
           const withoutOptimistic = old.filter((c) => !c.id.startsWith('optimistic-'));
-          const profileMap = queryClient.getQueryData<Record<string, { name: string; photo_url: string }>>(
-            ['dev-card-comment-author', user?.id],
+          const row = enrichCommentWithAuthorProfile(
+            result.inserted,
+            result.profileMap,
+            user,
           );
-          const row: DevCommentRow = {
-            ...inserted,
-            display_name: profileMap?.[inserted.user_id]?.name || actorNameFromUser(user),
-            photo_url: profileMap?.[inserted.user_id]?.photo_url || '',
-          };
           return [row, ...withoutOptimistic];
         });
       }
