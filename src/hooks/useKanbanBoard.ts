@@ -3,8 +3,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { fetchKanbanBoard } from '@/lib/fetchKanbanBoard';
 import { readKanbanBoardCache, writeKanbanBoardCache } from '@/lib/kanbanBoardCache';
 
-const KANBAN_STALE_MS = 30 * 1000;
-const KANBAN_REALTIME_REFETCH_MS = 400;
+const KANBAN_STALE_MS = 90 * 1000;
+const KANBAN_REALTIME_REFETCH_MS = 800;
 
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -23,8 +23,10 @@ export function useKanbanBoard(enabled: boolean) {
     initialDataUpdatedAt: cached?.cachedAt,
     staleTime: KANBAN_STALE_MS,
     gcTime: 15 * 60 * 1000,
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
+    retry: 2,
+    placeholderData: (prev) => prev,
   });
 }
 

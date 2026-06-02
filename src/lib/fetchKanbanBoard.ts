@@ -1,7 +1,9 @@
 import { supabase } from '@/integrations/supabase/client';
+import { shouldRejectEmptyBoardFetch } from '@/lib/boardFetchSafety';
 import { assertSupabaseData } from '@/lib/supabaseQuery';
 import { dedupeCardLabelRows } from '@/lib/kanbanCardLabels';
 import type { KanbanBoardData } from '@/lib/kanbanBoardCache';
+import { readKanbanBoardCache } from '@/lib/kanbanBoardCache';
 
 const API_TIMEOUT_MS = 8_000;
 
@@ -55,19 +57,16 @@ async function fetchKanbanBoardViaProxy(): Promise<KanbanBoardData | null> {
 }
 
 export async function fetchKanbanBoard(accessToken?: string): Promise<KanbanBoardData> {
+  const fallback = readKanbanBoardCache();
+
   if (accessToken) {
     const fromApi = await fetchKanbanBoardViaApi(accessToken);
-    if (fromApi) return fromApi;
+    if (fromApi && !shouldRejectEmptyBoardFetch(fromApi, fallback)) return fromApi;
   }
   const fromProxy = await fetchKanbanBoardViaProxy();
-  if (fromProxy) return fromProxy;
-  return {
-    columns: [],
-    analysts: [],
-    cards: [],
-    labels: [],
-    cardLabels: [],
-    cardImages: [],
-    cachedAt: Date.now(),
-  };
+  if (fromProxy && !shouldRejectEmptyBoardFetch(fromProxy, fallback)) return fromProxy;
+
+  if (fallback) return fallback;
+
+  throw new Error('Não foi possível carregar o quadro Kanban. Verifique a conexão e tente novamente.');
 }

@@ -48,4 +48,11 @@ describe('handleAppRealtimeTableChange', () => {
     handleAppRealtimeTableChange('kanban_cards', queryClient);
     expect(invalidateKanbanBoard).not.toHaveBeenCalled();
   });
+
+  it('não recarrega board inteiro em mudança de checklist', () => {
+    const spy = vi.spyOn(queryClient, 'invalidateQueries');
+    handleAppRealtimeTableChange('kanban_card_checklist', queryClient);
+    expect(invalidateKanbanBoard).not.toHaveBeenCalled();
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['card-checklist'] });
+  });
 });

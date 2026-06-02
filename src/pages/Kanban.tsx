@@ -22,6 +22,7 @@ import {
 } from '@/lib/kanbanCardLabels';
 import { useChecklistProgressMap } from '@/hooks/useChecklistProgressMap';
 import { markBoardLocalWrite } from '@/lib/boardRefreshGuard';
+import { isSupportKanbanCardFormDirty } from '@/lib/kanbanCardFormDirty';
 import { logActivity } from '@/hooks/useActivityLog';
 import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
 import { actorNameFromUser } from '@/lib/actorName';
@@ -761,6 +762,36 @@ const Kanban = () => {
     setMoveToColumnSlug('');
   };
 
+  const editFormDirty = useMemo(
+    () =>
+      isSupportKanbanCardFormDirty(editingCard, {
+        title,
+        description,
+        analystId,
+        selectedLabels,
+        moveToColumnSlug,
+      }) || pendingImages.length > 0 || pendingFiles.length > 0,
+    [editingCard, title, description, analystId, selectedLabels, moveToColumnSlug, pendingImages.length, pendingFiles.length],
+  );
+
+  const handleEditOpenChange = useCallback(
+    (open: boolean) => {
+      if (open) {
+        setEditOpen(true);
+        return;
+      }
+      if (editingCard && editFormDirty && title.trim()) {
+        if (!updateCard.isPending) {
+          updateCard.mutate();
+        }
+        return;
+      }
+      resetForm();
+      setEditOpen(false);
+    },
+    [editingCard, editFormDirty, title, updateCard],
+  );
+
   const openEdit = (card: any) => {
     setEditingCard(card);
     setMoveToColumnSlug(card.status || '');
@@ -1169,7 +1200,7 @@ const Kanban = () => {
       </Dialog>
 
       {/* Edit Dialog */}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+      <Dialog open={editOpen} onOpenChange={handleEditOpenChange}>
         <DialogContent className="max-w-lg sm:max-w-2xl max-h-[85vh] overflow-y-auto" onPointerDownOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Editar Card</DialogTitle>

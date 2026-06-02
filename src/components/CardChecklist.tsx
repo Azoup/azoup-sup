@@ -55,7 +55,16 @@ export function CardChecklist({ cardId, cardType, description }: Props) {
 
   const insertItems = useMutation({
     mutationFn: async (contents: string[]) => {
-      const startPos = items.length;
+      const { data: latest, error: posErr } = await (supabase as any)
+        .from("kanban_card_checklist")
+        .select("position")
+        .eq("card_id", cardId)
+        .eq("card_type", cardType)
+        .order("position", { ascending: false })
+        .limit(1);
+      if (posErr) throw posErr;
+      const startPos =
+        latest?.[0]?.position != null ? (latest[0].position as number) + 1 : 0;
       const rows = contents.map((content, i) => ({
         card_id: cardId,
         card_type: cardType,

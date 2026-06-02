@@ -1,7 +1,9 @@
 import { supabase } from '@/integrations/supabase/client';
+import { shouldRejectEmptyBoardFetch } from '@/lib/boardFetchSafety';
 import { assertSupabaseData } from '@/lib/supabaseQuery';
 import { dedupeCardLabelRows } from '@/lib/kanbanCardLabels';
 import type { DevKanbanBoardData } from '@/lib/devKanbanBoardPatch';
+import { readDevKanbanBoardCache } from '@/lib/devKanbanBoardCache';
 
 const API_TIMEOUT_MS = 10_000;
 
@@ -57,20 +59,16 @@ async function fetchDevKanbanBoardViaProxy(): Promise<DevKanbanBoardData | null>
 }
 
 export async function fetchDevKanbanBoard(accessToken?: string): Promise<DevKanbanBoardData> {
+  const fallback = readDevKanbanBoardCache();
+
   if (accessToken) {
     const fromApi = await fetchDevKanbanBoardViaApi(accessToken);
-    if (fromApi) return fromApi;
+    if (fromApi && !shouldRejectEmptyBoardFetch(fromApi, fallback)) return fromApi;
   }
   const fromProxy = await fetchDevKanbanBoardViaProxy();
-  if (fromProxy) return fromProxy;
-  return {
-    columns: [],
-    analysts: [],
-    developers: [],
-    cards: [],
-    labels: [],
-    cardLabels: [],
-    cardImages: [],
-    cachedAt: Date.now(),
-  };
+  if (fromProxy && !shouldRejectEmptyBoardFetch(fromProxy, fallback)) return fromProxy;
+
+  if (fallback) return fallback;
+
+  throw new Error('Não foi possível carregar o quadro DEV. Verifique a conexão e tente novamente.');
 }

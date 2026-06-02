@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { markBoardLocalWrite } from '@/lib/boardRefreshGuard';
 
 export type CardLabelTable = 'kanban_card_labels' | 'dev_kanban_card_labels';
 
@@ -55,6 +56,8 @@ export async function syncCardLabels(
   const labelsUnchanged =
     existingSet.size === unique.length && unique.every((id) => existingSet.has(id));
   if (labelsUnchanged) return;
+
+  markBoardLocalWrite(4);
 
   const { error: delErr } = await supabase.from(table).delete().eq('card_id', cardId);
   if (delErr) throw delErr;

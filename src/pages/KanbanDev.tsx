@@ -23,6 +23,7 @@ import {
 } from '@/lib/kanbanCardLabels';
 import { useChecklistProgressMap } from '@/hooks/useChecklistProgressMap';
 import { markBoardLocalWrite } from '@/lib/boardRefreshGuard';
+import { isDevKanbanCardFormDirty } from '@/lib/kanbanCardFormDirty';
 import { logActivity } from '@/hooks/useActivityLog';
 import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { KanbanCardImage } from '@/components/KanbanCardImage';
@@ -825,6 +826,50 @@ const KanbanDev = () => {
     setMoveToColumnSlug('');
   };
 
+  const editFormDirty = useMemo(
+    () =>
+      isDevKanbanCardFormDirty(editingCard, {
+        title,
+        description,
+        devNotes,
+        initialDevNotes: initialDevNotesRef.current,
+        analystId,
+        developerId,
+        selectedLabels,
+        moveToColumnSlug,
+      }) || pendingImages.length > 0 || pendingFiles.length > 0,
+    [
+      editingCard,
+      title,
+      description,
+      devNotes,
+      analystId,
+      developerId,
+      selectedLabels,
+      moveToColumnSlug,
+      pendingImages.length,
+      pendingFiles.length,
+    ],
+  );
+
+  const handleEditOpenChange = useCallback(
+    (open: boolean) => {
+      if (open) {
+        setEditOpen(true);
+        return;
+      }
+      if (editingCard && editFormDirty && title.trim()) {
+        if (!updateCard.isPending) {
+          updateCard.mutate();
+        }
+        return;
+      }
+      resetForm();
+      setEditOpen(false);
+    },
+    [editingCard, editFormDirty, title, updateCard],
+  );
+
   const openEdit = (card: any) => {
     setEditingCard(card);
     setMoveToColumnSlug(card.status || '');
@@ -1257,7 +1302,7 @@ const KanbanDev = () => {
       </Dialog>
 
       {/* Edit Dialog */}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+      <Dialog open={editOpen} onOpenChange={handleEditOpenChange}>
         <DialogContent
           className="max-w-lg sm:max-w-2xl flex min-h-0 flex-col max-h-[min(90vh,calc(100dvh-2rem))] overflow-hidden gap-0 p-0"
           onPointerDownOutside={e => e.preventDefault()}
