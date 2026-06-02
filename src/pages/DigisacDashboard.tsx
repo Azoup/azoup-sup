@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DigisacMappingModal } from "@/components/DigisacMappingModal";
+import { DigisacDateTimeField } from "@/components/DigisacDateTimeField";
 import { digisacApi, mergeDigisacDashboardFilters, type DigisacDashboardQueryFilters } from "@/integrations/digisac/api";
 import {
   filterDigisacAnalystStatsForDepartment,
@@ -35,10 +35,8 @@ const getTodayDateStringBrazil = () => {
 
 export default function DigisacDashboard() {
   const today = getTodayDateStringBrazil();
-  const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState(today);
-  const [startTime, setStartTime] = useState("00:00");
-  const [endTime, setEndTime] = useState("23:59");
+  const [periodStart, setPeriodStart] = useState({ date: today, time: "00:00" });
+  const [periodEnd, setPeriodEnd] = useState({ date: today, time: "23:59" });
   const [departmentId, setDepartmentId] = useState<string>("all");
   const [analystId, setAnalystId] = useState<string>("all");
   const [filters, setFilters] = useState<DigisacDashboardQueryFilters>(() =>
@@ -91,10 +89,10 @@ export default function DigisacDashboard() {
   /** Parâmetros visíveis na tela + padrões da API Digisac (ocultos: periodType, status, participação, etc.). */
   const syncFiltersFromControls = (): DigisacDashboardQueryFilters =>
     mergeDigisacDashboardFilters({
-      startDate,
-      endDate,
-      startTime,
-      endTime,
+      startDate: periodStart.date,
+      endDate: periodEnd.date,
+      startTime: periodStart.time,
+      endTime: periodEnd.time,
       departmentId,
       departmentName: departmentNameForControls,
       userId: analystId,
@@ -183,20 +181,18 @@ export default function DigisacDashboard() {
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-3 w-full sm:w-auto">
-          <div className="flex flex-col gap-1 min-w-[130px] flex-1 sm:flex-none">
-            <span className="text-xs text-muted-foreground">Data Inicial</span>
-            <div className="flex gap-1">
-              <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full sm:w-[130px] h-9" />
-              <Input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className="w-[88px] h-9 shrink-0" title="Horário inicial (Brasília)" />
-            </div>
-          </div>
-          <div className="flex flex-col gap-1 min-w-[130px] flex-1 sm:flex-none">
-            <span className="text-xs text-muted-foreground">Data Final</span>
-            <div className="flex gap-1">
-              <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full sm:w-[130px] h-9" />
-              <Input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} className="w-[88px] h-9 shrink-0" title="Horário final (Brasília)" />
-            </div>
-          </div>
+          <DigisacDateTimeField
+            label="De"
+            value={periodStart}
+            onChange={setPeriodStart}
+            className="min-w-[160px] flex-1 sm:flex-none"
+          />
+          <DigisacDateTimeField
+            label="Até"
+            value={periodEnd}
+            onChange={setPeriodEnd}
+            className="min-w-[160px] flex-1 sm:flex-none"
+          />
           <div className="flex flex-col gap-1 min-w-[160px] flex-1 basis-full sm:basis-auto sm:flex-none">
             <span className="text-xs text-muted-foreground">Departamento</span>
             <Select value={departmentId} onValueChange={setDepartmentId}>
