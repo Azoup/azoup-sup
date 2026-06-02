@@ -119,11 +119,7 @@ export const digisacApi = {
 
   async getDashboardAnalistas(filters: DigisacDashboardQueryFilters = {}): Promise<DigisacAnalystStats[]> {
     const merged = mergeDigisacDashboardFilters(filters);
-    const data = await invokeDigisac<unknown>('analistas', {
-      ...buildDashboardPayload(filters),
-      digisacAnalystDashboardDepartmentScope:
-        merged.departmentId && merged.departmentId !== 'all' ? 'filter' : 'all',
-    });
+    const data = await invokeDigisac<unknown>('analistas', buildDashboardPayload(filters));
     const rows = normalizeAnalistasResponse(data);
     return filterDigisacAnalystStatsForDepartment(merged.departmentName, rows);
   },

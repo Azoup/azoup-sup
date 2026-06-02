@@ -5,6 +5,7 @@ import {
   filterDigisacUsersForDepartment,
   findDigisacDepartmentAnalystRule,
 } from "../_shared/digisacDepartmentAnalystScope.ts";
+import { resolveDigisacQueryPlan } from "../_shared/digisacApiQueryPlan.ts";
 import { formatDigisacDateOnly, toDigisacPeriodIso } from "../_shared/digisacPeriod.ts";
 import {
   ADMIN_USER_ACTIONS,
@@ -415,32 +416,39 @@ const resolveDepartmentParticipation = (payload: Record<string, unknown>) => {
   return "last";
 };
 
-/**
- * Tela nova (vários userId em `/dashboard/general`): no Digisac costuma ir com `departmentId=all`.
- * `digisacAnalystDashboardDepartmentScope: "filter"` usa o mesmo `departmentId` do filtro do app.
- */
-const resolveDepartmentIdForAnalystsGeneral = (
-  payload: Record<string, unknown>,
-  departmentIdFromFilter: string,
-): string => {
-  const scope = typeof payload.digisacAnalystDashboardDepartmentScope === "string"
-    ? payload.digisacAnalystDashboardDepartmentScope.trim().toLowerCase()
-    : "";
-  if (scope === "filter" && departmentIdFromFilter && departmentIdFromFilter !== "all") {
-    return departmentIdFromFilter;
-  }
-  return "all";
+/** Converte resposta "totals" (modo dept+user) em linha por analista para o gráfico. */
+const buildAnalystItemFromGeneralTotals = (
+  userId: string,
+  userName: string,
+  payload: unknown,
+) => {
+  const g = mapGeneralPayload(payload);
+  return {
+    userId,
+    userName,
+    closedTicketsCount: g.total_fechados,
+    openedTicketsCount: g.total_abertos,
+    totalTicketsCount: g.total_chamados,
+    ticketTime: Math.round(g.tma_geral_minutos * 60),
+    waitingTime: Math.round(g.primeira_resposta_minutos * 60),
+    totalMessagesCount: g.total_mensagens,
+    contactsCount: g.total_contatos,
+    sentMessagesCount: g.mensagens_enviadas,
+    receivedMessagesCount: g.mensagens_recebidas,
+  };
 };
 
 /**
  * Monta query string oficial: `GET /api/v1/dashboard/general`
- * Um usuário → `userId=<id>`; vários → `userId[]` + `userIdsList[]`; nenhum → `userId=all`.
+ * Doc Digisac dept+user: `departmentId={id}&userId={id}` (singular).
+ * Equipe: `userId[]` apenas quando breakdown com vários analistas.
  */
 const buildDigisacGeneralDashboardParams = (input: {
   startPeriod: string;
   endPeriod: string;
   departmentId: string;
   digisacUserIds: string[];
+  useTeamMultiUserParams: boolean;
   periodType: string;
   userParticipation: string;
   departmentParticipation: string;
@@ -470,7 +478,7 @@ const buildDigisacGeneralDashboardParams = (input: {
   const ids = input.digisacUserIds.map((id) => id.trim()).filter(Boolean);
   if (ids.length === 0) {
     params.set("userId", "all");
-  } else if (ids.length === 1) {
+  } else if (ids.length === 1 || !input.useTeamMultiUserParams) {
     params.set("userId", ids[0]);
   } else {
     for (const userId of ids) {
@@ -479,7 +487,11 @@ const buildDigisacGeneralDashboardParams = (input: {
     }
   }
 
-  console.log("PARAMS FINAIS (dashboard/general):", params.toString());
+  console.log(
+    "[Digisac] GET /api/v1/dashboard/general →",
+    params.toString(),
+    input.useTeamMultiUserParams ? "(equipe userId[])" : "(userId singular)",
+  );
   return params;
 };
 
@@ -699,20 +711,16 @@ Deno.serve(async (req) => {
       const status = resolveTicketStatus(payload);
       const serviceId = typeof payload.serviceId === "string" ? payload.serviceId : undefined;
       const grouping = typeof payload.grouping === "string" ? payload.grouping : "";
-      const departmentIdForAnalysts = resolveDepartmentIdForAnalystsGeneral(payload, departmentId);
+      const queryPlan = resolveDigisacQueryPlan({
+        action: action as "geral" | "analistas",
+        departmentId,
+        requestedUserIds,
+        effectiveUserIds,
+        isClosureDepartment,
+      });
 
-      const digisacUserIdsForRequest = action === "geral"
-        ? (isClosureDepartment && effectiveUserIds.length > 0
-          ? effectiveUserIds.slice(0, 1)
-          : effectiveUserIds.length === 1
-          ? [effectiveUserIds[0]]
-          : [])
-        : effectiveUserIds;
-
-      const cacheScope = action === "geral"
-        ? (digisacUserIdsForRequest[0] ?? "all")
-        : (effectiveUserIds.join(",") || "none");
-      const cacheKey = `dashboard_proxy_${action}_${startPeriod}_${endPeriod}_${departmentId}_${departmentIdForAnalysts}_${periodType}_${status}_${userParticipation}_${departmentParticipation}_${serviceId ?? ""}_${cacheScope}`;
+      const cacheScope = `${queryPlan.departmentId}_${queryPlan.userIds.join(",") || "all"}_${queryPlan.useDepartmentAndUserSingular ? "singular" : "team"}`;
+      const cacheKey = `dashboard_proxy_${action}_${startPeriod}_${endPeriod}_${periodType}_${status}_${userParticipation}_${departmentParticipation}_${serviceId ?? ""}_${cacheScope}`;
 
       const cached = cache[cacheKey]?.data;
       if (cached && Date.now() - cache[cacheKey].timestamp < DASHBOARD_CACHE_TTL_MS) {
@@ -730,8 +738,9 @@ Deno.serve(async (req) => {
       const params = buildDigisacGeneralDashboardParams({
         startPeriod,
         endPeriod,
-        departmentId: action === "geral" ? departmentId : departmentIdForAnalysts,
-        digisacUserIds: digisacUserIdsForRequest,
+        departmentId: queryPlan.departmentId,
+        digisacUserIds: queryPlan.userIds,
+        useTeamMultiUserParams: queryPlan.useTeamMultiUserParams,
         periodType,
         userParticipation,
         departmentParticipation,
@@ -749,10 +758,21 @@ Deno.serve(async (req) => {
 
       let outData = response.data;
       if (action === "analistas") {
-        const allowed = new Set(effectiveUserIds);
-        const stripped = filterPayloadToUserIds(response.data, allowed);
         const nameById = new Map(scopedMappedUsers.map((u) => [u.id, u.name]));
-        outData = mergeByUserPayloadWithExpectedIds(stripped, effectiveUserIds, nameById);
+        if (queryPlan.useDepartmentAndUserSingular && queryPlan.userIds.length === 1) {
+          const uid = queryPlan.userIds[0];
+          const item = buildAnalystItemFromGeneralTotals(
+            uid,
+            nameById.get(uid) ?? "Analista",
+            response.data,
+          );
+          const totals = (response.data as Record<string, unknown>)?.totals ?? mapGeneralPayload(response.data);
+          outData = { items: [item], totals };
+        } else {
+          const allowed = new Set(effectiveUserIds);
+          const stripped = filterPayloadToUserIds(response.data, allowed);
+          outData = mergeByUserPayloadWithExpectedIds(stripped, effectiveUserIds, nameById);
+        }
       }
 
       cache[cacheKey] = {
