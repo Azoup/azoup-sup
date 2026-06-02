@@ -9,6 +9,7 @@ import {
   mergeDigisacNpsFilters,
   type DigisacNpsQueryFilters,
 } from "@/integrations/digisac/api";
+import { EMPTY_NPS_OVERVIEW } from "@/integrations/digisac/npsNormalize";
 import { pickSuporteDepartment, pickSuporteDepartmentId } from "@/lib/digisacSuporteDepartment";
 import {
   Table,
@@ -138,6 +139,18 @@ export default function DigisacNpsDashboard() {
   const overview = data?.overview;
   const analysts = data?.analysts ?? [];
 
+  const displayAnalysts = useMemo(() => {
+    if (analysts.length > 0) return analysts;
+    return (analystsList ?? []).map((a) => ({
+      userId: a.id,
+      name: a.name,
+      total: 0,
+      overview: EMPTY_NPS_OVERVIEW,
+    }));
+  }, [analysts, analystsList]);
+
+  const mappedAnalystsCount = analystsList?.length ?? 0;
+
   const pieData = useMemo(() => {
     if (!overview || overview.total <= 0) return [];
     return [
@@ -147,7 +160,7 @@ export default function DigisacNpsDashboard() {
     ].filter((d) => d.value > 0);
   }, [overview]);
 
-  const hasData = (overview?.total ?? 0) > 0 || analysts.some((a) => a.total > 0);
+  const hasData = (overview?.total ?? 0) > 0 || displayAnalysts.some((a) => a.total > 0);
   const showEmpty = !isLoading && !isError && !hasData;
 
   return (
@@ -215,6 +228,11 @@ export default function DigisacNpsDashboard() {
           <div>
             <p className="font-semibold">Erro ao carregar avaliações</p>
             <p className="text-sm">{(error as Error)?.message ?? "Erro desconhecido"}</p>
+            {mappedAnalystsCount > 0 && (
+              <p className="text-sm mt-1 opacity-90">
+                {mappedAnalystsCount} analista(s) mapeado(s) no sistema — clique em Atualizar após corrigir a integração.
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -317,11 +335,13 @@ export default function DigisacNpsDashboard() {
           <CardContent>
             {isLoading ? (
               <p className="text-sm text-muted-foreground py-8 text-center">Carregando…</p>
-            ) : analysts.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">Nenhum analista mapeado.</p>
+            ) : displayAnalysts.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">
+                Nenhum analista mapeado. Configure em Dashboard Digisac → Mapeamento Digisac.
+              </p>
             ) : (
               <ul className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
-                {analysts.map((a) => (
+                {displayAnalysts.map((a) => (
                   <li
                     key={a.userId}
                     className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
@@ -338,7 +358,7 @@ export default function DigisacNpsDashboard() {
         </Card>
       </div>
 
-      {analysts.length > 0 && !isLoading && (
+      {displayAnalysts.length > 0 && !isLoading && hasData && (
         <Card>
           <CardHeader>
             <CardTitle>Detalhe por analista</CardTitle>
@@ -357,7 +377,7 @@ export default function DigisacNpsDashboard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {analysts.map((a) => (
+                {displayAnalysts.filter((a) => a.total > 0).map((a) => (
                   <TableRow key={a.userId}>
                     <TableCell className="font-medium">{a.name}</TableCell>
                     <TableCell className="text-right">{a.total}</TableCell>

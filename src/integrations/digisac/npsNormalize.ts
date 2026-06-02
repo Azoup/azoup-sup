@@ -27,6 +27,14 @@ export type DigisacNpsDashboardResponse = {
   analysts: NpsAnalystRow[];
 };
 
+export const EMPTY_NPS_OVERVIEW: NpsOverview = {
+  total: 0,
+  npsScore: null,
+  promoters: { count: 0, percent: 0, label: 'Promotores', scoreRange: '9 - 10' },
+  neutrals: { count: 0, percent: 0, label: 'Neutros', scoreRange: '7 - 8' },
+  detractors: { count: 0, percent: 0, label: 'Detratores', scoreRange: '0 - 6' },
+};
+
 const asNumber = (...values: unknown[]): number => {
   for (const value of values) {
     if (typeof value === 'number' && Number.isFinite(value)) return value;

@@ -144,8 +144,24 @@ export const digisacApi = {
   },
 
   async getNpsDashboard(filters: DigisacNpsQueryFilters = {}): Promise<DigisacNpsDashboardResponse> {
-    const data = await invokeDigisac<unknown>('nps_dashboard', buildNpsPayload(filters));
-    return normalizeNpsDashboardResponse(data);
+    const payload = buildNpsPayload(filters);
+    const actions = ['nps_dashboard', 'answers_overview'] as const;
+    let lastError: Error | null = null;
+
+    for (const action of actions) {
+      try {
+        const data = await invokeDigisac<unknown>(action, payload);
+        return normalizeNpsDashboardResponse(data);
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        const msg = lastError.message.toLowerCase();
+        if (!msg.includes('ação inválida') && !msg.includes('invalid_action')) {
+          throw lastError;
+        }
+      }
+    }
+
+    throw lastError ?? new Error('Não foi possível carregar avaliações NPS.');
   },
 
   async getDashboardAnalistas(filters: DigisacDashboardQueryFilters = {}): Promise<DigisacAnalystStats[]> {

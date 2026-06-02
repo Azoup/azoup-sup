@@ -576,9 +576,18 @@ Deno.serve(async (req) => {
         rawBody = body && typeof body === "object" ? body : {};
         action = body?.action;
         payload = body?.payload && typeof body.payload === "object" ? body.payload : {};
+        if (Object.keys(payload).length === 0 && rawBody && typeof rawBody === "object") {
+          const { action: _a, payload: _p, ...rest } = rawBody as Record<string, unknown>;
+          if (Object.keys(rest).length > 0) payload = rest;
+        }
       } catch {
         return handledErrorResponse(undefined, "Corpo JSON inválido.", { code: "INVALID_JSON" });
       }
+    }
+
+    if (typeof action === "string") {
+      const trimmed = action.trim();
+      action = trimmed === "answers_overview" ? "nps_dashboard" : trimmed.replace(/-/g, "_");
     }
 
     console.log("[Digisac] Action:", action, "Payload:", JSON.stringify(payload));
@@ -795,7 +804,7 @@ Deno.serve(async (req) => {
       return jsonResponse(outData);
     }
 
-    if (action === "nps_dashboard") {
+    if (action === "nps_dashboard" || action === "answers_overview") {
       const today = getTodayBrazilDate();
       const startDate = formatDateOnly(typeof payload?.startDate === "string" ? payload.startDate : undefined) ?? today;
       const endDate = formatDateOnly(typeof payload?.endDate === "string" ? payload.endDate : undefined) ?? startDate;
