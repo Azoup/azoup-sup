@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.3.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 import { corsHeaders } from "../_shared/cors.ts";
+import { filterDigisacUsersForDepartment } from "../_shared/digisacDepartmentAnalystScope.ts";
 import {
   ADMIN_USER_ACTIONS,
   assertCallerIsAdmin,
@@ -382,6 +383,26 @@ const resolveAnalystUserIds = (
   return validUsers.map((user) => user.id);
 };
 
+const getDepartmentNameById = async (
+  digisacUrl: string,
+  token: string,
+  departmentId: string,
+): Promise<string | undefined> => {
+  if (!departmentId || departmentId === "all") return undefined;
+  const cacheKey = "digisac_departments";
+  let departments: Array<{ id: string; name: string }> | undefined = cache[cacheKey]?.data;
+  if (!departments || Date.now() - cache[cacheKey].timestamp >= LIST_CACHE_TTL_MS) {
+    const r = await fetchDigisac(digisacUrl, token, "/api/v1/departments");
+    if (!r.ok) return undefined;
+    const list = Array.isArray(r.data?.data) ? r.data.data : Array.isArray(r.data) ? r.data : [];
+    departments = list
+      .filter((d: { id?: string; deletedAt?: unknown }) => d?.id && !d.deletedAt)
+      .map((d: { id: string; name?: string }) => ({ id: String(d.id), name: d.name || "Sem nome" }));
+    cache[cacheKey] = { data: departments, timestamp: Date.now() };
+  }
+  return departments.find((d) => d.id === departmentId)?.name;
+};
+
 const resolvePeriodType = (payload: Record<string, unknown>) => {
   const p = typeof payload.periodType === "string" ? payload.periodType.trim() : "";
   if (p === "closeDate" || p === "openDate") return p;
@@ -641,7 +662,22 @@ Deno.serve(async (req) => {
 
       const requestedUserIds = normalizeRequestedUserIds(payload, mappings);
       const validMappedUsers = await loadValidMappedAnalystUsers(adminClient, digisacUrl, digisacToken);
-      const effectiveUserIds = resolveAnalystUserIds(requestedUserIds, validMappedUsers);
+      const departmentNameForScope = departmentId !== "all"
+        ? await getDepartmentNameById(digisacUrl, digisacToken, departmentId)
+        : undefined;
+      const scopedMappedUsers = filterDigisacUsersForDepartment(
+        departmentNameForScope,
+        validMappedUsers,
+      );
+      if (departmentNameForScope && scopedMappedUsers.length < validMappedUsers.length) {
+        console.log(
+          "[Digisac] Departamento com escopo restrito:",
+          departmentNameForScope,
+          "→ analistas:",
+          scopedMappedUsers.map((u) => u.name).join(", "),
+        );
+      }
+      const effectiveUserIds = resolveAnalystUserIds(requestedUserIds, scopedMappedUsers);
       const userParticipation = resolveUserParticipation(payload);
       const departmentParticipation = resolveDepartmentParticipation(payload);
       const periodType = resolvePeriodType(payload);
@@ -694,7 +730,7 @@ Deno.serve(async (req) => {
 
       let outData = response.data;
       if (action === "analistas") {
-        const nameById = new Map(validMappedUsers.map((u) => [u.id, u.name]));
+        const nameById = new Map(scopedMappedUsers.map((u) => [u.id, u.name]));
         outData = mergeByUserPayloadWithExpectedIds(response.data, effectiveUserIds, nameById);
       }
 

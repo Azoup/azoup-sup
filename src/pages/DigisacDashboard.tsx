@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -6,6 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DigisacMappingModal } from "@/components/DigisacMappingModal";
 import { digisacApi, mergeDigisacDashboardFilters, type DigisacDashboardQueryFilters } from "@/integrations/digisac/api";
+import {
+  filterDigisacAnalystStatsForDepartment,
+  filterDigisacUsersForDepartment,
+  isDigisacDepartmentWithScopedAnalysts,
+} from "@/lib/digisacDepartmentAnalystScope";
 import { Clock, Ticket, Users, Filter, MessageSquare, Hourglass, Timer, CheckCircle2, CircleDot, RefreshCw, AlertCircle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, LabelList } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -94,6 +99,23 @@ export default function DigisacDashboard() {
     setFilters(syncFiltersFromControls());
   };
 
+  const selectedDepartmentName = useMemo(
+    () => departments?.find((d) => d.id === filters.departmentId)?.name,
+    [departments, filters.departmentId],
+  );
+
+  const analystsForDropdown = useMemo(
+    () => filterDigisacUsersForDepartment(selectedDepartmentName, analystsList ?? []),
+    [analystsList, selectedDepartmentName],
+  );
+
+  useEffect(() => {
+    if (analystId === "all") return;
+    if (!analystsForDropdown.some((a) => a.id === analystId)) {
+      setAnalystId("all");
+    }
+  }, [departmentId, analystsForDropdown, analystId]);
+
   /** Mesmo formato do painel Digisac (HH:MM:SS). */
   const formatTma = (minutes: number) => {
     if (!minutes || minutes <= 0 || !Number.isFinite(minutes)) return "00:00:00";
@@ -105,7 +127,12 @@ export default function DigisacDashboard() {
     return `${pad(h)}:${pad(m)}:${pad(s)}`;
   };
 
-  const analistasList = analistas ?? [];
+  const analistasList = useMemo(
+    () => filterDigisacAnalystStatsForDepartment(selectedDepartmentName, analistas ?? []),
+    [analistas, selectedDepartmentName],
+  );
+
+  const departmentHasScopedAnalysts = isDigisacDepartmentWithScopedAnalysts(selectedDepartmentName);
 
   // Gráfico TMA por analista (ordenado do MAIOR para o MENOR)
   const tmaChartData = [...analistasList]
@@ -176,7 +203,7 @@ export default function DigisacDashboard() {
               </SelectTrigger>
               <SelectContent className="max-w-[90vw]">
                 <SelectItem value="all">Todos os analistas</SelectItem>
-                {analystsList?.map((a) => (
+                {analystsForDropdown.map((a) => (
                   <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
                 ))}
               </SelectContent>
@@ -313,7 +340,10 @@ export default function DigisacDashboard() {
             <div className="flex items-start justify-between gap-2">
               <div>
                 <CardTitle>Tempo médio por analista</CardTitle>
-                <CardDescription>Ordenado do maior para o menor (TMA)</CardDescription>
+                <CardDescription>
+                  Ordenado do maior para o menor (TMA)
+                  {departmentHasScopedAnalysts && " — apenas analistas deste departamento"}
+                </CardDescription>
               </div>
               <div className="text-right">
                 <div className="text-xs text-muted-foreground">Média geral</div>
