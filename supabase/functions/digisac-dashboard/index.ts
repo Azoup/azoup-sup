@@ -11,6 +11,12 @@ import {
   mapDigisacAnswersOverview,
   pickSuporteDepartmentId,
 } from "../_shared/digisacAnswersOverview.ts";
+import {
+  aggregateAnswerRows,
+  countsToMappedOverview,
+  extractAnswerAnalystName,
+  flattenAnswersPayload,
+} from "../_shared/digisacNpsAggregate.ts";
 import { formatDigisacDateOnly, toDigisacPeriodIso } from "../_shared/digisacPeriod.ts";
 import {
   ADMIN_USER_ACTIONS,
@@ -864,6 +870,30 @@ Deno.serve(async (req) => {
       const effectiveUserIds = resolveAnalystUserIds(requestedUserIds, validMappedUsers);
       const nameById = new Map(validMappedUsers.map((u) => [u.id, u.name]));
 
+      const fetchAnswersList = async (userId?: string): Promise<Record<string, unknown>[]> => {
+        const collected: Record<string, unknown>[] = [];
+        for (let page = 1; page <= 80; page++) {
+          const params = buildDigisacAnswersOverviewParams({
+            from,
+            to,
+            departmentId,
+            userId,
+            type: evaluationType,
+            periodType,
+            serviceId,
+          });
+          params.set("limit", "200");
+          params.set("page", String(page));
+          const r = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/answers", params);
+          if (!r.ok) break;
+          const batch = flattenAnswersPayload(r.data);
+          if (!batch.length) break;
+          collected.push(...batch);
+          if (batch.length < 200) break;
+        }
+        return collected;
+      };
+
       const fetchOverview = async (userId?: string) => {
         const params = buildDigisacAnswersOverviewParams({
           from,
@@ -878,7 +908,27 @@ Deno.serve(async (req) => {
         if (!r.ok) {
           throw new Error(`Erro API Digisac (avaliações): ${r.status}`);
         }
-        return mapDigisacAnswersOverview(r.data);
+        let mapped = mapDigisacAnswersOverview(r.data);
+        if (mapped.total <= 0) {
+          const rows = await fetchAnswersList(userId);
+          if (rows.length > 0) {
+            mapped = countsToMappedOverview(aggregateAnswerRows(rows));
+          }
+        }
+        return mapped;
+      };
+
+      const fetchAnalystFromAnswersList = async (uid: string, displayName: string) => {
+        const rows = await fetchAnswersList(uid);
+        const nameKey = displayName.trim().toLowerCase();
+        const filtered = rows.filter((row) => {
+          const rowUid = String(row.userId ?? row.user_id ?? (row.user as Record<string, unknown>)?.id ?? "").trim();
+          if (rowUid && rowUid === uid) return true;
+          const analystName = extractAnswerAnalystName(row).trim().toLowerCase();
+          return nameKey && analystName && analystName === nameKey;
+        });
+        const useRows = filtered.length > 0 ? filtered : rows;
+        return countsToMappedOverview(aggregateAnswerRows(useRows));
       };
 
       const cacheKey = `nps_dashboard_${from}_${to}_${departmentId}_${evaluationType}_${periodType}_${serviceId ?? ""}_${effectiveUserIds.join(",") || "all"}`;
@@ -888,7 +938,13 @@ Deno.serve(async (req) => {
       }
 
       const chartUserId = effectiveUserIds.length === 1 ? effectiveUserIds[0] : undefined;
-      const overviewMapped = await fetchOverview(chartUserId);
+      let overviewMapped = await fetchOverview(chartUserId);
+      if (overviewMapped.total <= 0) {
+        const allRows = await fetchAnswersList(chartUserId);
+        if (allRows.length > 0) {
+          overviewMapped = countsToMappedOverview(aggregateAnswerRows(allRows));
+        }
+      }
 
       const analystsToQuery = effectiveUserIds.length > 0
         ? effectiveUserIds
@@ -897,10 +953,14 @@ Deno.serve(async (req) => {
       const analystRows = await Promise.all(
         analystsToQuery.map(async (uid) => {
           try {
-            const mapped = await fetchOverview(uid);
+            const displayName = nameById.get(uid) ?? "Analista";
+            let mapped = await fetchOverview(uid);
+            if (mapped.total <= 0) {
+              mapped = await fetchAnalystFromAnswersList(uid, displayName);
+            }
             return {
               userId: uid,
-              name: nameById.get(uid) ?? "Analista",
+              name: displayName,
               total: mapped.total,
               overview: mapped,
             };
@@ -929,6 +989,7 @@ Deno.serve(async (req) => {
         departmentName,
         overview: overviewMapped,
         analysts: analystRows,
+        dataSource: overviewMapped.total > 0 || analystRows.some((a) => a.total > 0) ? "api" : "empty",
       };
       cache[cacheKey] = { data: out, timestamp: Date.now() };
       return jsonResponse(out);

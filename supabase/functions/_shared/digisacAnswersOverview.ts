@@ -1,3 +1,9 @@
+import {
+  aggregateAnswerRows,
+  countsToMappedOverview,
+  flattenAnswersPayload,
+} from "./digisacNpsAggregate.ts";
+
 /**
  * Query oficial: GET /api/v1/answers/overview
  * Parâmetros: from, to, departmentId, userId, type, periodType, serviceId
@@ -17,6 +23,8 @@ export function buildDigisacAnswersOverviewParams(input: DigisacAnswersOverviewP
   const params = new URLSearchParams({
     from: input.from,
     to: input.to,
+    startPeriod: input.from,
+    endPeriod: input.to,
     type: input.type,
     periodType: input.periodType,
     departmentId: input.departmentId && input.departmentId !== "all" ? input.departmentId : "all",
@@ -96,6 +104,11 @@ export type MappedNpsOverview = {
 };
 
 export const mapDigisacAnswersOverview = (payload: unknown): MappedNpsOverview => {
+  const rows = flattenAnswersPayload(payload);
+  if (rows.length > 0) {
+    return countsToMappedOverview(aggregateAnswerRows(rows));
+  }
+
   const root = firstObject(payload);
   const totals =
     root.totals && typeof root.totals === "object"

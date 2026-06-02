@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,8 +9,13 @@ import {
   mergeDigisacNpsFilters,
   type DigisacNpsQueryFilters,
 } from "@/integrations/digisac/api";
-import { EMPTY_NPS_OVERVIEW } from "@/integrations/digisac/npsNormalize";
+import { EMPTY_NPS_OVERVIEW, type NpsAnalystRow, type NpsOverview } from "@/integrations/digisac/npsNormalize";
 import { pickSuporteDepartment, pickSuporteDepartmentId } from "@/lib/digisacSuporteDepartment";
+import {
+  mergeAnalystRowsWithMapped,
+  parseDigisacNpsExportText,
+  type ParsedDigisacNpsExport,
+} from "@/lib/parseDigisacNpsExport";
 import {
   Table,
   TableBody,
@@ -19,15 +24,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { AlertCircle, Filter, RefreshCw, Star, Users } from "lucide-react";
-import {
-  Cell,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip as RechartsTooltip,
-} from "recharts";
+import { AlertCircle, FileUp, Filter, RefreshCw, Star, Users, X } from "lucide-react";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 
 const getTodayDateStringBrazil = () => {
   try {
@@ -54,9 +52,12 @@ const NPS_COLORS = {
   detractors: "#94a3b8",
 };
 
+type DataSource = "api" | "txt" | "none";
+
 export default function DigisacNpsDashboard() {
   const today = getTodayDateStringBrazil();
   const monthStart = getMonthStartBrazil();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [periodStart, setPeriodStart] = useState({ date: monthStart, time: "00:00" });
   const [periodEnd, setPeriodEnd] = useState({ date: today, time: "23:59" });
   const [analystId, setAnalystId] = useState<string>("all");
@@ -69,6 +70,8 @@ export default function DigisacNpsDashboard() {
     }),
   );
   const [refreshTick, setRefreshTick] = useState(0);
+  const [txtImport, setTxtImport] = useState<ParsedDigisacNpsExport | null>(null);
+  const [txtFileName, setTxtFileName] = useState<string | null>(null);
 
   const { data: departments } = useQuery({
     queryKey: ["digisac-departments"],
@@ -86,6 +89,20 @@ export default function DigisacNpsDashboard() {
     () => pickSuporteDepartment(departments),
     [departments],
   );
+
+  const analystNameMap = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    for (const a of analystsList ?? []) {
+      const key = a.name
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9]+/g, " ")
+        .trim()
+        .toLowerCase();
+      map.set(key, a);
+    }
+    return map;
+  }, [analystsList]);
 
   useEffect(() => {
     const id = pickSuporteDepartmentId(departments);
@@ -136,32 +153,78 @@ export default function DigisacNpsDashboard() {
     refetchOnWindowFocus: true,
   });
 
-  const overview = data?.overview;
-  const analysts = data?.analysts ?? [];
+  const filterAnalystView = (overview: NpsOverview, rows: NpsAnalystRow[]) => {
+    if (analystId === "all") return { overview, analysts: rows };
+    const one = rows.find((a) => a.userId === analystId);
+    if (one) return { overview: one.overview, analysts: [one] };
+    return { overview: EMPTY_NPS_OVERVIEW, analysts: [] };
+  };
 
-  const displayAnalysts = useMemo(() => {
-    if (analysts.length > 0) return analysts;
-    return (analystsList ?? []).map((a) => ({
-      userId: a.id,
-      name: a.name,
-      total: 0,
-      overview: EMPTY_NPS_OVERVIEW,
-    }));
-  }, [analysts, analystsList]);
+  const { overview, displayAnalysts, dataSource } = useMemo(() => {
+    const apiOverview = data?.overview ?? EMPTY_NPS_OVERVIEW;
+    const apiAnalysts =
+      data?.analysts && data.analysts.length > 0
+        ? data.analysts
+        : (analystsList ?? []).map((a) => ({
+            userId: a.id,
+            name: a.name,
+            total: 0,
+            overview: EMPTY_NPS_OVERVIEW,
+          }));
 
-  const mappedAnalystsCount = analystsList?.length ?? 0;
+    const txtHasData = (txtImport?.overview.total ?? 0) > 0 || (txtImport?.analysts.some((a) => a.total > 0) ?? false);
+    const apiHasData = apiOverview.total > 0 || apiAnalysts.some((a) => a.total > 0);
+
+    if (txtHasData && txtImport) {
+      const merged = mergeAnalystRowsWithMapped(txtImport, analystsList ?? []);
+      const filtered = filterAnalystView(merged.overview, merged.analysts);
+      return { ...filtered, dataSource: "txt" as DataSource };
+    }
+
+    if (apiHasData) {
+      const filtered = filterAnalystView(apiOverview, apiAnalysts);
+      return { ...filtered, dataSource: "api" as DataSource };
+    }
+
+    if (txtImport) {
+      const merged = mergeAnalystRowsWithMapped(txtImport, analystsList ?? []);
+      const filtered = filterAnalystView(merged.overview, merged.analysts);
+      return { ...filtered, dataSource: "txt" as DataSource };
+    }
+
+    const filtered = filterAnalystView(apiOverview, apiAnalysts);
+    return { ...filtered, dataSource: "none" as DataSource };
+  }, [data, txtImport, analystsList, analystId]);
 
   const pieData = useMemo(() => {
     if (!overview || overview.total <= 0) return [];
     return [
-      { name: "Promotores", value: overview.promoters.count, color: NPS_COLORS.promoters },
-      { name: "Neutros", value: overview.neutrals.count, color: NPS_COLORS.neutrals },
-      { name: "Detratores", value: overview.detractors.count, color: NPS_COLORS.detractors },
+      { name: "Promotores", value: overview.promoters.count, color: NPS_COLORS.promoters, pct: overview.promoters.percent },
+      { name: "Neutros", value: overview.neutrals.count, color: NPS_COLORS.neutrals, pct: overview.neutrals.percent },
+      { name: "Detratores", value: overview.detractors.count, color: NPS_COLORS.detractors, pct: overview.detractors.percent },
     ].filter((d) => d.value > 0);
   }, [overview]);
 
   const hasData = (overview?.total ?? 0) > 0 || displayAnalysts.some((a) => a.total > 0);
   const showEmpty = !isLoading && !isError && !hasData;
+
+  const handleTxtFile = async (file: File) => {
+    const text = await file.text();
+    const parsed = parseDigisacNpsExportText(text, analystNameMap);
+    const merged = mergeAnalystRowsWithMapped(parsed, analystsList ?? []);
+    setTxtImport(merged);
+    setTxtFileName(file.name);
+  };
+
+  const clearTxtImport = () => {
+    setTxtImport(null);
+    setTxtFileName(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const npsCategories = overview
+    ? [overview.promoters, overview.neutrals, overview.detractors]
+    : [];
 
   return (
     <div className="container mx-auto py-8 space-y-8 fade-in max-w-full overflow-x-hidden">
@@ -169,26 +232,23 @@ export default function DigisacNpsDashboard() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Dashboard NPS</h1>
           <p className="text-muted-foreground mt-1">
-            Estatísticas de avaliações NPS do Digisac — departamento{" "}
+            Estatísticas de avaliações NPS — departamento{" "}
             <span className="font-medium text-foreground">
               {data?.departmentName ?? suporteDepartment?.name ?? "Suporte"}
             </span>
-            .
+            {dataSource === "txt" && txtFileName && (
+              <span className="block text-xs mt-1 text-primary">
+                Dados do export: {txtFileName}
+              </span>
+            )}
+            {dataSource === "api" && (
+              <span className="block text-xs mt-1 text-muted-foreground">Fonte: API Digisac</span>
+            )}
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-3 w-full sm:w-auto">
-          <DigisacDateTimeField
-            label="De"
-            value={periodStart}
-            onChange={setPeriodStart}
-            className="min-w-[160px] flex-1 sm:flex-none"
-          />
-          <DigisacDateTimeField
-            label="Até"
-            value={periodEnd}
-            onChange={setPeriodEnd}
-            className="min-w-[160px] flex-1 sm:flex-none"
-          />
+          <DigisacDateTimeField label="De" value={periodStart} onChange={setPeriodStart} className="min-w-[160px] flex-1 sm:flex-none" />
+          <DigisacDateTimeField label="Até" value={periodEnd} onChange={setPeriodEnd} className="min-w-[160px] flex-1 sm:flex-none" />
           <div className="flex flex-col gap-1 min-w-[160px] flex-1 basis-full sm:basis-auto sm:flex-none">
             <span className="text-xs text-muted-foreground">Analista</span>
             <Select value={analystId} onValueChange={setAnalystId}>
@@ -205,42 +265,56 @@ export default function DigisacNpsDashboard() {
               </SelectContent>
             </Select>
           </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".txt,.csv,text/plain"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleTxtFile(file);
+            }}
+          />
+          <Button type="button" variant="secondary" className="h-9 gap-2 shrink-0" onClick={() => fileInputRef.current?.click()}>
+            <FileUp className="w-4 h-4" />
+            Importar TXT
+          </Button>
+          {txtFileName && (
+            <Button type="button" variant="ghost" className="h-9 gap-1 shrink-0" onClick={clearTxtImport} title="Remover arquivo importado">
+              <X className="w-4 h-4" />
+            </Button>
+          )}
           <Button onClick={applyFilters} className="h-9 gap-2 shrink-0">
             <Filter className="w-4 h-4" />
             Aplicar
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={refreshDashboard}
-            className="h-9 gap-2 shrink-0"
-            title="Buscar de novo na Digisac"
-          >
+          <Button type="button" variant="outline" onClick={refreshDashboard} className="h-9 gap-2 shrink-0">
             <RefreshCw className="w-4 h-4" />
             Atualizar
           </Button>
         </div>
       </div>
 
-      {isError && (
+      {isError && !txtImport && (
         <div className="bg-destructive/15 text-destructive p-4 rounded-md flex items-center gap-3">
           <AlertCircle className="h-5 w-5 shrink-0" />
           <div>
-            <p className="font-semibold">Erro ao carregar avaliações</p>
+            <p className="font-semibold">Erro ao carregar avaliações pela API</p>
             <p className="text-sm">{(error as Error)?.message ?? "Erro desconhecido"}</p>
-            {mappedAnalystsCount > 0 && (
-              <p className="text-sm mt-1 opacity-90">
-                {mappedAnalystsCount} analista(s) mapeado(s) no sistema — clique em Atualizar após corrigir a integração.
-              </p>
-            )}
+            <p className="text-sm mt-1">Use Importar TXT com o arquivo exportado no Digisac (Estatísticas de avaliações → Exportar TXT).</p>
           </div>
         </div>
       )}
 
       {showEmpty && (
-        <div className="bg-muted/50 text-muted-foreground p-4 rounded-md flex items-center gap-3">
-          <AlertCircle className="h-5 w-5 shrink-0" />
-          <p>Nenhuma avaliação NPS no período selecionado.</p>
+        <div className="bg-muted/50 text-muted-foreground p-4 rounded-md flex items-start gap-3">
+          <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
+          <div>
+            <p>Nenhuma avaliação NPS no período pela API.</p>
+            <p className="text-sm mt-1">
+              No Digisac, aplique os mesmos filtros (De/Até, Suporte, NPS), clique em <strong>Exportar TXT</strong> e importe aqui com o botão acima — os totais por analista serão calculados como no relatório do Digisac.
+            </p>
+          </div>
         </div>
       )}
 
@@ -261,14 +335,14 @@ export default function DigisacNpsDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
+            {isLoading && !txtImport ? (
               <p className="text-sm text-muted-foreground py-12 text-center">Carregando…</p>
             ) : pieData.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-12 text-center">Sem dados para o gráfico.</p>
+              <p className="text-sm text-muted-foreground py-12 text-center">Sem dados para o gráfico. Importe o TXT do Digisac.</p>
             ) : (
-              <div className="flex flex-col md:flex-row gap-6 items-center">
-                <div className="w-full md:w-1/2 h-[260px]">
-                  <ResponsiveContainer width="100%" height="100%">
+              <div className="flex flex-col md:flex-row gap-4 items-stretch">
+                <div className="w-full md:w-[42%] min-h-[280px] relative">
+                  <ResponsiveContainer width="100%" height={280}>
                     <PieChart>
                       <Pie
                         data={pieData}
@@ -276,44 +350,62 @@ export default function DigisacNpsDashboard() {
                         nameKey="name"
                         cx="50%"
                         cy="50%"
-                        innerRadius={50}
-                        outerRadius={90}
+                        innerRadius={72}
+                        outerRadius={118}
                         paddingAngle={1}
+                        stroke="#fff"
+                        strokeWidth={2}
                       >
                         {pieData.map((entry) => (
                           <Cell key={entry.name} fill={entry.color} />
                         ))}
                       </Pie>
-                      <RechartsTooltip formatter={(v: number) => [`${v} avaliações`, ""]} />
-                      <Legend />
+                      <RechartsTooltip formatter={(v: number, _n, p) => [`${v} (${(p?.payload as { pct?: number })?.pct?.toFixed(2) ?? 0}%)`, ""]} />
                     </PieChart>
                   </ResponsiveContainer>
+                  {overview?.npsScore != null && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="text-center">
+                        <p className="text-2xl font-bold text-foreground">{overview.npsScore.toFixed(2)}</p>
+                        <p className="text-xs text-muted-foreground">NPS</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="w-full md:w-1/2">
+                <div className="w-full md:flex-1">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Categoria</TableHead>
-                        <TableHead className="text-right">Nota</TableHead>
-                        <TableHead className="text-right">Qtd.</TableHead>
-                        <TableHead className="text-right">%</TableHead>
+                        <TableHead />
+                        <TableHead>Nota</TableHead>
+                        <TableHead className="text-right">Quantidade</TableHead>
+                        <TableHead className="text-right">Porcentagem</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {[overview!.promoters, overview!.neutrals, overview!.detractors].map((row) => (
+                      {npsCategories.map((row) => (
                         <TableRow key={row.label}>
-                          <TableCell className="font-medium">{row.label}</TableCell>
-                          <TableCell className="text-right text-muted-foreground">{row.scoreRange}</TableCell>
+                          <TableCell className="font-medium">
+                            <span className="inline-flex items-center gap-2">
+                              <span
+                                className="inline-block w-3 h-3 rounded-full shrink-0"
+                                style={{
+                                  backgroundColor:
+                                    row.label === "Promotores"
+                                      ? NPS_COLORS.promoters
+                                      : row.label === "Neutros"
+                                        ? NPS_COLORS.neutrals
+                                        : NPS_COLORS.detractors,
+                                }}
+                              />
+                              {row.label}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">{row.scoreRange}</TableCell>
                           <TableCell className="text-right">{row.count}</TableCell>
                           <TableCell className="text-right">{row.percent.toFixed(2)}%</TableCell>
                         </TableRow>
                       ))}
-                      <TableRow>
-                        <TableCell className="font-semibold">Total</TableCell>
-                        <TableCell />
-                        <TableCell className="text-right font-semibold">{overview!.total}</TableCell>
-                        <TableCell className="text-right">100%</TableCell>
-                      </TableRow>
                     </TableBody>
                   </Table>
                 </div>
@@ -328,67 +420,78 @@ export default function DigisacNpsDashboard() {
               <Users className="h-5 w-5 text-primary" />
               Avaliações por analista
             </CardTitle>
-            <CardDescription>
-              Contagem individual no período (como no export TXT do Digisac).
-            </CardDescription>
+            <CardDescription>Total de avaliações no período (export TXT ou API).</CardDescription>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
+            {isLoading && !txtImport ? (
               <p className="text-sm text-muted-foreground py-8 text-center">Carregando…</p>
             ) : displayAnalysts.length === 0 ? (
               <p className="text-sm text-muted-foreground py-8 text-center">
                 Nenhum analista mapeado. Configure em Dashboard Digisac → Mapeamento Digisac.
               </p>
             ) : (
-              <ul className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
-                {displayAnalysts.map((a) => (
-                  <li
-                    key={a.userId}
-                    className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-                  >
-                    <span className="font-medium truncate pr-2">{a.name}</span>
-                    <span className="text-muted-foreground shrink-0">
-                      {a.total === 1 ? "1 avaliação" : `${a.total} avaliações`}
-                    </span>
-                  </li>
-                ))}
+              <ul className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
+                {[...displayAnalysts]
+                  .sort((a, b) => b.total - a.total)
+                  .map((a) => (
+                    <li
+                      key={a.userId}
+                      className="flex items-center justify-between rounded-md border px-3 py-2.5 text-sm"
+                    >
+                      <div className="min-w-0 pr-2">
+                        <p className="font-medium truncate">{a.name}</p>
+                        {a.total > 0 && (
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            P {a.overview.promoters.count} · N {a.overview.neutrals.count} · D{" "}
+                            {a.overview.detractors.count}
+                            {a.overview.npsScore != null ? ` · NPS ${a.overview.npsScore.toFixed(2)}` : ""}
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-muted-foreground shrink-0 font-medium">
+                        {a.total === 1 ? "1 avaliação" : `${a.total} avaliações`}
+                      </span>
+                    </li>
+                  ))}
               </ul>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {displayAnalysts.length > 0 && !isLoading && hasData && (
+      {displayAnalysts.length > 0 && hasData && (
         <Card>
           <CardHeader>
-            <CardTitle>Detalhe por analista</CardTitle>
-            <CardDescription>Promotores, neutros e detratores de cada atendente.</CardDescription>
+            <CardTitle>Comparativo por analista</CardTitle>
+            <CardDescription>Promotores, neutros, detratores e NPS — espelhando o export do Digisac.</CardDescription>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Analista</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead className="text-right">Promotores</TableHead>
-                  <TableHead className="text-right">Neutros</TableHead>
-                  <TableHead className="text-right">Detratores</TableHead>
+                  <TableHead className="text-right">Avaliações</TableHead>
+                  <TableHead className="text-right">Promotores (9-10)</TableHead>
+                  <TableHead className="text-right">Neutros (7-8)</TableHead>
+                  <TableHead className="text-right">Detratores (0-6)</TableHead>
                   <TableHead className="text-right">NPS</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {displayAnalysts.filter((a) => a.total > 0).map((a) => (
-                  <TableRow key={a.userId}>
-                    <TableCell className="font-medium">{a.name}</TableCell>
-                    <TableCell className="text-right">{a.total}</TableCell>
-                    <TableCell className="text-right">{a.overview.promoters.count}</TableCell>
-                    <TableCell className="text-right">{a.overview.neutrals.count}</TableCell>
-                    <TableCell className="text-right">{a.overview.detractors.count}</TableCell>
-                    <TableCell className="text-right">
-                      {a.overview.npsScore != null ? a.overview.npsScore.toFixed(2) : "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {[...displayAnalysts]
+                  .sort((a, b) => b.total - a.total)
+                  .map((a) => (
+                    <TableRow key={a.userId} className={a.total === 0 ? "opacity-50" : undefined}>
+                      <TableCell className="font-medium">{a.name}</TableCell>
+                      <TableCell className="text-right">{a.total}</TableCell>
+                      <TableCell className="text-right">{a.overview.promoters.count}</TableCell>
+                      <TableCell className="text-right">{a.overview.neutrals.count}</TableCell>
+                      <TableCell className="text-right">{a.overview.detractors.count}</TableCell>
+                      <TableCell className="text-right font-medium">
+                        {a.overview.npsScore != null ? a.overview.npsScore.toFixed(2) : "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
               </TableBody>
             </Table>
           </CardContent>

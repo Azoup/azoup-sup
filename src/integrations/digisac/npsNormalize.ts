@@ -135,7 +135,27 @@ const withPercents = (
   };
 };
 
+import { aggregateAnswerRows, countsToNpsScore, emptyNpsCounts } from '@/lib/digisacNpsAggregate';
+import { flattenAnswersPayload } from '@/lib/digisacNpsAggregate';
+
+function countsToOverviewFromAggregate(counts: ReturnType<typeof emptyNpsCounts>): NpsOverview {
+  const total = counts.total;
+  const pct = (n: number) => (total > 0 ? Math.round((n / total) * 10000) / 100 : 0);
+  return {
+    total,
+    npsScore: countsToNpsScore(counts),
+    promoters: { count: counts.promoters, percent: pct(counts.promoters), label: 'Promotores', scoreRange: '9 - 10' },
+    neutrals: { count: counts.neutrals, percent: pct(counts.neutrals), label: 'Neutros', scoreRange: '7 - 8' },
+    detractors: { count: counts.detractors, percent: pct(counts.detractors), label: 'Detratores', scoreRange: '0 - 6' },
+  };
+}
+
 export function normalizeNpsOverviewPayload(payload: unknown): NpsOverview {
+  const rows = flattenAnswersPayload(payload);
+  if (rows.length > 0) {
+    return countsToOverviewFromAggregate(aggregateAnswerRows(rows));
+  }
+
   const root = firstObject(payload);
   const totals =
     root.totals && typeof root.totals === 'object'
