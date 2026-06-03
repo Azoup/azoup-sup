@@ -911,7 +911,7 @@ Deno.serve(async (req) => {
         to,
         departmentId,
         type: evaluationType,
-        ...(periodType && periodType !== "all" ? { periodType } : {}),
+        periodType: "all" as const,
         serviceId,
       };
 

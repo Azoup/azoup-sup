@@ -1,12 +1,11 @@
 import {
-  buildAllNpsOverviewVariants,
-  buildAnswersListParamVariants,
+  buildCanonicalNpsOverviewParams,
   mapDigisacAnswersOverview,
   type DigisacAnswersQueryBase,
   type MappedNpsOverview,
 } from "./digisacAnswersOverview.ts";
+import { buildAnswersListParamVariants } from "./digisacAnswersOverview.ts";
 import {
-  aggregateAnswerRows,
   countScoredAnswerRows,
   countsToMappedOverview,
   emptyNpsCounts,
@@ -47,34 +46,28 @@ const sampleKeys = (data: unknown): string[] => {
   return keys.slice(0, 24);
 };
 
+/** Overview oficial: from/to + departmentId + type=nps + periodType=all (filtra pelo período). */
 export async function fetchDigisacNpsOverviewWithProbe(
   fetchDigisac: FetchDigisacFn,
   base: DigisacAnswersQueryBase,
   endpoint = "/api/v1/answers/overview",
 ): Promise<{ overview: MappedNpsOverview; attempts: NpsFetchAttempt[] }> {
   const empty = countsToMappedOverview(emptyNpsCounts());
-  const attempts: NpsFetchAttempt[] = [];
-  let best = empty;
-
-  for (const params of buildAllNpsOverviewVariants(base)) {
-    const r = await fetchDigisac(endpoint, params);
-    const mapped = r.ok ? mapDigisacAnswersOverview(r.data) : empty;
-    attempts.push({
-      endpoint,
-      query: params.toString(),
-      status: r.status,
-      ok: r.ok,
-      mappedTotal: mapped.total,
-      sampleKeys: r.ok ? sampleKeys(r.data) : [],
-    });
-    if (r.ok && mapped.total > best.total) {
-      best = mapped;
-      console.log("[Digisac NPS] overview total=", mapped.total, params.toString().slice(0, 120));
-    }
-    if (mapped.total > 0 && mapped.total >= 100) break;
+  const params = buildCanonicalNpsOverviewParams(base);
+  const r = await fetchDigisac(endpoint, params);
+  const mapped = r.ok ? mapDigisacAnswersOverview(r.data) : empty;
+  const attempts: NpsFetchAttempt[] = [{
+    endpoint,
+    query: params.toString(),
+    status: r.status,
+    ok: r.ok,
+    mappedTotal: mapped.total,
+    sampleKeys: r.ok ? sampleKeys(r.data) : [],
+  }];
+  if (r.ok && mapped.total > 0) {
+    console.log("[Digisac NPS] overview OK total=", mapped.total, "periodType=all");
   }
-
-  return { overview: best, attempts };
+  return { overview: mapped.total > 0 ? mapped : empty, attempts };
 }
 
 export async function fetchDigisacAnswersRows(
@@ -98,7 +91,6 @@ export async function fetchDigisacAnswersRows(
   for (const baseParams of buildAnswersListParamVariants(base)) {
     let page = 1;
     let pageCount = 1;
-    let scoredOnFirstPage = 0;
 
     while (page <= Math.max(pageCount, 1) && page <= 120) {
       const params = new URLSearchParams(baseParams);
@@ -113,13 +105,12 @@ export async function fetchDigisacAnswersRows(
       }
 
       if (page === 1) {
-        scoredOnFirstPage = countScoredAnswerRows(batch);
         attempts.push({
           endpoint: "/api/v1/answers",
           query: params.toString().slice(0, 220),
           status: r.status,
           ok: r.ok,
-          mappedTotal: scoredOnFirstPage,
+          mappedTotal: countScoredAnswerRows(batch),
           sampleKeys: r.ok ? sampleKeys(r.data) : [],
         });
       }
@@ -130,8 +121,7 @@ export async function fetchDigisacAnswersRows(
       page += 1;
     }
 
-    if (countScoredAnswerRows(collected) > 0) break;
-    if (collected.length > 0 && scoredOnFirstPage > 0) break;
+    if (collected.length > 0) break;
   }
 
   return { rows: collected, attempts };
@@ -145,15 +135,9 @@ export async function fetchDigisacNpsDashboardData(
   const deptBase = { ...base, userId: undefined };
 
   const deptOverview = await fetchDigisacNpsOverviewWithProbe(fetchDigisac, deptBase);
-  const answersPack = await fetchDigisacAnswersRows(fetchDigisac, deptBase);
+  const attempts = [...deptOverview.attempts];
 
   let overview = deptOverview.overview;
-  const attempts = [...deptOverview.attempts, ...answersPack.attempts];
-
-  if (overview.total <= 0 && answersPack.rows.length > 0) {
-    overview = countsToMappedOverview(aggregateAnswerRows(answersPack.rows));
-    console.log("[Digisac NPS] overview via /answers agregado:", overview.total);
-  }
 
   if (chartUserId) {
     const one = await fetchDigisacNpsOverviewWithProbe(fetchDigisac, { ...base, userId: chartUserId });
@@ -161,7 +145,7 @@ export async function fetchDigisacNpsDashboardData(
     if (one.overview.total > 0) overview = one.overview;
   }
 
-  return { overview, attempts, answerRows: answersPack.rows };
+  return { overview, attempts, answerRows: [] };
 }
 
 export async function fetchDigisacNpsOverview(

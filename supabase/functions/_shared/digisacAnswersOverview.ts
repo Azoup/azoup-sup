@@ -19,13 +19,22 @@ export type DigisacAnswersQueryBase = {
   serviceId?: string;
 };
 
+/** Query canônica do painel Digisac: `periodType=all` aplica o filtro De/Até (close/open ignora datas). */
+export function buildCanonicalNpsOverviewParams(input: DigisacAnswersQueryBase): URLSearchParams {
+  return buildDigisacAnswersFromToParams({
+    ...input,
+    type: input.type ?? "nps",
+    periodType: "all",
+  });
+}
+
 export function buildDigisacAnswersFromToParams(input: DigisacAnswersQueryBase): URLSearchParams {
   const params = new URLSearchParams({
     from: input.from,
     to: input.to,
+    periodType: input.periodType ?? "all",
     departmentId: input.departmentId && input.departmentId !== "all" ? input.departmentId : "all",
   });
-  if (input.periodType) params.set("periodType", input.periodType);
   if (input.type) params.set("type", input.type);
   if (input.userId && input.userId !== "all") params.set("userId", input.userId);
   if (input.serviceId?.trim()) params.set("serviceId", input.serviceId.trim());
@@ -96,38 +105,7 @@ export function buildDigisacDocOverviewParams(base: DigisacAnswersQueryBase): UR
 }
 
 export function buildAllNpsOverviewVariants(base: DigisacAnswersQueryBase): URLSearchParams[] {
-  const seen = new Set<string>();
-  const list: URLSearchParams[] = [];
-  const add = (p: URLSearchParams) => {
-    const k = p.toString();
-    if (!k || seen.has(k)) return;
-    seen.add(k);
-    list.push(p);
-  };
-
-  for (const p of buildDigisacDocOverviewParams(base)) add(p);
-
-  add(buildDigisacAnswersFromToParams({ ...base, type: "nps" }));
-  add(buildDigisacAnswersFromToParams({ ...base, type: undefined }));
-  add(buildDigisacAnswersPeriodParams({ ...base, type: "nps" }));
-  add(buildDigisacAnswersPeriodParams({ ...base, type: undefined }));
-  add(buildDigisacAnswersWhereParams({ ...base, type: "nps" }));
-  add(buildDigisacAnswersWhereParams({ ...base, type: undefined }));
-
-  if (base.serviceId?.trim()) {
-    const full = new URLSearchParams({
-      from: base.from,
-      to: base.to,
-      type: "nps",
-      periodType: base.periodType ?? "all",
-      serviceId: base.serviceId.trim(),
-    });
-    if (base.departmentId && base.departmentId !== "all") full.set("departmentId", base.departmentId);
-    if (base.userId && base.userId !== "all") full.set("userId", base.userId);
-    add(full);
-  }
-
-  return list;
+  return [buildCanonicalNpsOverviewParams(base)];
 }
 
 /** @deprecated use buildAllNpsOverviewVariants */
@@ -145,14 +123,13 @@ export function buildAnswersListParamVariants(base: DigisacAnswersQueryBase): UR
     list.push(p);
   };
 
-  add(new URLSearchParams());
-
   if (base.departmentId && base.departmentId !== "all") {
     const p = new URLSearchParams({
       from: base.from,
       to: base.to,
       departmentId: base.departmentId,
       type: "nps",
+      periodType: "all",
     });
     add(p);
 

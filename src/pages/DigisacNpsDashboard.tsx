@@ -290,37 +290,41 @@ export default function DigisacNpsDashboard() {
             ) : pieData.length === 0 ? (
               <p className="text-sm text-muted-foreground py-12 text-center">Sem dados para o gráfico no período.</p>
             ) : (
-              <div className="flex flex-col md:flex-row gap-4 items-stretch">
-                <div className="w-full md:w-[42%] min-h-[280px] relative">
-                  <ResponsiveContainer width="100%" height={280}>
-                    <PieChart>
-                      <Pie
-                        data={pieData}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={72}
-                        outerRadius={118}
-                        paddingAngle={1}
-                        stroke="#fff"
-                        strokeWidth={2}
-                      >
-                        {pieData.map((entry) => (
-                          <Cell key={entry.name} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <RechartsTooltip formatter={(v: number, _n, p) => [`${v} (${(p?.payload as { pct?: number })?.pct?.toFixed(2) ?? 0}%)`, ""]} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  {safeOverview.npsScore != null && (
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className="text-center">
-                        <p className="text-2xl font-bold text-foreground">{safeOverview.npsScore.toFixed(2)}</p>
-                        <p className="text-xs text-muted-foreground">NPS</p>
+              <div className="flex flex-col md:flex-row gap-6 items-center md:items-stretch">
+                <div className="w-full md:w-[38%] flex justify-center shrink-0">
+                  <div className="relative w-[min(100%,220px)] aspect-square">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
+                        <Pie
+                          data={pieData}
+                          dataKey="value"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          innerRadius="58%"
+                          outerRadius="88%"
+                          paddingAngle={2}
+                          stroke="#fff"
+                          strokeWidth={2}
+                        >
+                          {pieData.map((entry) => (
+                            <Cell key={entry.name} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <RechartsTooltip formatter={(v: number, _n, p) => [`${v} (${(p?.payload as { pct?: number })?.pct?.toFixed(2) ?? 0}%)`, ""]} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    {safeOverview.npsScore != null && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div className="text-center px-2">
+                          <p className="text-xl sm:text-2xl font-bold text-foreground leading-none">
+                            {safeOverview.npsScore.toFixed(2)}
+                          </p>
+                          <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">NPS</p>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
                 <div className="w-full md:flex-1">
                   <Table>
