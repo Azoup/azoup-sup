@@ -47,6 +47,36 @@ const NPS_COLORS = {
   detractors: "#94a3b8",
 };
 
+const NPS_CARD_MIN_H = "min-h-[420px]";
+
+function NpsBreakdownRow({
+  label,
+  scoreRange,
+  count,
+  percent,
+  color,
+}: {
+  label: string;
+  scoreRange: string;
+  count: number;
+  percent: number;
+  color: string;
+}) {
+  return (
+    <div className="flex w-full items-center gap-3 border-b border-border/60 py-2.5 last:border-0">
+      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} aria-hidden />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium leading-tight">{label}</p>
+        <p className="text-xs text-muted-foreground">{scoreRange}</p>
+      </div>
+      <div className="shrink-0 text-right tabular-nums">
+        <p className="text-sm font-semibold">{count}</p>
+        <p className="text-xs text-muted-foreground">{percent.toFixed(2)}%</p>
+      </div>
+    </div>
+  );
+}
+
 export default function DigisacNpsDashboard() {
   const today = getTodayDateStringBrazil();
   const monthStart = getMonthStartBrazil();
@@ -268,9 +298,9 @@ export default function DigisacNpsDashboard() {
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
+      <div className="grid gap-6 lg:grid-cols-2 lg:items-stretch">
+        <Card className={`flex flex-col overflow-hidden ${NPS_CARD_MIN_H}`}>
+          <CardHeader className="shrink-0 pb-2">
             <CardTitle className="flex items-center gap-2">
               <Star className="h-5 w-5 text-primary" />
               NPS
@@ -284,109 +314,95 @@ export default function DigisacNpsDashboard() {
               )}
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden pb-6">
             {isLoading ? (
-              <p className="text-sm text-muted-foreground py-12 text-center">Carregando dados do Digisac…</p>
+              <p className="flex flex-1 items-center justify-center text-sm text-muted-foreground">Carregando dados do Digisac…</p>
             ) : pieData.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-12 text-center">Sem dados para o gráfico no período.</p>
+              <p className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                Sem dados para o gráfico no período.
+              </p>
             ) : (
-              <div className="flex flex-col md:flex-row gap-6 items-center md:items-stretch">
-                <div className="w-full md:w-[38%] flex justify-center shrink-0">
-                  <div className="relative w-[min(100%,220px)] aspect-square">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
-                        <Pie
-                          data={pieData}
-                          dataKey="value"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          innerRadius="58%"
-                          outerRadius="88%"
-                          paddingAngle={2}
-                          stroke="#fff"
-                          strokeWidth={2}
-                        >
-                          {pieData.map((entry) => (
-                            <Cell key={entry.name} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <RechartsTooltip formatter={(v: number, _n, p) => [`${v} (${(p?.payload as { pct?: number })?.pct?.toFixed(2) ?? 0}%)`, ""]} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    {safeOverview.npsScore != null && (
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="text-center px-2">
-                          <p className="text-xl sm:text-2xl font-bold text-foreground leading-none">
-                            {safeOverview.npsScore.toFixed(2)}
-                          </p>
-                          <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">NPS</p>
-                        </div>
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5 px-1">
+                <div className="relative mx-auto h-[168px] w-[168px] shrink-0 sm:h-[184px] sm:w-[184px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={pieData}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius="56%"
+                        outerRadius="86%"
+                        paddingAngle={2}
+                        stroke="#fff"
+                        strokeWidth={2}
+                      >
+                        {pieData.map((entry) => (
+                          <Cell key={entry.name} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip
+                        formatter={(v: number, _n, p) => [
+                          `${v} (${(p?.payload as { pct?: number })?.pct?.toFixed(2) ?? 0}%)`,
+                          "",
+                        ]}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  {safeOverview.npsScore != null && (
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                      <div className="text-center">
+                        <p className="text-xl font-bold leading-none text-foreground sm:text-2xl">
+                          {safeOverview.npsScore.toFixed(2)}
+                        </p>
+                        <p className="mt-0.5 text-[10px] text-muted-foreground sm:text-xs">NPS</p>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
-                <div className="w-full md:flex-1">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead />
-                        <TableHead>Nota</TableHead>
-                        <TableHead className="text-right">Quantidade</TableHead>
-                        <TableHead className="text-right">Porcentagem</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {npsCategories.map((row) => (
-                        <TableRow key={row.label}>
-                          <TableCell className="font-medium">
-                            <span className="inline-flex items-center gap-2">
-                              <span
-                                className="inline-block w-3 h-3 rounded-full shrink-0"
-                                style={{
-                                  backgroundColor:
-                                    row.label === "Promotores"
-                                      ? NPS_COLORS.promoters
-                                      : row.label === "Neutros"
-                                        ? NPS_COLORS.neutrals
-                                        : NPS_COLORS.detractors,
-                                }}
-                              />
-                              {row.label}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">{row.scoreRange}</TableCell>
-                          <TableCell className="text-right">{row.count}</TableCell>
-                          <TableCell className="text-right">{row.percent.toFixed(2)}%</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                <div className="w-full max-w-sm rounded-lg border bg-muted/20 px-3 py-1">
+                  {npsCategories.map((row) => (
+                    <NpsBreakdownRow
+                      key={row.label}
+                      label={row.label}
+                      scoreRange={row.scoreRange}
+                      count={row.count}
+                      percent={row.percent}
+                      color={
+                        row.label === "Promotores"
+                          ? NPS_COLORS.promoters
+                          : row.label === "Neutros"
+                            ? NPS_COLORS.neutrals
+                            : NPS_COLORS.detractors
+                      }
+                    />
+                  ))}
                 </div>
               </div>
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
+        <Card className={`flex flex-col overflow-hidden ${NPS_CARD_MIN_H}`}>
+          <CardHeader className="shrink-0 pb-2">
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5 text-primary" />
               Avaliações por analista
             </CardTitle>
             <CardDescription>
-              Contagem por atendente (mesma base do export TXT, via API /answers).
+              Contagem por atendente (overview Digisac por usuário).
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden pb-6">
             {isLoading ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">Carregando…</p>
+              <p className="flex flex-1 items-center justify-center text-sm text-muted-foreground">Carregando…</p>
             ) : safeAnalysts.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">
+              <p className="flex flex-1 items-center justify-center px-2 text-center text-sm text-muted-foreground">
                 Nenhum analista mapeado. Configure em Dashboard Digisac → Mapeamento Digisac.
               </p>
             ) : (
-              <ul className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
+              <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
                 {[...safeAnalysts]
                   .sort((a, b) => b.total - a.total)
                   .map((a) => (
