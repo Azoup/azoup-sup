@@ -40,13 +40,18 @@ const asNumber = (...values: unknown[]): number | null => {
 const pickNestedName = (obj: unknown): string => {
   if (!obj || typeof obj !== "object") return "";
   const r = obj as Record<string, unknown>;
-  return String(r.name ?? r.fullName ?? r.displayName ?? "").trim();
+  return String(r.name ?? r.fullName ?? r.displayName ?? r.label ?? "").trim();
 };
 
 export function extractAnswerScore(row: Record<string, unknown>): number | null {
-  const direct = asNumber(row.score, row.rating, row.grade, row.nota, row.value, row.answer, row.nps);
+  const direct = asNumber(row.score, row.rating, row.grade, row.nota, row.value, row.answer, row.nps, row.rate);
   if (direct != null && direct >= 0 && direct <= 10) return Math.round(direct);
-  const classification = String(row.classification ?? row.classificacao ?? "").toLowerCase();
+  const answer = row.answer;
+  if (answer && typeof answer === "object") {
+    const nested = extractAnswerScore(answer as Record<string, unknown>);
+    if (nested != null) return nested;
+  }
+  const classification = String(row.classification ?? row.classificacao ?? row.type ?? "").toLowerCase();
   if (classification.includes("promot")) return 10;
   if (classification.includes("neutr") || classification.includes("passiv")) return 8;
   if (classification.includes("detrat")) return 5;
@@ -55,7 +60,9 @@ export function extractAnswerScore(row: Record<string, unknown>): number | null 
 
 export function extractAnswerAnalystName(row: Record<string, unknown>): string {
   const keys = [
-    "attendantName", "userName", "agentName", "atendeuNoChamado", "attendedBy", "lastUser", "user", "attendant", "agent",
+    "attendantName", "attendant_name", "userName", "user_name", "agentName", "agent_name",
+    "atendeuNoChamado", "atendeu_no_chamado", "attendedBy", "attended_by", "lastUser", "last_user",
+    "user", "attendant", "agent", "usuario", "atendente",
   ];
   for (const key of keys) {
     const val = row[key];
@@ -64,6 +71,65 @@ export function extractAnswerAnalystName(row: Record<string, unknown>): string {
     if (nested) return nested;
   }
   return "";
+}
+
+export function normalizeComparableName(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+export function extractAnswerUserId(row: Record<string, unknown>): string {
+  for (const key of ["userId", "user_id", "attendantId", "attendant_id", "agentId", "agent_id", "lastUserId"]) {
+    const id = String(row[key] ?? "").trim();
+    if (id) return id;
+  }
+  for (const key of ["user", "attendant", "agent", "lastUser", "attendedBy"]) {
+    const nested = row[key];
+    if (nested && typeof nested === "object") {
+      const id = String((nested as Record<string, unknown>).id ?? "").trim();
+      if (id) return id;
+    }
+  }
+  return "";
+}
+
+export type MappedAnalystRef = { id: string; name: string };
+
+export function aggregateAnswersByMappedAnalysts(
+  rows: Record<string, unknown>[],
+  mappedAnalysts: MappedAnalystRef[],
+): Map<string, NpsCounts> {
+  const idSet = new Set(mappedAnalysts.map((a) => a.id));
+  const nameToId = new Map<string, string>();
+  for (const a of mappedAnalysts) {
+    nameToId.set(normalizeComparableName(a.name), a.id);
+  }
+
+  const byAnalyst = new Map<string, NpsCounts>();
+  for (const a of mappedAnalysts) {
+    byAnalyst.set(a.id, emptyNpsCounts());
+  }
+
+  for (const row of rows) {
+    const score = extractAnswerScore(row);
+    if (score == null) continue;
+
+    let analystId = extractAnswerUserId(row);
+    if (!analystId || !idSet.has(analystId)) {
+      const key = normalizeComparableName(extractAnswerAnalystName(row));
+      analystId = nameToId.get(key) ?? "";
+    }
+    if (!analystId || !idSet.has(analystId)) continue;
+
+    const prev = byAnalyst.get(analystId) ?? emptyNpsCounts();
+    byAnalyst.set(analystId, addScoreToCounts(prev, score));
+  }
+
+  return byAnalyst;
 }
 
 export function aggregateAnswerRows(rows: Record<string, unknown>[]): NpsCounts {
@@ -87,6 +153,11 @@ export function flattenAnswersPayload(payload: unknown): Record<string, unknown>
     const val = root[key];
     if (Array.isArray(val)) {
       return val.filter((r) => r && typeof r === "object") as Record<string, unknown>[];
+    }
+    if (val && typeof val === "object" && Array.isArray((val as Record<string, unknown>).data)) {
+      return ((val as Record<string, unknown>).data as unknown[]).filter(
+        (r) => r && typeof r === "object",
+      ) as Record<string, unknown>[];
     }
   }
   return [];

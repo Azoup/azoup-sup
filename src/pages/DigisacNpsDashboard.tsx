@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,11 +12,6 @@ import {
 import { EMPTY_NPS_OVERVIEW, type NpsAnalystRow, type NpsOverview } from "@/integrations/digisac/npsNormalize";
 import { pickSuporteDepartment, pickSuporteDepartmentId } from "@/lib/digisacSuporteDepartment";
 import {
-  mergeAnalystRowsWithMapped,
-  parseDigisacNpsExportText,
-  type ParsedDigisacNpsExport,
-} from "@/lib/parseDigisacNpsExport";
-import {
   Table,
   TableBody,
   TableCell,
@@ -24,7 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { AlertCircle, FileUp, Filter, RefreshCw, Star, Users, X } from "lucide-react";
+import { AlertCircle, Filter, RefreshCw, Star, Users } from "lucide-react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 
 const getTodayDateStringBrazil = () => {
@@ -52,12 +47,9 @@ const NPS_COLORS = {
   detractors: "#94a3b8",
 };
 
-type DataSource = "api" | "txt" | "none";
-
 export default function DigisacNpsDashboard() {
   const today = getTodayDateStringBrazil();
   const monthStart = getMonthStartBrazil();
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [periodStart, setPeriodStart] = useState({ date: monthStart, time: "00:00" });
   const [periodEnd, setPeriodEnd] = useState({ date: today, time: "23:59" });
   const [analystId, setAnalystId] = useState<string>("all");
@@ -70,8 +62,6 @@ export default function DigisacNpsDashboard() {
     }),
   );
   const [refreshTick, setRefreshTick] = useState(0);
-  const [txtImport, setTxtImport] = useState<ParsedDigisacNpsExport | null>(null);
-  const [txtFileName, setTxtFileName] = useState<string | null>(null);
 
   const { data: departments } = useQuery({
     queryKey: ["digisac-departments"],
@@ -89,20 +79,6 @@ export default function DigisacNpsDashboard() {
     () => pickSuporteDepartment(departments),
     [departments],
   );
-
-  const analystNameMap = useMemo(() => {
-    const map = new Map<string, { id: string; name: string }>();
-    for (const a of analystsList ?? []) {
-      const key = a.name
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^a-zA-Z0-9]+/g, " ")
-        .trim()
-        .toLowerCase();
-      map.set(key, a);
-    }
-    return map;
-  }, [analystsList]);
 
   useEffect(() => {
     const id = pickSuporteDepartmentId(departments);
@@ -160,89 +136,38 @@ export default function DigisacNpsDashboard() {
     return { overview: EMPTY_NPS_OVERVIEW, analysts: [] };
   };
 
-  const { overview, displayAnalysts, dataSource } = useMemo(() => {
-    const apiOverview = data?.overview ?? EMPTY_NPS_OVERVIEW;
-    const apiAnalysts =
-      data?.analysts && data.analysts.length > 0
-        ? data.analysts
-        : (analystsList ?? []).map((a) => ({
-            userId: a.id,
-            name: a.name,
-            total: 0,
-            overview: EMPTY_NPS_OVERVIEW,
-          }));
+  const apiAnalysts =
+    data?.analysts && data.analysts.length > 0
+      ? data.analysts
+      : (analystsList ?? []).map((a) => ({
+          userId: a.id,
+          name: a.name,
+          total: 0,
+          overview: EMPTY_NPS_OVERVIEW,
+        }));
 
-    const txtHasData =
-      (txtImport?.overview?.total ?? 0) > 0 ||
-      (txtImport?.analysts?.some((a) => a.total > 0) ?? false);
-    const apiHasData = apiOverview.total > 0 || (apiAnalysts?.some((a) => a.total > 0) ?? false);
-
-    if (txtHasData && txtImport) {
-      const merged = mergeAnalystRowsWithMapped(txtImport, analystsList ?? []);
-      const filtered = filterAnalystView(merged.overview ?? EMPTY_NPS_OVERVIEW, merged.analysts ?? []);
-      return {
-        overview: filtered.overview,
-        displayAnalysts: filtered.analysts,
-        dataSource: "txt" as DataSource,
-      };
-    }
-
-    if (apiHasData) {
-      const filtered = filterAnalystView(apiOverview, apiAnalysts);
-      return {
-        overview: filtered.overview,
-        displayAnalysts: filtered.analysts,
-        dataSource: "api" as DataSource,
-      };
-    }
-
-    if (txtImport) {
-      const merged = mergeAnalystRowsWithMapped(txtImport, analystsList ?? []);
-      const filtered = filterAnalystView(merged.overview ?? EMPTY_NPS_OVERVIEW, merged.analysts ?? []);
-      return {
-        overview: filtered.overview,
-        displayAnalysts: filtered.analysts,
-        dataSource: "txt" as DataSource,
-      };
-    }
-
-    const filtered = filterAnalystView(apiOverview, apiAnalysts);
+  const { overview, displayAnalysts } = useMemo(() => {
+    const filtered = filterAnalystView(data?.overview ?? EMPTY_NPS_OVERVIEW, apiAnalysts);
     return {
       overview: filtered.overview ?? EMPTY_NPS_OVERVIEW,
       displayAnalysts: filtered.analysts ?? [],
-      dataSource: "none" as DataSource,
     };
-  }, [data, txtImport, analystsList, analystId]);
+  }, [data, apiAnalysts, analystId]);
 
-  const safeOverview = overview ?? EMPTY_NPS_OVERVIEW;
-  const safeAnalysts = displayAnalysts ?? [];
+  const safeOverview = overview;
+  const safeAnalysts = displayAnalysts;
 
   const pieData = useMemo(() => {
     if (safeOverview.total <= 0) return [];
     return [
-      { name: "Promotores", value: safeOverview.promoters?.count ?? 0, color: NPS_COLORS.promoters, pct: safeOverview.promoters?.percent ?? 0 },
-      { name: "Neutros", value: safeOverview.neutrals?.count ?? 0, color: NPS_COLORS.neutrals, pct: safeOverview.neutrals?.percent ?? 0 },
-      { name: "Detratores", value: safeOverview.detractors?.count ?? 0, color: NPS_COLORS.detractors, pct: safeOverview.detractors?.percent ?? 0 },
+      { name: "Promotores", value: safeOverview.promoters.count, color: NPS_COLORS.promoters, pct: safeOverview.promoters.percent },
+      { name: "Neutros", value: safeOverview.neutrals.count, color: NPS_COLORS.neutrals, pct: safeOverview.neutrals.percent },
+      { name: "Detratores", value: safeOverview.detractors.count, color: NPS_COLORS.detractors, pct: safeOverview.detractors.percent },
     ].filter((d) => d.value > 0);
   }, [safeOverview]);
 
   const hasData = safeOverview.total > 0 || safeAnalysts.some((a) => a.total > 0);
   const showEmpty = !isLoading && !isError && !hasData;
-
-  const handleTxtFile = async (file: File) => {
-    const text = await file.text();
-    const parsed = parseDigisacNpsExportText(text, analystNameMap);
-    const merged = mergeAnalystRowsWithMapped(parsed, analystsList ?? []);
-    setTxtImport(merged);
-    setTxtFileName(file.name);
-  };
-
-  const clearTxtImport = () => {
-    setTxtImport(null);
-    setTxtFileName(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
   const npsCategories = [safeOverview.promoters, safeOverview.neutrals, safeOverview.detractors];
 
   return (
@@ -251,18 +176,11 @@ export default function DigisacNpsDashboard() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Dashboard NPS</h1>
           <p className="text-muted-foreground mt-1">
-            Estatísticas de avaliações NPS — departamento{" "}
+            Avaliações NPS integradas ao Digisac — departamento{" "}
             <span className="font-medium text-foreground">
               {data?.departmentName ?? suporteDepartment?.name ?? "Suporte"}
             </span>
-            {dataSource === "txt" && txtFileName && (
-              <span className="block text-xs mt-1 text-primary">
-                Dados do export: {txtFileName}
-              </span>
-            )}
-            {dataSource === "api" && (
-              <span className="block text-xs mt-1 text-muted-foreground">Fonte: API Digisac</span>
-            )}
+            . Dados carregados automaticamente da API (overview + lista de avaliações por analista).
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-3 w-full sm:w-auto">
@@ -284,25 +202,6 @@ export default function DigisacNpsDashboard() {
               </SelectContent>
             </Select>
           </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".txt,.csv,text/plain"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void handleTxtFile(file);
-            }}
-          />
-          <Button type="button" variant="secondary" className="h-9 gap-2 shrink-0" onClick={() => fileInputRef.current?.click()}>
-            <FileUp className="w-4 h-4" />
-            Importar TXT
-          </Button>
-          {txtFileName && (
-            <Button type="button" variant="ghost" className="h-9 gap-1 shrink-0" onClick={clearTxtImport} title="Remover arquivo importado">
-              <X className="w-4 h-4" />
-            </Button>
-          )}
           <Button onClick={applyFilters} className="h-9 gap-2 shrink-0">
             <Filter className="w-4 h-4" />
             Aplicar
@@ -314,13 +213,18 @@ export default function DigisacNpsDashboard() {
         </div>
       </div>
 
-      {isError && !txtImport && (
+      {!departmentId && !isLoading && (
+        <div className="bg-muted/50 text-muted-foreground p-4 rounded-md">
+          Aguardando identificação do departamento Suporte no Digisac…
+        </div>
+      )}
+
+      {isError && (
         <div className="bg-destructive/15 text-destructive p-4 rounded-md flex items-center gap-3">
           <AlertCircle className="h-5 w-5 shrink-0" />
           <div>
-            <p className="font-semibold">Erro ao carregar avaliações pela API</p>
+            <p className="font-semibold">Erro ao carregar avaliações</p>
             <p className="text-sm">{(error as Error)?.message ?? "Erro desconhecido"}</p>
-            <p className="text-sm mt-1">Use Importar TXT com o arquivo exportado no Digisac (Estatísticas de avaliações → Exportar TXT).</p>
           </div>
         </div>
       )}
@@ -328,12 +232,9 @@ export default function DigisacNpsDashboard() {
       {showEmpty && (
         <div className="bg-muted/50 text-muted-foreground p-4 rounded-md flex items-start gap-3">
           <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
-          <div>
-            <p>Nenhuma avaliação NPS no período pela API.</p>
-            <p className="text-sm mt-1">
-              No Digisac, aplique os mesmos filtros (De/Até, Suporte, NPS), clique em <strong>Exportar TXT</strong> e importe aqui com o botão acima — os totais por analista serão calculados como no relatório do Digisac.
-            </p>
-          </div>
+          <p>
+            Nenhuma avaliação NPS no período. Confira as datas e se o departamento Suporte tem pesquisa NPS ativa no Digisac.
+          </p>
         </div>
       )}
 
@@ -345,7 +246,7 @@ export default function DigisacNpsDashboard() {
               NPS
             </CardTitle>
             <CardDescription>
-              Distribuição no período
+              Distribuição no período (overview Digisac)
               {safeOverview.npsScore != null && (
                 <span className="ml-2 font-semibold text-foreground">
                   Score: {safeOverview.npsScore.toFixed(2)}
@@ -354,10 +255,10 @@ export default function DigisacNpsDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {isLoading && !txtImport ? (
-              <p className="text-sm text-muted-foreground py-12 text-center">Carregando…</p>
+            {isLoading ? (
+              <p className="text-sm text-muted-foreground py-12 text-center">Carregando dados do Digisac…</p>
             ) : pieData.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-12 text-center">Sem dados para o gráfico. Importe o TXT do Digisac.</p>
+              <p className="text-sm text-muted-foreground py-12 text-center">Sem dados para o gráfico no período.</p>
             ) : (
               <div className="flex flex-col md:flex-row gap-4 items-stretch">
                 <div className="w-full md:w-[42%] min-h-[280px] relative">
@@ -439,10 +340,12 @@ export default function DigisacNpsDashboard() {
               <Users className="h-5 w-5 text-primary" />
               Avaliações por analista
             </CardTitle>
-            <CardDescription>Total de avaliações no período (export TXT ou API).</CardDescription>
+            <CardDescription>
+              Contagem por atendente (mesma base do export TXT, via API /answers).
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            {isLoading && !txtImport ? (
+            {isLoading ? (
               <p className="text-sm text-muted-foreground py-8 text-center">Carregando…</p>
             ) : safeAnalysts.length === 0 ? (
               <p className="text-sm text-muted-foreground py-8 text-center">
@@ -482,7 +385,7 @@ export default function DigisacNpsDashboard() {
         <Card>
           <CardHeader>
             <CardTitle>Comparativo por analista</CardTitle>
-            <CardDescription>Promotores, neutros, detratores e NPS — espelhando o export do Digisac.</CardDescription>
+            <CardDescription>Promotores, neutros, detratores e NPS de cada atendente.</CardDescription>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <Table>

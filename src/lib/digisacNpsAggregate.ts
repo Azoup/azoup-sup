@@ -136,6 +136,78 @@ export function aggregateAnswerRows(rows: Record<string, unknown>[]): NpsCounts 
   return counts;
 }
 
+export function normalizeComparableName(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/** ID do usuário Digisac que atendeu (campos da API / export TXT). */
+export function extractAnswerUserId(row: Record<string, unknown>): string {
+  const direct = [
+    row.userId,
+    row.user_id,
+    row.attendantId,
+    row.attendant_id,
+    row.agentId,
+    row.agent_id,
+    row.lastUserId,
+    row.last_user_id,
+  ];
+  for (const v of direct) {
+    const id = String(v ?? '').trim();
+    if (id) return id;
+  }
+  for (const key of ['user', 'attendant', 'agent', 'lastUser', 'attendedBy']) {
+    const nested = row[key];
+    if (nested && typeof nested === 'object') {
+      const id = String((nested as Record<string, unknown>).id ?? '').trim();
+      if (id) return id;
+    }
+  }
+  return '';
+}
+
+export type MappedAnalystRef = { id: string; name: string };
+
+/** Agrupa avaliações como no TXT: uma linha por resposta → contagem por analista mapeado. */
+export function aggregateAnswersByMappedAnalysts(
+  rows: Record<string, unknown>[],
+  mappedAnalysts: MappedAnalystRef[],
+): Map<string, NpsCounts> {
+  const idSet = new Set(mappedAnalysts.map((a) => a.id));
+  const nameToId = new Map<string, string>();
+  for (const a of mappedAnalysts) {
+    nameToId.set(normalizeComparableName(a.name), a.id);
+  }
+
+  const byAnalyst = new Map<string, NpsCounts>();
+  for (const a of mappedAnalysts) {
+    byAnalyst.set(a.id, emptyNpsCounts());
+  }
+
+  for (const row of rows) {
+    const score = extractAnswerScore(row);
+    if (score == null) continue;
+
+    let analystId = extractAnswerUserId(row);
+    if (!analystId || !idSet.has(analystId)) {
+      const name = extractAnswerAnalystName(row);
+      const key = normalizeComparableName(name);
+      analystId = nameToId.get(key) ?? '';
+    }
+    if (!analystId || !idSet.has(analystId)) continue;
+
+    const prev = byAnalyst.get(analystId) ?? emptyNpsCounts();
+    byAnalyst.set(analystId, addScoreToCounts(prev, score));
+  }
+
+  return byAnalyst;
+}
+
 export function flattenAnswersPayload(payload: unknown): Record<string, unknown>[] {
   if (!payload) return [];
   if (Array.isArray(payload)) return payload.filter((r) => r && typeof r === 'object') as Record<string, unknown>[];

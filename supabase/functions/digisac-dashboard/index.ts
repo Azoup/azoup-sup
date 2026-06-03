@@ -8,13 +8,15 @@ import {
 import { resolveDigisacQueryPlan } from "../_shared/digisacApiQueryPlan.ts";
 import {
   buildDigisacAnswersOverviewParams,
+  buildDigisacAnswersPeriodOverviewParams,
   mapDigisacAnswersOverview,
   pickSuporteDepartmentId,
 } from "../_shared/digisacAnswersOverview.ts";
 import {
   aggregateAnswerRows,
+  aggregateAnswersByMappedAnalysts,
   countsToMappedOverview,
-  extractAnswerAnalystName,
+  emptyNpsCounts,
   flattenAnswersPayload,
 } from "../_shared/digisacNpsAggregate.ts";
 import { formatDigisacDateOnly, toDigisacPeriodIso } from "../_shared/digisacPeriod.ts";
@@ -905,7 +907,10 @@ Deno.serve(async (req) => {
           params.set("limit", "200");
           params.set("page", String(page));
           const r = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/answers", params);
-          if (!r.ok) break;
+          if (!r.ok) {
+            if (page === 1) console.warn("[Digisac NPS] /answers status", r.status);
+            break;
+          }
           const batch = flattenAnswersPayload(r.data);
           if (!batch.length) break;
           collected.push(...batch);
@@ -914,8 +919,9 @@ Deno.serve(async (req) => {
         return collected;
       };
 
-      const fetchOverview = async (userId?: string) => {
-        const params = buildDigisacAnswersOverviewParams({
+      const fetchOverviewSafe = async (userId?: string) => {
+        const empty = countsToMappedOverview(emptyNpsCounts());
+        const filterParams = buildDigisacAnswersOverviewParams({
           from,
           to,
           departmentId,
@@ -924,31 +930,22 @@ Deno.serve(async (req) => {
           periodType,
           serviceId,
         });
-        const r = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/answers/overview", params);
-        if (!r.ok) {
-          throw new Error(`Erro API Digisac (avaliações): ${r.status}`);
+        const r1 = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/answers/overview", filterParams);
+        if (r1.ok) {
+          const mapped = mapDigisacAnswersOverview(r1.data);
+          if (mapped.total > 0) return mapped;
         }
-        let mapped = mapDigisacAnswersOverview(r.data);
-        if (mapped.total <= 0) {
-          const rows = await fetchAnswersList(userId);
-          if (rows.length > 0) {
-            mapped = countsToMappedOverview(aggregateAnswerRows(rows));
-          }
+        const periodParams = buildDigisacAnswersPeriodOverviewParams(from, to, evaluationType);
+        if (departmentId && departmentId !== "all") periodParams.set("departmentId", departmentId);
+        if (userId) periodParams.set("userId", userId);
+        if (serviceId) periodParams.set("serviceId", serviceId);
+        periodParams.set("periodType", periodType);
+        const r2 = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/answers/overview", periodParams);
+        if (r2.ok) {
+          const mapped = mapDigisacAnswersOverview(r2.data);
+          if (mapped.total > 0) return mapped;
         }
-        return mapped;
-      };
-
-      const fetchAnalystFromAnswersList = async (uid: string, displayName: string) => {
-        const rows = await fetchAnswersList(uid);
-        const nameKey = displayName.trim().toLowerCase();
-        const filtered = rows.filter((row) => {
-          const rowUid = String(row.userId ?? row.user_id ?? (row.user as Record<string, unknown>)?.id ?? "").trim();
-          if (rowUid && rowUid === uid) return true;
-          const analystName = extractAnswerAnalystName(row).trim().toLowerCase();
-          return nameKey && analystName && analystName === nameKey;
-        });
-        const useRows = filtered.length > 0 ? filtered : rows;
-        return countsToMappedOverview(aggregateAnswerRows(useRows));
+        return empty;
       };
 
       const cacheKey = `nps_dashboard_${from}_${to}_${departmentId}_${evaluationType}_${periodType}_${serviceId ?? ""}_${effectiveUserIds.join(",") || "all"}`;
@@ -957,48 +954,57 @@ Deno.serve(async (req) => {
         return jsonResponse(cached);
       }
 
+      if (!departmentId || departmentId === "all") {
+        return handledErrorResponse(action, "Departamento Suporte não encontrado no Digisac.", {
+          code: "NPS_DEPT_MISSING",
+        });
+      }
+
       const chartUserId = effectiveUserIds.length === 1 ? effectiveUserIds[0] : undefined;
-      let overviewMapped = await fetchOverview(chartUserId);
-      if (overviewMapped.total <= 0) {
-        const allRows = await fetchAnswersList(chartUserId);
-        if (allRows.length > 0) {
-          overviewMapped = countsToMappedOverview(aggregateAnswerRows(allRows));
-        }
+
+      console.log("[Digisac NPS] Buscando lista /answers (equivalente ao TXT) dept=", departmentId);
+      const allAnswerRows = await fetchAnswersList(undefined);
+      console.log("[Digisac NPS] Linhas de avaliação:", allAnswerRows.length);
+
+      let overviewMapped = await fetchOverviewSafe(chartUserId);
+      if (overviewMapped.total <= 0 && allAnswerRows.length > 0) {
+        const scopeRows = chartUserId
+          ? allAnswerRows.filter((row) => {
+            const uid = String(row.userId ?? row.user_id ?? (row.user as Record<string, unknown>)?.id ?? "").trim();
+            return uid === chartUserId;
+          })
+          : allAnswerRows;
+        overviewMapped = countsToMappedOverview(aggregateAnswerRows(scopeRows.length ? scopeRows : allAnswerRows));
       }
 
       const analystsToQuery = effectiveUserIds.length > 0
         ? effectiveUserIds
         : validMappedUsers.map((u) => u.id);
 
+      const countsByAnalyst = aggregateAnswersByMappedAnalysts(allAnswerRows, validMappedUsers);
+
       const analystRows = await Promise.all(
         analystsToQuery.map(async (uid) => {
-          try {
-            const displayName = nameById.get(uid) ?? "Analista";
-            let mapped = await fetchOverview(uid);
-            if (mapped.total <= 0) {
-              mapped = await fetchAnalystFromAnswersList(uid, displayName);
-            }
-            return {
-              userId: uid,
-              name: displayName,
-              total: mapped.total,
-              overview: mapped,
-            };
-          } catch (err) {
-            console.warn("[Digisac NPS] Falha analista", uid, err);
-            return {
-              userId: uid,
-              name: nameById.get(uid) ?? "Analista",
-              total: 0,
-              overview: {
-                total: 0,
-                npsScore: null,
-                promoters: { count: 0, percent: 0 },
-                neutrals: { count: 0, percent: 0 },
-                detractors: { count: 0, percent: 0 },
-              },
+          const displayName = nameById.get(uid) ?? "Analista";
+          let counts = countsByAnalyst.get(uid) ?? emptyNpsCounts();
+          let overview = countsToMappedOverview(counts);
+
+          if (overview.total <= 0) {
+            overview = await fetchOverviewSafe(uid);
+            counts = {
+              total: overview.total,
+              promoters: overview.promoters.count,
+              neutrals: overview.neutrals.count,
+              detractors: overview.detractors.count,
             };
           }
+
+          return {
+            userId: uid,
+            name: displayName,
+            total: overview.total,
+            overview,
+          };
         }),
       );
 
@@ -1010,6 +1016,7 @@ Deno.serve(async (req) => {
         overview: overviewMapped,
         analysts: analystRows,
         dataSource: overviewMapped.total > 0 || analystRows.some((a) => a.total > 0) ? "api" : "empty",
+        answersRowCount: allAnswerRows.length,
       };
       cache[cacheKey] = { data: out, timestamp: Date.now() };
       return jsonResponse(out);

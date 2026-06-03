@@ -38,6 +38,19 @@ export function buildDigisacAnswersOverviewParams(input: DigisacAnswersOverviewP
   return params;
 }
 
+/** Variante documentada: overview só com startPeriod/endPeriod. */
+export function buildDigisacAnswersPeriodOverviewParams(
+  startPeriod: string,
+  endPeriod: string,
+  type: "nps" | "csat" = "nps",
+): URLSearchParams {
+  return new URLSearchParams({
+    startPeriod,
+    endPeriod,
+    type,
+  });
+}
+
 const asNumber = (...values: unknown[]): number => {
   for (const value of values) {
     if (typeof value === "number" && Number.isFinite(value)) return value;
