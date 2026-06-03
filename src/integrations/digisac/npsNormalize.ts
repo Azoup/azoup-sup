@@ -64,8 +64,8 @@ const readCategoryNode = (
     if (!node || typeof node !== 'object') continue;
     const obj = node as Record<string, unknown>;
     return {
-      count: asNumber(obj.count, obj.quantity, obj.total, obj.value, obj.amount),
-      percent: asNumber(obj.percent, obj.percentage, obj.rate, obj.pct),
+      count: asNumber(obj.count, obj.quantity, obj.quantidade, obj.total, obj.value, obj.amount),
+      percent: asNumber(obj.percent, obj.percentage, obj.porcentagem, obj.rate, obj.pct),
     };
   }
   return { count: 0, percent: 0 };
@@ -173,9 +173,9 @@ export function normalizeNpsOverviewPayload(payload: unknown): NpsOverview {
     root.answersCount,
   );
 
-  let promoters = readCategoryNode(root, ['promoters', 'promoter', 'Promoters']);
-  let neutrals = readCategoryNode(root, ['neutrals', 'neutral', 'passive', 'passives', 'Neutrals']);
-  let detractors = readCategoryNode(root, ['detractors', 'detractor', 'Detractors']);
+  let promoters = readCategoryNode(root, ['promoters', 'promoter', 'Promoters', 'promotores', 'promotor']);
+  let neutrals = readCategoryNode(root, ['neutrals', 'neutral', 'passive', 'passives', 'Neutrals', 'neutros', 'neutro', 'passivos']);
+  let detractors = readCategoryNode(root, ['detractors', 'detractor', 'Detractors', 'detratores', 'detrator']);
 
   if (!promoters.count && !neutrals.count && !detractors.count) {
     promoters = readFromArrayBuckets(root, (n) => n.includes('promot'));

@@ -17,6 +17,18 @@ describe('normalizeNpsOverviewPayload', () => {
     expect(result.npsScore).toBe(93.55);
   });
 
+  it('lê chaves em português (painel Digisac)', () => {
+    const result = normalizeNpsOverviewPayload({
+      promotores: { quantidade: 119, porcentagem: 95.97 },
+      neutros: { quantidade: 2, porcentagem: 1.61 },
+      detratores: { quantidade: 3, porcentagem: 2.42 },
+    });
+    expect(result.total).toBe(124);
+    expect(result.promoters.count).toBe(119);
+    expect(result.neutrals.count).toBe(2);
+    expect(result.detractors.count).toBe(3);
+  });
+
   it('calcula NPS quando a API não envia score', () => {
     const result = normalizeNpsOverviewPayload({
       promoters: { count: 9 },

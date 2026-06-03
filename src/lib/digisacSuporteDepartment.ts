@@ -7,6 +7,8 @@ export function pickSuporteDepartment(
   departments: DigisacDepartmentOption[] | undefined,
 ): DigisacDepartmentOption | undefined {
   if (!departments?.length) return undefined;
+  const exact = departments.find((d) => d.name.trim().toLowerCase() === 'suporte');
+  if (exact) return exact;
   return departments.find((d) => DIGISAC_NPS_DEFAULT_DEPARTMENT_PATTERN.test(d.name.trim()));
 }
 
