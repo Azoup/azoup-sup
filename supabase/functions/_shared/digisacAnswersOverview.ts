@@ -1,6 +1,7 @@
 import {
   aggregateAnswerRows,
   countsToMappedOverview,
+  extractAnswerUserId,
   flattenAnswersPayload,
 } from "./digisacNpsAggregate.ts";
 
@@ -22,9 +23,9 @@ export function buildDigisacAnswersFromToParams(input: DigisacAnswersQueryBase):
   const params = new URLSearchParams({
     from: input.from,
     to: input.to,
-    periodType: input.periodType ?? "all",
     departmentId: input.departmentId && input.departmentId !== "all" ? input.departmentId : "all",
   });
+  if (input.periodType) params.set("periodType", input.periodType);
   if (input.type) params.set("type", input.type);
   if (input.userId && input.userId !== "all") params.set("userId", input.userId);
   if (input.serviceId?.trim()) params.set("serviceId", input.serviceId.trim());
@@ -63,7 +64,38 @@ export function buildDigisacAnswersWhereParams(input: DigisacAnswersQueryBase): 
   return params;
 }
 
-export function buildAllNpsQueryVariants(base: DigisacAnswersQueryBase): URLSearchParams[] {
+/** Variantes alinhadas à doc Postman Digisac (overview por dept: from/to + type, sem periodType). */
+export function buildDigisacDocOverviewParams(base: DigisacAnswersQueryBase): URLSearchParams[] {
+  const list: URLSearchParams[] = [];
+  const dept = base.departmentId && base.departmentId !== "all" ? base.departmentId : "";
+  const uid = base.userId && base.userId !== "all" ? base.userId : "";
+
+  if (dept) {
+    const p = new URLSearchParams({ from: base.from, to: base.to, departmentId: dept, type: "nps" });
+    if (uid) p.set("userId", uid);
+    list.push(p);
+  }
+
+  if (uid && dept) {
+    list.push(new URLSearchParams({
+      from: base.from,
+      to: base.to,
+      departmentId: dept,
+      userId: uid,
+      type: "nps",
+    }));
+  }
+
+  const periodDept = new URLSearchParams({ startPeriod: base.from, endPeriod: base.to });
+  if (dept) periodDept.set("departmentId", dept);
+  if (uid) periodDept.set("userId", uid);
+  periodDept.set("type", "nps");
+  list.push(periodDept);
+
+  return list;
+}
+
+export function buildAllNpsOverviewVariants(base: DigisacAnswersQueryBase): URLSearchParams[] {
   const seen = new Set<string>();
   const list: URLSearchParams[] = [];
   const add = (p: URLSearchParams) => {
@@ -73,6 +105,8 @@ export function buildAllNpsQueryVariants(base: DigisacAnswersQueryBase): URLSear
     list.push(p);
   };
 
+  for (const p of buildDigisacDocOverviewParams(base)) add(p);
+
   add(buildDigisacAnswersFromToParams({ ...base, type: "nps" }));
   add(buildDigisacAnswersFromToParams({ ...base, type: undefined }));
   add(buildDigisacAnswersPeriodParams({ ...base, type: "nps" }));
@@ -80,13 +114,58 @@ export function buildAllNpsQueryVariants(base: DigisacAnswersQueryBase): URLSear
   add(buildDigisacAnswersWhereParams({ ...base, type: "nps" }));
   add(buildDigisacAnswersWhereParams({ ...base, type: undefined }));
 
-  const periodOnly = new URLSearchParams({
-    startPeriod: base.from,
-    endPeriod: base.to,
-  });
-  if (base.type) periodOnly.set("type", base.type);
-  if (base.departmentId && base.departmentId !== "all") periodOnly.set("departmentId", base.departmentId);
-  add(periodOnly);
+  if (base.serviceId?.trim()) {
+    const full = new URLSearchParams({
+      from: base.from,
+      to: base.to,
+      type: "nps",
+      periodType: base.periodType ?? "all",
+      serviceId: base.serviceId.trim(),
+    });
+    if (base.departmentId && base.departmentId !== "all") full.set("departmentId", base.departmentId);
+    if (base.userId && base.userId !== "all") full.set("userId", base.userId);
+    add(full);
+  }
+
+  return list;
+}
+
+/** @deprecated use buildAllNpsOverviewVariants */
+export function buildAllNpsQueryVariants(base: DigisacAnswersQueryBase): URLSearchParams[] {
+  return buildAllNpsOverviewVariants(base);
+}
+
+export function buildAnswersListParamVariants(base: DigisacAnswersQueryBase): URLSearchParams[] {
+  const seen = new Set<string>();
+  const list: URLSearchParams[] = [];
+  const add = (p: URLSearchParams) => {
+    const k = p.toString();
+    if (seen.has(k)) return;
+    seen.add(k);
+    list.push(p);
+  };
+
+  add(new URLSearchParams());
+
+  if (base.departmentId && base.departmentId !== "all") {
+    const p = new URLSearchParams({
+      from: base.from,
+      to: base.to,
+      departmentId: base.departmentId,
+      type: "nps",
+    });
+    add(p);
+
+    const where = new URLSearchParams({
+      from: base.from,
+      to: base.to,
+      type: "nps",
+    });
+    where.set("where[departmentId]", base.departmentId);
+    add(where);
+  }
+
+  add(buildDigisacAnswersFromToParams({ ...base, type: "nps" }));
 
   return list;
 }
@@ -157,12 +236,15 @@ const readFromArrayBuckets = (
 };
 
 const isCategoryBucketRow = (row: Record<string, unknown>): boolean => {
-  const name = String(row.name ?? row.label ?? row.type ?? row.tipo ?? row.category ?? "").toLowerCase();
+  if (extractAnswerUserId(row) || String(row.userName ?? row.attendantName ?? "").trim()) return false;
+  const name = String(row.name ?? row.label ?? row.category ?? row.tipo ?? "").toLowerCase();
   if (!name) return false;
   const isBucket = name.includes("promot") || name.includes("neutr") || name.includes("passiv") || name.includes("detrat");
   if (!isBucket) return false;
-  const score = asNumber(row.score, row.rating, row.nota, row.value, row.answer);
-  return !(score >= 0 && score <= 10);
+  const tipo = String(row.type ?? "").toLowerCase();
+  if (tipo === "nps" || tipo === "csat") return false;
+  const score = asNumber(row.score, row.rating, row.nota, row.notaAtribuida, row.value);
+  return !(score != null && score >= 0 && score <= 10);
 };
 
 const deepExtractNps = (

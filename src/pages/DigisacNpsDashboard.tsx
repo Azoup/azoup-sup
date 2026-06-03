@@ -246,7 +246,14 @@ export default function DigisacNpsDashboard() {
                   </p>
                 )}
                 {typeof data.answersRowCount === "number" && (
-                  <p>Linhas em /answers: {data.answersRowCount}</p>
+                  <p>
+                    Linhas em /answers: {data.answersRowCount}
+                    {typeof (data as { scoredAnswerCount?: number }).scoredAnswerCount === "number" &&
+                      ` · com nota: ${(data as { scoredAnswerCount: number }).scoredAnswerCount}`}
+                  </p>
+                )}
+                {data._debug.sampleRowKeys && data._debug.sampleRowKeys.length > 0 && (
+                  <p className="break-all">Campos da 1ª linha: {data._debug.sampleRowKeys.join(", ")}</p>
                 )}
                 {data._debug.bestAttempt && (
                   <p className="mt-1 break-all">

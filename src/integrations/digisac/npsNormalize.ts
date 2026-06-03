@@ -37,10 +37,12 @@ export type DigisacNpsDashboardResponse = {
   dataSource?: string;
   answersRowCount?: number;
   period?: { from: string; to: string };
+  scoredAnswerCount?: number;
   _debug?: {
     hint?: string;
     bestAttempt?: NpsApiDebugAttempt | null;
     attempts?: NpsApiDebugAttempt[];
+    sampleRowKeys?: string[];
   };
 };
 
@@ -246,6 +248,7 @@ export function normalizeNpsDashboardResponse(payload: unknown): DigisacNpsDashb
     analysts: analystsWithSafeOverview,
     dataSource: typeof root.dataSource === 'string' ? root.dataSource : undefined,
     answersRowCount: typeof root.answersRowCount === 'number' ? root.answersRowCount : undefined,
+    scoredAnswerCount: typeof root.scoredAnswerCount === 'number' ? root.scoredAnswerCount : undefined,
     period: root.period && typeof root.period === 'object'
       ? {
           from: String((root.period as Record<string, unknown>).from ?? ''),

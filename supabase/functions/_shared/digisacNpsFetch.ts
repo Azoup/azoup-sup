@@ -1,14 +1,17 @@
 import {
-  buildAllNpsQueryVariants,
+  buildAllNpsOverviewVariants,
+  buildAnswersListParamVariants,
   mapDigisacAnswersOverview,
   type DigisacAnswersQueryBase,
   type MappedNpsOverview,
 } from "./digisacAnswersOverview.ts";
 import {
   aggregateAnswerRows,
+  countScoredAnswerRows,
   countsToMappedOverview,
   emptyNpsCounts,
   flattenAnswersPayload,
+  readAnswersPagination,
 } from "./digisacNpsAggregate.ts";
 
 export type FetchDigisacFn = (
@@ -53,7 +56,7 @@ export async function fetchDigisacNpsOverviewWithProbe(
   const attempts: NpsFetchAttempt[] = [];
   let best = empty;
 
-  for (const params of buildAllNpsQueryVariants(base)) {
+  for (const params of buildAllNpsOverviewVariants(base)) {
     const r = await fetchDigisac(endpoint, params);
     const mapped = r.ok ? mapDigisacAnswersOverview(r.data) : empty;
     attempts.push({
@@ -66,7 +69,7 @@ export async function fetchDigisacNpsOverviewWithProbe(
     });
     if (r.ok && mapped.total > best.total) {
       best = mapped;
-      console.log("[Digisac NPS] OK total=", mapped.total, params.toString().slice(0, 100));
+      console.log("[Digisac NPS] overview total=", mapped.total, params.toString().slice(0, 120));
     }
     if (mapped.total > 0 && mapped.total >= 100) break;
   }
@@ -80,29 +83,55 @@ export async function fetchDigisacAnswersRows(
 ): Promise<{ rows: Record<string, unknown>[]; attempts: NpsFetchAttempt[] }> {
   const attempts: NpsFetchAttempt[] = [];
   const collected: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
 
-  for (const baseParams of buildAllNpsQueryVariants(base)) {
-    for (let page = 1; page <= 80; page++) {
+  const pushUnique = (batch: Record<string, unknown>[]) => {
+    for (const row of batch) {
+      const id = String(row.id ?? row._id ?? row.protocol ?? row.protocolo ?? "").trim();
+      const key = id || JSON.stringify(row).slice(0, 160);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      collected.push(row);
+    }
+  };
+
+  for (const baseParams of buildAnswersListParamVariants(base)) {
+    let page = 1;
+    let pageCount = 1;
+    let scoredOnFirstPage = 0;
+
+    while (page <= Math.max(pageCount, 1) && page <= 120) {
       const params = new URLSearchParams(baseParams);
       params.set("limit", "200");
       params.set("page", String(page));
       const r = await fetchDigisac("/api/v1/answers", params);
       const batch = r.ok ? flattenAnswersPayload(r.data) : [];
+
+      if (r.ok) {
+        const pg = readAnswersPagination(r.data);
+        pageCount = Math.max(pageCount, pg.pageCount);
+      }
+
       if (page === 1) {
+        scoredOnFirstPage = countScoredAnswerRows(batch);
         attempts.push({
           endpoint: "/api/v1/answers",
-          query: params.toString().slice(0, 200),
+          query: params.toString().slice(0, 220),
           status: r.status,
           ok: r.ok,
-          mappedTotal: batch.length,
+          mappedTotal: scoredOnFirstPage,
           sampleKeys: r.ok ? sampleKeys(r.data) : [],
         });
       }
+
       if (!r.ok || !batch.length) break;
-      collected.push(...batch);
-      if (batch.length < 200) break;
+      pushUnique(batch);
+      if (batch.length < 200 && page >= pageCount) break;
+      page += 1;
     }
-    if (collected.length > 0) break;
+
+    if (countScoredAnswerRows(collected) > 0) break;
+    if (collected.length > 0 && scoredOnFirstPage > 0) break;
   }
 
   return { rows: collected, attempts };
@@ -123,6 +152,7 @@ export async function fetchDigisacNpsDashboardData(
 
   if (overview.total <= 0 && answersPack.rows.length > 0) {
     overview = countsToMappedOverview(aggregateAnswerRows(answersPack.rows));
+    console.log("[Digisac NPS] overview via /answers agregado:", overview.total);
   }
 
   if (chartUserId) {

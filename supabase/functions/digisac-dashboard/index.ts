@@ -12,6 +12,7 @@ import {
 import {
   aggregateAnswerRows,
   aggregateAnswersByMappedAnalysts,
+  countScoredAnswerRows,
   countsToMappedOverview,
   emptyNpsCounts,
 } from "../_shared/digisacNpsAggregate.ts";
@@ -907,7 +908,7 @@ Deno.serve(async (req) => {
         to,
         departmentId,
         type: evaluationType,
-        periodType,
+        ...(periodType && periodType !== "all" ? { periodType } : {}),
         serviceId,
       };
 
@@ -987,6 +988,7 @@ Deno.serve(async (req) => {
 
       analystRows.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 
+      const scoredFromAnswers = countScoredAnswerRows(allAnswerRows);
       const hasData = overviewMapped.total > 0 || analystRows.some((a) => a.total > 0);
       const out: Record<string, unknown> = {
         departmentId,
@@ -995,16 +997,21 @@ Deno.serve(async (req) => {
         analysts: analystRows,
         dataSource: hasData ? "api" : "empty",
         answersRowCount: allAnswerRows.length,
+        scoredAnswerCount: scoredFromAnswers,
         period: { from, to },
       };
       if (!hasData) {
         const best = probeAttempts
           .filter((a) => a.ok)
           .sort((a, b) => b.mappedTotal - a.mappedTotal)[0];
+        const sampleRow = allAnswerRows[0];
         out._debug = {
-          hint: "API retornou vazio. Confira DIGISAC_API_URL/TOKEN, DIGISAC_NPS_DEPARTMENT_ID e o período no painel Digisac.",
+          hint: allAnswerRows.length > 0 && scoredFromAnswers === 0
+            ? "A API devolveu linhas, mas sem nota reconhecida. Verifique o formato em scoredAnswerCount e sampleRowKeys."
+            : "Overview vazio. Confira DIGISAC_API_URL/TOKEN, DIGISAC_NPS_DEPARTMENT_ID e o período no painel Digisac.",
           bestAttempt: best ?? probeAttempts[0] ?? null,
           attempts: probeAttempts.slice(0, 12),
+          sampleRowKeys: sampleRow ? Object.keys(sampleRow).slice(0, 20) : [],
         };
       } else if (Deno.env.get("DIGISAC_NPS_DEBUG") === "1") {
         out._debug = { attempts: probeAttempts.slice(0, 8) };
