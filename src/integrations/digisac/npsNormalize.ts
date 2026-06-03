@@ -20,11 +20,28 @@ export type NpsAnalystRow = {
   overview: NpsOverview;
 };
 
+export type NpsApiDebugAttempt = {
+  endpoint: string;
+  query: string;
+  status: number;
+  ok: boolean;
+  mappedTotal: number;
+  sampleKeys: string[];
+};
+
 export type DigisacNpsDashboardResponse = {
   departmentId: string;
   departmentName: string;
   overview: NpsOverview;
   analysts: NpsAnalystRow[];
+  dataSource?: string;
+  answersRowCount?: number;
+  period?: { from: string; to: string };
+  _debug?: {
+    hint?: string;
+    bestAttempt?: NpsApiDebugAttempt | null;
+    attempts?: NpsApiDebugAttempt[];
+  };
 };
 
 export const EMPTY_NPS_OVERVIEW: NpsOverview = {
@@ -220,10 +237,21 @@ export function normalizeNpsDashboardResponse(payload: unknown): DigisacNpsDashb
     overview: normalizeNpsOverviewPayload(row.overview ?? row),
   }));
 
+  const debug = root._debug && typeof root._debug === 'object' ? root._debug as DigisacNpsDashboardResponse['_debug'] : undefined;
+
   return {
     departmentId: String(root.departmentId ?? ''),
     departmentName: String(root.departmentName ?? 'Suporte'),
     overview,
     analysts: analystsWithSafeOverview,
+    dataSource: typeof root.dataSource === 'string' ? root.dataSource : undefined,
+    answersRowCount: typeof root.answersRowCount === 'number' ? root.answersRowCount : undefined,
+    period: root.period && typeof root.period === 'object'
+      ? {
+          from: String((root.period as Record<string, unknown>).from ?? ''),
+          to: String((root.period as Record<string, unknown>).to ?? ''),
+        }
+      : undefined,
+    _debug: debug,
   };
 }

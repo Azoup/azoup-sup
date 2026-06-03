@@ -6,7 +6,6 @@ import {
 
 /**
  * GET /api/v1/answers/overview e GET /api/v1/answers
- * Doc: from/to OU startPeriod/endPeriod (não misturar na mesma query).
  */
 
 export type DigisacAnswersQueryBase = {
@@ -14,42 +13,85 @@ export type DigisacAnswersQueryBase = {
   to: string;
   departmentId: string;
   userId?: string;
-  type: "nps" | "csat";
-  periodType: "all" | "close" | "open";
+  type?: "nps" | "csat";
+  periodType?: "all" | "close" | "open";
   serviceId?: string;
 };
 
-/** Filtro completo (doc: departamento / usuário / conexão). */
 export function buildDigisacAnswersFromToParams(input: DigisacAnswersQueryBase): URLSearchParams {
   const params = new URLSearchParams({
     from: input.from,
     to: input.to,
-    type: input.type,
-    periodType: input.periodType,
+    periodType: input.periodType ?? "all",
     departmentId: input.departmentId && input.departmentId !== "all" ? input.departmentId : "all",
   });
+  if (input.type) params.set("type", input.type);
   if (input.userId && input.userId !== "all") params.set("userId", input.userId);
   if (input.serviceId?.trim()) params.set("serviceId", input.serviceId.trim());
   return params;
 }
 
-/** Variante por período (doc: startPeriod + endPeriod). */
-export function buildDigisacAnswersPeriodParams(
-  input: DigisacAnswersQueryBase,
-): URLSearchParams {
+export function buildDigisacAnswersPeriodParams(input: DigisacAnswersQueryBase): URLSearchParams {
   const params = new URLSearchParams({
     startPeriod: input.from,
     endPeriod: input.to,
-    type: input.type,
-    periodType: input.periodType,
+    periodType: input.periodType ?? "all",
     departmentId: input.departmentId && input.departmentId !== "all" ? input.departmentId : "all",
   });
+  if (input.type) params.set("type", input.type);
   if (input.userId && input.userId !== "all") params.set("userId", input.userId);
   if (input.serviceId?.trim()) params.set("serviceId", input.serviceId.trim());
   return params;
 }
 
-/** @deprecated use buildDigisacAnswersFromToParams */
+/** Filtro estilo legado Digisac (where[field]). */
+export function buildDigisacAnswersWhereParams(input: DigisacAnswersQueryBase): URLSearchParams {
+  const params = new URLSearchParams({
+    from: input.from,
+    to: input.to,
+    periodType: input.periodType ?? "all",
+  });
+  if (input.departmentId && input.departmentId !== "all") {
+    params.set("where[departmentId]", input.departmentId);
+    params.set("departmentId", input.departmentId);
+  }
+  if (input.type) params.set("type", input.type);
+  if (input.userId && input.userId !== "all") {
+    params.set("where[userId]", input.userId);
+    params.set("userId", input.userId);
+  }
+  return params;
+}
+
+export function buildAllNpsQueryVariants(base: DigisacAnswersQueryBase): URLSearchParams[] {
+  const seen = new Set<string>();
+  const list: URLSearchParams[] = [];
+  const add = (p: URLSearchParams) => {
+    const k = p.toString();
+    if (!k || seen.has(k)) return;
+    seen.add(k);
+    list.push(p);
+  };
+
+  add(buildDigisacAnswersFromToParams({ ...base, type: "nps" }));
+  add(buildDigisacAnswersFromToParams({ ...base, type: undefined }));
+  add(buildDigisacAnswersPeriodParams({ ...base, type: "nps" }));
+  add(buildDigisacAnswersPeriodParams({ ...base, type: undefined }));
+  add(buildDigisacAnswersWhereParams({ ...base, type: "nps" }));
+  add(buildDigisacAnswersWhereParams({ ...base, type: undefined }));
+
+  const periodOnly = new URLSearchParams({
+    startPeriod: base.from,
+    endPeriod: base.to,
+  });
+  if (base.type) periodOnly.set("type", base.type);
+  if (base.departmentId && base.departmentId !== "all") periodOnly.set("departmentId", base.departmentId);
+  add(periodOnly);
+
+  return list;
+}
+
+/** @deprecated */
 export function buildDigisacAnswersOverviewParams(input: DigisacAnswersQueryBase): URLSearchParams {
   return buildDigisacAnswersFromToParams(input);
 }
@@ -98,7 +140,7 @@ const readFromArrayBuckets = (
   source: Record<string, unknown>,
   matcher: (name: string) => boolean,
 ): { count: number; percent: number } => {
-  for (const key of ["items", "categories", "breakdown", "groups", "segments", "data", "rows", "series"]) {
+  for (const key of ["items", "categories", "breakdown", "groups", "segments", "data", "rows", "series", "result"]) {
     const value = source[key];
     if (!Array.isArray(value)) continue;
     for (const row of value) {
@@ -114,15 +156,21 @@ const readFromArrayBuckets = (
   return { count: 0, percent: 0 };
 };
 
-/** Varre JSON (até 6 níveis) procurando blocos NPS. */
+const isCategoryBucketRow = (row: Record<string, unknown>): boolean => {
+  const name = String(row.name ?? row.label ?? row.type ?? row.tipo ?? row.category ?? "").toLowerCase();
+  if (!name) return false;
+  const isBucket = name.includes("promot") || name.includes("neutr") || name.includes("passiv") || name.includes("detrat");
+  if (!isBucket) return false;
+  const score = asNumber(row.score, row.rating, row.nota, row.value, row.answer);
+  return !(score >= 0 && score <= 10);
+};
+
 const deepExtractNps = (
   node: unknown,
   depth = 0,
   visited = new Set<unknown>(),
 ): { promoters: { count: number; percent: number }; neutrals: { count: number; percent: number }; detractors: { count: number; percent: number } } | null => {
-  if (depth > 8 || !node || typeof node !== "object" || visited.has(node)) {
-    return null;
-  }
+  if (depth > 10 || !node || typeof node !== "object" || visited.has(node)) return null;
   visited.add(node);
 
   const obj = node as Record<string, unknown>;
@@ -158,6 +206,9 @@ const collectPayloadRoots = (payload: unknown): Record<string, unknown>[] => {
   if (!payload || typeof payload !== "object") return roots;
   const top = payload as Record<string, unknown>;
   roots.push(top);
+  if (Array.isArray(top)) {
+    return (top as unknown[]).filter((r) => r && typeof r === "object") as Record<string, unknown>[];
+  }
   if (top.data && typeof top.data === "object") {
     if (Array.isArray(top.data)) {
       for (const row of top.data) {
@@ -167,11 +218,10 @@ const collectPayloadRoots = (payload: unknown): Record<string, unknown>[] => {
       roots.push(top.data as Record<string, unknown>);
     }
   }
-  if (top.overview && typeof top.overview === "object") {
-    roots.push(top.overview as Record<string, unknown>);
-  }
-  if (top.result && typeof top.result === "object") {
-    roots.push(top.result as Record<string, unknown>);
+  for (const key of ["overview", "result", "stats", "totals"]) {
+    if (top[key] && typeof top[key] === "object" && !Array.isArray(top[key])) {
+      roots.push(top[key] as Record<string, unknown>);
+    }
   }
   return roots;
 };
@@ -185,9 +235,28 @@ export type MappedNpsOverview = {
 };
 
 export const mapDigisacAnswersOverview = (payload: unknown): MappedNpsOverview => {
-  const rows = flattenAnswersPayload(payload);
-  if (rows.length > 0) {
-    return countsToMappedOverview(aggregateAnswerRows(rows));
+  const allRows = flattenAnswersPayload(payload);
+  const answerRows = allRows.filter((r) => !isCategoryBucketRow(r));
+
+  if (answerRows.length > 0) {
+    return countsToMappedOverview(aggregateAnswerRows(answerRows));
+  }
+
+  if (allRows.length >= 2 && allRows.every(isCategoryBucketRow)) {
+    let promoters = { count: 0, percent: 0 };
+    let neutrals = { count: 0, percent: 0 };
+    let detractors = { count: 0, percent: 0 };
+    for (const row of allRows) {
+      const name = String(row.name ?? row.label ?? row.type ?? row.tipo ?? "").toLowerCase();
+      const cp = readCountPercent(row);
+      if (name.includes("promot")) promoters = cp;
+      else if (name.includes("neutr") || name.includes("passiv")) neutrals = cp;
+      else if (name.includes("detrat")) detractors = cp;
+    }
+    const total = promoters.count + neutrals.count + detractors.count;
+    if (total > 0) {
+      return countsToMappedOverview({ total, promoters: promoters.count, neutrals: neutrals.count, detractors: detractors.count });
+    }
   }
 
   for (const root of collectPayloadRoots(payload)) {
@@ -214,8 +283,7 @@ export const mapDigisacAnswersOverview = (payload: unknown): MappedNpsOverview =
     }
   }
 
-  const empty = countsToMappedOverview({ total: 0, promoters: 0, neutrals: 0, detractors: 0 });
-  return empty;
+  return countsToMappedOverview({ total: 0, promoters: 0, neutrals: 0, detractors: 0 });
 };
 
 export const pickSuporteDepartmentId = (

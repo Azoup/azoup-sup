@@ -232,9 +232,32 @@ export default function DigisacNpsDashboard() {
       {showEmpty && (
         <div className="bg-muted/50 text-muted-foreground p-4 rounded-md flex items-start gap-3">
           <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
-          <p>
-            Nenhuma avaliação NPS no período. Confira as datas e se o departamento Suporte tem pesquisa NPS ativa no Digisac.
-          </p>
+          <div className="space-y-2 text-sm">
+            <p>
+              Nenhuma avaliação NPS no período. Confira as datas e se o departamento Suporte tem pesquisa NPS ativa no Digisac.
+            </p>
+            {data?._debug && (
+              <details className="text-xs">
+                <summary className="cursor-pointer font-medium text-foreground">Diagnóstico da API</summary>
+                <p className="mt-2">{data._debug.hint}</p>
+                {data.period?.from && (
+                  <p className="mt-1">
+                    Período enviado: {data.period.from} → {data.period.to}
+                  </p>
+                )}
+                {typeof data.answersRowCount === "number" && (
+                  <p>Linhas em /answers: {data.answersRowCount}</p>
+                )}
+                {data._debug.bestAttempt && (
+                  <p className="mt-1 break-all">
+                    Melhor tentativa: HTTP {data._debug.bestAttempt.status} — {data._debug.bestAttempt.endpoint}
+                    ?{data._debug.bestAttempt.query.slice(0, 120)}
+                    {data._debug.bestAttempt.query.length > 120 ? "…" : ""}
+                  </p>
+                )}
+              </details>
+            )}
+          </div>
         </div>
       )}
 

@@ -17,8 +17,9 @@ import {
 } from "../_shared/digisacNpsAggregate.ts";
 import {
   fetchDigisacAnswersRows,
-  fetchDigisacNpsOverview,
+  fetchDigisacNpsOverviewWithProbe,
   sumOverviewFromParts,
+  type NpsFetchAttempt,
 } from "../_shared/digisacNpsFetch.ts";
 import { formatDigisacDateOnly, toDigisacPeriodIso } from "../_shared/digisacPeriod.ts";
 import {
@@ -867,7 +868,10 @@ Deno.serve(async (req) => {
       if (mappingsResult.error) throw mappingsResult.error;
       const mappings = mappingsResult.data ?? [];
 
-      if (!departmentId || departmentId === "all") {
+      const envDeptId = Deno.env.get("DIGISAC_NPS_DEPARTMENT_ID")?.trim();
+      if (envDeptId) {
+        departmentId = envDeptId;
+      } else if (!departmentId || departmentId === "all") {
         const deptCacheKey = "digisac_departments";
         let departments: Array<{ id: string; name: string }> | undefined = cache[deptCacheKey]?.data;
         if (!departments || Date.now() - cache[deptCacheKey].timestamp >= LIST_CACHE_TTL_MS) {
@@ -909,7 +913,11 @@ Deno.serve(async (req) => {
 
       const cacheKey = `nps_dashboard_${from}_${to}_${departmentId}_${evaluationType}_${periodType}_${serviceId ?? ""}_${effectiveUserIds.join(",") || "all"}`;
       const cached = cache[cacheKey]?.data;
-      if (cached && Date.now() - cache[cacheKey].timestamp < DASHBOARD_CACHE_TTL_MS) {
+      if (
+        cached
+        && cached.dataSource !== "empty"
+        && Date.now() - cache[cacheKey].timestamp < DASHBOARD_CACHE_TTL_MS
+      ) {
         return jsonResponse(cached);
       }
 
@@ -926,13 +934,16 @@ Deno.serve(async (req) => {
 
       console.log("[Digisac NPS] dept=", departmentId, "período", from, "→", to);
 
+      const probeAttempts: NpsFetchAttempt[] = [];
+
       const analystRows = await Promise.all(
         analystsToQuery.map(async (uid) => {
           const displayName = nameById.get(uid) ?? "Analista";
-          const overview = await fetchDigisacNpsOverview(digisacFetch, {
+          const { overview, attempts } = await fetchDigisacNpsOverviewWithProbe(digisacFetch, {
             ...queryBase,
             userId: uid,
           });
+          probeAttempts.push(...attempts);
           return {
             userId: uid,
             name: displayName,
@@ -942,10 +953,12 @@ Deno.serve(async (req) => {
         }),
       );
 
-      let overviewMapped = await fetchDigisacNpsOverview(digisacFetch, {
+      const deptProbe = await fetchDigisacNpsOverviewWithProbe(digisacFetch, {
         ...queryBase,
         userId: chartUserId,
       });
+      probeAttempts.push(...deptProbe.attempts);
+      let overviewMapped = deptProbe.overview;
 
       if (overviewMapped.total <= 0 && analystRows.some((a) => a.total > 0)) {
         overviewMapped = chartUserId
@@ -953,7 +966,9 @@ Deno.serve(async (req) => {
           : sumOverviewFromParts(analystRows.map((a) => a.overview));
       }
 
-      const allAnswerRows = await fetchDigisacAnswersRows(digisacFetch, queryBase);
+      const answersPack = await fetchDigisacAnswersRows(digisacFetch, queryBase);
+      probeAttempts.push(...answersPack.attempts);
+      const allAnswerRows = answersPack.rows;
       console.log("[Digisac NPS] /answers linhas:", allAnswerRows.length);
 
       if (overviewMapped.total <= 0 && allAnswerRows.length > 0) {
@@ -972,15 +987,31 @@ Deno.serve(async (req) => {
 
       analystRows.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 
-      const out = {
+      const hasData = overviewMapped.total > 0 || analystRows.some((a) => a.total > 0);
+      const out: Record<string, unknown> = {
         departmentId,
         departmentName,
         overview: overviewMapped,
         analysts: analystRows,
-        dataSource: overviewMapped.total > 0 || analystRows.some((a) => a.total > 0) ? "api" : "empty",
+        dataSource: hasData ? "api" : "empty",
         answersRowCount: allAnswerRows.length,
+        period: { from, to },
       };
-      cache[cacheKey] = { data: out, timestamp: Date.now() };
+      if (!hasData) {
+        const best = probeAttempts
+          .filter((a) => a.ok)
+          .sort((a, b) => b.mappedTotal - a.mappedTotal)[0];
+        out._debug = {
+          hint: "API retornou vazio. Confira DIGISAC_API_URL/TOKEN, DIGISAC_NPS_DEPARTMENT_ID e o período no painel Digisac.",
+          bestAttempt: best ?? probeAttempts[0] ?? null,
+          attempts: probeAttempts.slice(0, 12),
+        };
+      } else if (Deno.env.get("DIGISAC_NPS_DEBUG") === "1") {
+        out._debug = { attempts: probeAttempts.slice(0, 8) };
+      }
+      if (hasData) {
+        cache[cacheKey] = { data: out, timestamp: Date.now() };
+      }
       return jsonResponse(out);
     }
 
