@@ -11,6 +11,16 @@ Deno.test("extractAnswerScore ignora type=nps e lê notaAtribuida", () => {
   assertEquals(extractAnswerScore({ type: "nps", classificacao: "Promotor" }), 10);
 });
 
+Deno.test("extractAnswerScore lê nota do campo text da API Digisac", () => {
+  assertEquals(extractAnswerScore({ text: "9", ticketId: "t1" }), 9);
+  assertEquals(extractAnswerScore({ text: "10" }), 10);
+  assertEquals(extractAnswerScore({ text: "Nota 8" }), 8);
+});
+
+Deno.test("extractAnswerScore ignora CSAT IA 1-5", () => {
+  assertEquals(extractAnswerScore({ aiGenerated: true, text: "4", aiText: "4" }), null);
+});
+
 Deno.test("aggregateAnswerRows soma linhas da API", () => {
   const rows = [
     { type: "nps", notaAtribuida: 10, userId: "a" },

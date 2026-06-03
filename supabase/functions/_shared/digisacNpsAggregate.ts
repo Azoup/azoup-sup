@@ -85,6 +85,38 @@ const scoreFromClassification = (label: string): number | null => {
   return null;
 };
 
+/** Resposta textual do cliente na API Digisac (`text`, `aiText`, `reason`). */
+export function parseScoreFromText(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const fromClass = scoreFromClassification(trimmed.toLowerCase());
+  if (fromClass != null) return fromClass;
+
+  const direct = asNumber(trimmed);
+  if (direct != null && direct >= 0 && direct <= 10) return Math.round(direct);
+
+  const digit = trimmed.match(/(?:^|\s)(10|[0-9])(?:\s|$|[^\d])/);
+  if (digit) {
+    const n = Number(digit[1]);
+    if (n >= 0 && n <= 10) return n;
+  }
+
+  if (/^\d{1,2}$/.test(trimmed)) {
+    const n = Number(trimmed);
+    if (n >= 0 && n <= 10) return n;
+  }
+
+  return null;
+}
+
+/** CSAT gerado por IA (nota 1–5) — não entra no NPS. */
+export function isDigisacCsatAiRow(row: Record<string, unknown>): boolean {
+  if (row.aiGenerated !== true) return false;
+  const score = parseScoreFromText(String(row.aiText ?? row.text ?? ""));
+  return score != null && score >= 1 && score <= 5;
+}
+
 const SCORE_FIELD_KEYS = [
   "score", "rating", "grade", "nota", "notaAtribuida", "nota_atribuida",
   "assignedScore", "assigned_score", "ratingValue", "rating_value",
@@ -92,8 +124,18 @@ const SCORE_FIELD_KEYS = [
   "points", "pontuacao", "pontuação",
 ];
 
+const TEXT_SCORE_KEYS = ["text", "aiText", "ai_text", "reason", "motivo", "response", "resposta"];
+
 const readScoreFromObject = (obj: Record<string, unknown>, depth = 0): number | null => {
   if (depth > 4) return null;
+
+  for (const key of TEXT_SCORE_KEYS) {
+    const val = obj[key];
+    if (typeof val === "string") {
+      const s = parseScoreFromText(val);
+      if (s != null) return s;
+    }
+  }
 
   for (const key of SCORE_FIELD_KEYS) {
     const val = obj[key];
@@ -143,6 +185,8 @@ export function extractRowSummaryCounts(row: Record<string, unknown>): NpsCounts
 }
 
 export function extractAnswerScore(row: Record<string, unknown>): number | null {
+  if (isDigisacCsatAiRow(row)) return null;
+
   const summary = extractRowSummaryCounts(row);
   if (summary && summary.total === 1) {
     if (summary.promoters === 1) return 10;
@@ -154,6 +198,28 @@ export function extractAnswerScore(row: Record<string, unknown>): number | null 
   if (direct != null) return direct;
 
   return scoreFromClassification(classificationFromRow(row));
+}
+
+/** Filtra respostas NPS válidas no período (API /answers costuma vir sem filtro de data). */
+export function filterNpsAnswerRows(
+  rows: Record<string, unknown>[],
+  fromIso: string,
+  toIso: string,
+): Record<string, unknown>[] {
+  const fromMs = new Date(fromIso).getTime();
+  const toMs = new Date(toIso).getTime();
+
+  return rows.filter((row) => {
+    if (isDigisacCsatAiRow(row)) return false;
+    const score = extractAnswerScore(row);
+    if (score == null) return false;
+
+    const created = row.createdAt ?? row.created_at ?? row.updatedAt;
+    if (!created) return true;
+    const ms = new Date(String(created)).getTime();
+    if (Number.isNaN(ms)) return true;
+    return ms >= fromMs && ms <= toMs;
+  });
 }
 
 export function extractAnswerAnalystName(row: Record<string, unknown>): string {
@@ -189,6 +255,9 @@ export function normalizeComparableName(value: string): string {
 }
 
 export function extractAnswerUserId(row: Record<string, unknown>): string {
+  const injected = String(row._digisacUserId ?? "").trim();
+  if (injected) return injected;
+
   for (const key of [
     "userId", "user_id", "attendantId", "attendant_id", "agentId", "agent_id",
     "lastUserId", "last_user_id", "lastAttendantId", "operatorId",

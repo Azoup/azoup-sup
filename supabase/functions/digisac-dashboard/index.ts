@@ -15,7 +15,9 @@ import {
   countScoredAnswerRows,
   countsToMappedOverview,
   emptyNpsCounts,
+  filterNpsAnswerRows,
 } from "../_shared/digisacNpsAggregate.ts";
+import { enrichAnswersWithTicketAttendants } from "../_shared/digisacNpsTickets.ts";
 import {
   fetchDigisacAnswersRows,
   fetchDigisacNpsOverviewWithProbe,
@@ -969,14 +971,20 @@ Deno.serve(async (req) => {
 
       const answersPack = await fetchDigisacAnswersRows(digisacFetch, queryBase);
       probeAttempts.push(...answersPack.attempts);
-      const allAnswerRows = answersPack.rows;
-      console.log("[Digisac NPS] /answers linhas:", allAnswerRows.length);
+      const rawAnswerRows = answersPack.rows;
+      console.log("[Digisac NPS] /answers linhas brutas:", rawAnswerRows.length);
 
-      if (overviewMapped.total <= 0 && allAnswerRows.length > 0) {
-        overviewMapped = countsToMappedOverview(aggregateAnswerRows(allAnswerRows));
+      const npsAnswerRows = filterNpsAnswerRows(rawAnswerRows, from, to);
+      console.log("[Digisac NPS] respostas NPS no período:", npsAnswerRows.length);
+
+      const ticketsEnriched = await enrichAnswersWithTicketAttendants(digisacFetch, npsAnswerRows);
+      console.log("[Digisac NPS] tickets enriquecidos:", ticketsEnriched);
+
+      if (overviewMapped.total <= 0 && npsAnswerRows.length > 0) {
+        overviewMapped = countsToMappedOverview(aggregateAnswerRows(npsAnswerRows));
       }
 
-      const countsByAnalyst = aggregateAnswersByMappedAnalysts(allAnswerRows, validMappedUsers);
+      const countsByAnalyst = aggregateAnswersByMappedAnalysts(npsAnswerRows, validMappedUsers);
       for (const row of analystRows) {
         if (row.total > 0) continue;
         const fromList = countsByAnalyst.get(row.userId);
@@ -988,7 +996,7 @@ Deno.serve(async (req) => {
 
       analystRows.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 
-      const scoredFromAnswers = countScoredAnswerRows(allAnswerRows);
+      const scoredFromAnswers = countScoredAnswerRows(npsAnswerRows);
       const hasData = overviewMapped.total > 0 || analystRows.some((a) => a.total > 0);
       const out: Record<string, unknown> = {
         departmentId,
@@ -996,22 +1004,27 @@ Deno.serve(async (req) => {
         overview: overviewMapped,
         analysts: analystRows,
         dataSource: hasData ? "api" : "empty",
-        answersRowCount: allAnswerRows.length,
+        answersRowCount: rawAnswerRows.length,
+        npsAnswerCount: npsAnswerRows.length,
         scoredAnswerCount: scoredFromAnswers,
+        ticketsEnriched,
         period: { from, to },
       };
       if (!hasData) {
         const best = probeAttempts
           .filter((a) => a.ok)
           .sort((a, b) => b.mappedTotal - a.mappedTotal)[0];
-        const sampleRow = allAnswerRows[0];
+        const sampleRow = rawAnswerRows[0] ?? npsAnswerRows[0];
         out._debug = {
-          hint: allAnswerRows.length > 0 && scoredFromAnswers === 0
-            ? "A API devolveu linhas, mas sem nota reconhecida. Verifique o formato em scoredAnswerCount e sampleRowKeys."
-            : "Overview vazio. Confira DIGISAC_API_URL/TOKEN, DIGISAC_NPS_DEPARTMENT_ID e o período no painel Digisac.",
+          hint: rawAnswerRows.length > 0 && scoredFromAnswers === 0
+            ? "A API devolveu linhas, mas sem nota em text/aiText. Veja sampleText."
+            : npsAnswerRows.length === 0 && rawAnswerRows.length > 0
+            ? "Linhas recebidas, mas nenhuma NPS válida no período (filtro por createdAt e nota 0–10)."
+            : "Overview vazio. Confira DIGISAC_API_URL/TOKEN e o período no painel Digisac.",
           bestAttempt: best ?? probeAttempts[0] ?? null,
           attempts: probeAttempts.slice(0, 12),
           sampleRowKeys: sampleRow ? Object.keys(sampleRow).slice(0, 20) : [],
+          sampleText: sampleRow ? String(sampleRow.text ?? sampleRow.aiText ?? "").slice(0, 80) : "",
         };
       } else if (Deno.env.get("DIGISAC_NPS_DEBUG") === "1") {
         out._debug = { attempts: probeAttempts.slice(0, 8) };
