@@ -39,4 +39,17 @@ describe('resolveDigisacQueryPlan', () => {
     expect(plan.useDepartmentAndUserSingular).toBe(true);
     expect(plan.userIds).toEqual(['beatriz-id']);
   });
+
+  it('vários analistas usa dept+userId por pessoa (sem userId[])', () => {
+    const plan = resolveDigisacQueryPlan({
+      action: 'analistas',
+      departmentId: 'all',
+      requestedUserIds: [],
+      effectiveUserIds: ['u1', 'u2', 'u3'],
+      isClosureDepartment: false,
+    });
+    expect(plan.useTeamMultiUserParams).toBe(false);
+    expect(plan.useDepartmentAndUserSingular).toBe(true);
+    expect(plan.userIds).toEqual(['u1', 'u2', 'u3']);
+  });
 });

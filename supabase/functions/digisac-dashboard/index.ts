@@ -762,6 +762,45 @@ Deno.serve(async (req) => {
         return jsonResponse(emptyPayload);
       }
 
+      if (action === "analistas") {
+        const nameById = new Map(scopedMappedUsers.map((u) => [u.id, u.name]));
+        const deptForAnalyst = queryPlan.departmentId;
+
+        const fetchAnalystItem = async (uid: string) => {
+          const params = buildDigisacGeneralDashboardParams({
+            startPeriod,
+            endPeriod,
+            departmentId: deptForAnalyst,
+            digisacUserIds: [uid],
+            useTeamMultiUserParams: false,
+            periodType,
+            userParticipation,
+            departmentParticipation,
+            status,
+            grouping,
+            serviceId,
+          });
+          const r = await fetchDigisac(digisacUrl, digisacToken, endpoint, params);
+          const displayName = nameById.get(uid) ?? "Analista";
+          if (!r.ok) {
+            console.warn("[Digisac] Métricas do analista falhou:", uid, r.status);
+            return buildAnalystItemFromGeneralTotals(uid, displayName, { totals: {} });
+          }
+          return buildAnalystItemFromGeneralTotals(uid, displayName, r.data);
+        };
+
+        console.log(
+          "[Digisac] analistas: buscando",
+          effectiveUserIds.length,
+          "analista(s) com departmentId=",
+          deptForAnalyst,
+        );
+        const items = await Promise.all(effectiveUserIds.map((uid) => fetchAnalystItem(uid)));
+        const outData = { items, totals: {} };
+        cache[cacheKey] = { data: outData, timestamp: Date.now() };
+        return jsonResponse(outData);
+      }
+
       const params = buildDigisacGeneralDashboardParams({
         startPeriod,
         endPeriod,
@@ -783,31 +822,12 @@ Deno.serve(async (req) => {
         });
       }
 
-      let outData = response.data;
-      if (action === "analistas") {
-        const nameById = new Map(scopedMappedUsers.map((u) => [u.id, u.name]));
-        if (queryPlan.useDepartmentAndUserSingular && queryPlan.userIds.length === 1) {
-          const uid = queryPlan.userIds[0];
-          const item = buildAnalystItemFromGeneralTotals(
-            uid,
-            nameById.get(uid) ?? "Analista",
-            response.data,
-          );
-          const totals = (response.data as Record<string, unknown>)?.totals ?? mapGeneralPayload(response.data);
-          outData = { items: [item], totals };
-        } else {
-          const allowed = new Set(effectiveUserIds);
-          const stripped = filterPayloadToUserIds(response.data, allowed);
-          outData = mergeByUserPayloadWithExpectedIds(stripped, effectiveUserIds, nameById);
-        }
-      }
-
       cache[cacheKey] = {
-        data: outData,
+        data: response.data,
         timestamp: Date.now(),
       };
 
-      return jsonResponse(outData);
+      return jsonResponse(response.data);
     }
 
     if (action === "nps_dashboard" || action === "answers_overview") {

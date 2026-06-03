@@ -45,12 +45,12 @@ export function resolveDigisacQueryPlan(input: {
     };
   }
 
-  if (action === "analistas" && effectiveUserIds.length > 1) {
+  if (action === "analistas" && effectiveUserIds.length > 0) {
     return {
       departmentId: dept,
       userIds: effectiveUserIds,
-      useDepartmentAndUserSingular: false,
-      useTeamMultiUserParams: true,
+      useDepartmentAndUserSingular: true,
+      useTeamMultiUserParams: false,
     };
   }
 
@@ -66,7 +66,7 @@ export function resolveDigisacQueryPlan(input: {
   return {
     departmentId: dept,
     userIds: effectiveUserIds,
-    useDepartmentAndUserSingular: false,
-    useTeamMultiUserParams: effectiveUserIds.length > 1,
+    useDepartmentAndUserSingular: effectiveUserIds.length === 1,
+    useTeamMultiUserParams: false,
   };
 }
