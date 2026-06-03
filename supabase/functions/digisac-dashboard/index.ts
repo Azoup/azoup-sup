@@ -641,28 +641,43 @@ Deno.serve(async (req) => {
         return jsonResponse(result.body, result.status);
       }
 
-      // Permission check (digisac_dashboard) — admins always allowed
-      const protectedActions = new Set([
-        "geral",
-        "analistas",
-        "nps_dashboard",
+      // Permission check — admins always allowed
+      const digisacDashboardActions = new Set(["geral", "analistas"]);
+      const npsDashboardActions = new Set(["nps_dashboard"]);
+      const sharedListActions = new Set([
         "listar_departments",
         "listar_digisac_users",
         "listar_analysts",
+      ]);
+      const protectedActions = new Set([
+        ...digisacDashboardActions,
+        ...npsDashboardActions,
+        ...sharedListActions,
       ]);
       if (protectedActions.has(action ?? "")) {
         const adminClient = createClient(
           Deno.env.get("SUPABASE_URL") ?? "",
           Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
         );
-        const [{ data: roleRow }, { data: permRow }] = await Promise.all([
+        const [{ data: roleRow }, { data: dashPerm }, { data: npsPerm }] = await Promise.all([
           adminClient.from("user_roles").select("role").eq("user_id", userId).eq("role", "admin").maybeSingle(),
           adminClient.from("user_permissions").select("allowed").eq("user_id", userId).eq("permission_key", "digisac_dashboard_view").maybeSingle(),
+          adminClient.from("user_permissions").select("allowed").eq("user_id", userId).eq("permission_key", "digisac_nps_view").maybeSingle(),
         ]);
         const isAdmin = !!roleRow;
-        const allowed = isAdmin || permRow?.allowed === true;
+        const hasDigisac = dashPerm?.allowed === true;
+        const hasNps = npsPerm?.allowed === true;
+        let allowed = isAdmin;
         if (!allowed) {
-          return handledErrorResponse(action, "Sem permissão para acessar o Dashboard Digisac.", { code: "FORBIDDEN" });
+          if (npsDashboardActions.has(action ?? "")) allowed = hasNps;
+          else if (digisacDashboardActions.has(action ?? "")) allowed = hasDigisac;
+          else if (sharedListActions.has(action ?? "")) allowed = hasDigisac || hasNps;
+        }
+        if (!allowed) {
+          const msg = npsDashboardActions.has(action ?? "")
+            ? "Sem permissão para acessar o Dashboard NPS."
+            : "Sem permissão para acessar o Dashboard Digisac.";
+          return handledErrorResponse(action, msg, { code: "FORBIDDEN" });
         }
       }
     }

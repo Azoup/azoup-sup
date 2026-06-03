@@ -49,6 +49,7 @@ const PERMISSION_SCREENS = [
   { screen: 'dashboard_dev', label: 'Dashboard DEV' },
   { screen: 'developers', label: 'Cadastro de Desenvolvedores' },
   { screen: 'digisac_dashboard', label: 'Dashboard Digisac' },
+  { screen: 'digisac_nps', label: 'Dashboard NPS' },
 ];
 
 const PERMISSION_ACTIONS = [

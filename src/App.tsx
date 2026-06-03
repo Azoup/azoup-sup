@@ -120,7 +120,7 @@ function AppRoutes() {
       <Route path="/dashboard-dev" element={<RequireAuth screen="dashboard_dev"><DashboardDev /></RequireAuth>} />
       <Route path="/developers" element={<RequireAuth screen="developers"><Developers /></RequireAuth>} />
       <Route path="/digisac-dashboard" element={<RequireAuth screen="digisac_dashboard"><DigisacDashboard /></RequireAuth>} />
-      <Route path="/digisac-nps" element={<RequireAuth screen="digisac_dashboard"><DigisacNpsDashboard /></RequireAuth>} />
+      <Route path="/digisac-nps" element={<RequireAuth screen="digisac_nps"><DigisacNpsDashboard /></RequireAuth>} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
