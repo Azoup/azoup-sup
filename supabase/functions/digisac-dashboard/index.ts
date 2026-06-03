@@ -17,6 +17,7 @@ import {
   emptyNpsCounts,
   filterNpsAnswerRows,
 } from "../_shared/digisacNpsAggregate.ts";
+import { loadDigisacNpsQuestionIds } from "../_shared/digisacNpsQuestions.ts";
 import { enrichAnswersWithTicketAttendants } from "../_shared/digisacNpsTickets.ts";
 import {
   fetchDigisacAnswersRows,
@@ -939,6 +940,14 @@ Deno.serve(async (req) => {
 
       const probeAttempts: NpsFetchAttempt[] = [];
 
+      const deptProbe = await fetchDigisacNpsOverviewWithProbe(digisacFetch, {
+        ...queryBase,
+        userId: chartUserId,
+      });
+      probeAttempts.push(...deptProbe.attempts);
+      let overviewMapped = deptProbe.overview;
+      console.log("[Digisac NPS] overview dept total=", overviewMapped.total);
+
       const analystRows = await Promise.all(
         analystsToQuery.map(async (uid) => {
           const displayName = nameById.get(uid) ?? "Analista";
@@ -956,47 +965,46 @@ Deno.serve(async (req) => {
         }),
       );
 
-      const deptProbe = await fetchDigisacNpsOverviewWithProbe(digisacFetch, {
-        ...queryBase,
-        userId: chartUserId,
-      });
-      probeAttempts.push(...deptProbe.attempts);
-      let overviewMapped = deptProbe.overview;
-
       if (overviewMapped.total <= 0 && analystRows.some((a) => a.total > 0)) {
         overviewMapped = chartUserId
           ? (analystRows.find((a) => a.userId === chartUserId)?.overview ?? sumOverviewFromParts(analystRows.map((a) => a.overview)))
           : sumOverviewFromParts(analystRows.map((a) => a.overview));
       }
 
-      const answersPack = await fetchDigisacAnswersRows(digisacFetch, queryBase);
-      probeAttempts.push(...answersPack.attempts);
-      const rawAnswerRows = answersPack.rows;
-      console.log("[Digisac NPS] /answers linhas brutas:", rawAnswerRows.length);
+      let rawAnswerRows: Record<string, unknown>[] = [];
+      let npsAnswerRows: Record<string, unknown>[] = [];
+      let ticketsEnriched = 0;
+      let scoredFromAnswers = 0;
 
-      const npsAnswerRows = filterNpsAnswerRows(rawAnswerRows, from, to);
-      console.log("[Digisac NPS] respostas NPS no período:", npsAnswerRows.length);
+      const hasOverviewData = overviewMapped.total > 0 || analystRows.some((a) => a.total > 0);
 
-      const ticketsEnriched = await enrichAnswersWithTicketAttendants(digisacFetch, npsAnswerRows);
-      console.log("[Digisac NPS] tickets enriquecidos:", ticketsEnriched);
+      if (!hasOverviewData) {
+        console.log("[Digisac NPS] overview vazio — fallback /answers");
+        const answersPack = await fetchDigisacAnswersRows(digisacFetch, queryBase);
+        probeAttempts.push(...answersPack.attempts);
+        rawAnswerRows = answersPack.rows;
 
-      if (overviewMapped.total <= 0 && npsAnswerRows.length > 0) {
-        overviewMapped = countsToMappedOverview(aggregateAnswerRows(npsAnswerRows));
-      }
+        const npsQuestionIds = await loadDigisacNpsQuestionIds(digisacFetch);
+        npsAnswerRows = filterNpsAnswerRows(rawAnswerRows, from, to, npsQuestionIds);
+        ticketsEnriched = await enrichAnswersWithTicketAttendants(digisacFetch, npsAnswerRows);
 
-      const countsByAnalyst = aggregateAnswersByMappedAnalysts(npsAnswerRows, validMappedUsers);
-      for (const row of analystRows) {
-        if (row.total > 0) continue;
-        const fromList = countsByAnalyst.get(row.userId);
-        if (fromList && fromList.total > 0) {
-          row.overview = countsToMappedOverview(fromList);
-          row.total = row.overview.total;
+        if (npsAnswerRows.length > 0) {
+          overviewMapped = countsToMappedOverview(aggregateAnswerRows(npsAnswerRows));
         }
+
+        const countsByAnalyst = aggregateAnswersByMappedAnalysts(npsAnswerRows, validMappedUsers);
+        for (const row of analystRows) {
+          const fromList = countsByAnalyst.get(row.userId);
+          if (fromList && fromList.total > 0) {
+            row.overview = countsToMappedOverview(fromList);
+            row.total = row.overview.total;
+          }
+        }
+        scoredFromAnswers = countScoredAnswerRows(npsAnswerRows);
       }
 
       analystRows.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 
-      const scoredFromAnswers = countScoredAnswerRows(npsAnswerRows);
       const hasData = overviewMapped.total > 0 || analystRows.some((a) => a.total > 0);
       const out: Record<string, unknown> = {
         departmentId,

@@ -15,6 +15,8 @@ Deno.test("extractAnswerScore lê nota do campo text da API Digisac", () => {
   assertEquals(extractAnswerScore({ text: "9", ticketId: "t1" }), 9);
   assertEquals(extractAnswerScore({ text: "10" }), 10);
   assertEquals(extractAnswerScore({ text: "Nota 8" }), 8);
+  assertEquals(extractAnswerScore({ text: 7 }), 7);
+  assertEquals(extractAnswerScore({ reason: "promotor" }), 10);
 });
 
 Deno.test("extractAnswerScore ignora CSAT IA 1-5", () => {

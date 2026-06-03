@@ -167,6 +167,14 @@ export function buildAnswersListParamVariants(base: DigisacAnswersQueryBase): UR
 
   add(buildDigisacAnswersFromToParams({ ...base, type: "nps" }));
 
+  for (const inc of ["ticket", "question", "Ticket", "Question"]) {
+    const p = new URLSearchParams({ from: base.from, to: base.to, type: "nps" });
+    if (base.departmentId && base.departmentId !== "all") p.set("departmentId", base.departmentId);
+    p.set("include", inc);
+    p.append("include[]", inc);
+    add(p);
+  }
+
   return list;
 }
 
@@ -209,7 +217,12 @@ const readCategoryNode = (
 ): { count: number; percent: number } => {
   for (const key of keys) {
     if (!(key in source)) continue;
-    const parsed = readCountPercent(source[key]);
+    const node = source[key];
+    if (typeof node === "number" || typeof node === "string") {
+      const count = asNumber(node);
+      if (count > 0) return { count, percent: 0 };
+    }
+    const parsed = readCountPercent(node);
     if (parsed.count > 0 || parsed.percent > 0) return parsed;
   }
   return { count: 0, percent: 0 };
@@ -226,10 +239,13 @@ const readFromArrayBuckets = (
       if (!row || typeof row !== "object") continue;
       const obj = row as Record<string, unknown>;
       const name = String(
-        obj.name ?? obj.label ?? obj.type ?? obj.key ?? obj.tipo ?? obj.category ?? "",
+        obj.name ?? obj.label ?? obj.type ?? obj.key ?? obj.tipo ?? obj.category ?? obj.classification ?? "",
       ).toLowerCase();
       if (!matcher(name)) continue;
-      return readCountPercent(obj);
+      const cp = readCountPercent(obj);
+      if (cp.count > 0 || cp.percent > 0) return cp;
+      const total = asNumber(obj.total, obj.count, obj.quantity, obj.quantidade);
+      if (total > 0) return { count: total, percent: 0 };
     }
   }
   return { count: 0, percent: 0 };
@@ -316,20 +332,79 @@ export type MappedNpsOverview = {
   detractors: { count: number; percent: number };
 };
 
-export const mapDigisacAnswersOverview = (payload: unknown): MappedNpsOverview => {
-  const allRows = flattenAnswersPayload(payload);
-  const answerRows = allRows.filter((r) => !isCategoryBucketRow(r));
+/**
+ * Formato oficial Digisac (azoup): `data.nps` = [promotores, neutros, detratores, não avaliados, inválidos].
+ */
+export function mapDigisacNpsVectorOverview(payload: unknown): MappedNpsOverview | null {
+  if (!payload || typeof payload !== "object") return null;
+  const root = payload as Record<string, unknown>;
+  const data = root.data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
 
-  if (answerRows.length > 0) {
-    return countsToMappedOverview(aggregateAnswerRows(answerRows));
+  const npsArr = (data as Record<string, unknown>).nps;
+  if (!Array.isArray(npsArr) || npsArr.length < 3) return null;
+
+  const promoters = asNumber(npsArr[0]);
+  const neutrals = asNumber(npsArr[1]);
+  const detractors = asNumber(npsArr[2]);
+  const total = promoters + neutrals + detractors;
+  if (total <= 0) return null;
+
+  const mapped = countsToMappedOverview({ total, promoters, neutrals, detractors });
+  mapped.npsScore = Math.round(((promoters - detractors) / total) * 10000) / 100;
+  return mapped;
+}
+
+const mapDeepOverview = (
+  root: Record<string, unknown>,
+  deep: NonNullable<ReturnType<typeof deepExtractNps>>,
+): MappedNpsOverview => {
+  const total = deep.promoters.count + deep.neutrals.count + deep.detractors.count;
+  const pct = (n: number, explicit: number) => {
+    if (explicit > 0) return Math.round(explicit * 100) / 100;
+    return total > 0 ? Math.round((n / total) * 10000) / 100 : 0;
+  };
+  const apiNps = asNumber(root.nps, root.npsScore, root.score, root.indiceNps, root.npsIndex);
+  const npsScore = apiNps !== 0 || root.nps != null || root.npsScore != null
+    ? apiNps
+    : total > 0
+    ? Math.round(((deep.promoters.count - deep.detractors.count) / total) * 10000) / 100
+    : null;
+  return {
+    total,
+    npsScore,
+    promoters: { count: deep.promoters.count, percent: pct(deep.promoters.count, deep.promoters.percent) },
+    neutrals: { count: deep.neutrals.count, percent: pct(deep.neutrals.count, deep.neutrals.percent) },
+    detractors: { count: deep.detractors.count, percent: pct(deep.detractors.count, deep.detractors.percent) },
+  };
+};
+
+export const mapDigisacAnswersOverview = (payload: unknown): MappedNpsOverview => {
+  const empty = countsToMappedOverview({ total: 0, promoters: 0, neutrals: 0, detractors: 0 });
+
+  const vector = mapDigisacNpsVectorOverview(payload);
+  if (vector && vector.total > 0) return vector;
+
+  for (const root of collectPayloadRoots(payload)) {
+    const vectorNested = mapDigisacNpsVectorOverview({ data: root });
+    if (vectorNested && vectorNested.total > 0) return vectorNested;
+    const deep = deepExtractNps(root);
+    if (deep && deep.promoters.count + deep.neutrals.count + deep.detractors.count > 0) {
+      return mapDeepOverview(root, deep);
+    }
   }
 
-  if (allRows.length >= 2 && allRows.every(isCategoryBucketRow)) {
+  const allRows = flattenAnswersPayload(payload);
+  const bucketRows = allRows.filter(isCategoryBucketRow);
+
+  if (bucketRows.length >= 2) {
     let promoters = { count: 0, percent: 0 };
     let neutrals = { count: 0, percent: 0 };
     let detractors = { count: 0, percent: 0 };
-    for (const row of allRows) {
-      const name = String(row.name ?? row.label ?? row.type ?? row.tipo ?? "").toLowerCase();
+    for (const row of bucketRows) {
+      const name = String(
+        row.name ?? row.label ?? row.type ?? row.tipo ?? row.classification ?? row.classificacao ?? "",
+      ).toLowerCase();
       const cp = readCountPercent(row);
       if (name.includes("promot")) promoters = cp;
       else if (name.includes("neutr") || name.includes("passiv")) neutrals = cp;
@@ -337,35 +412,22 @@ export const mapDigisacAnswersOverview = (payload: unknown): MappedNpsOverview =
     }
     const total = promoters.count + neutrals.count + detractors.count;
     if (total > 0) {
-      return countsToMappedOverview({ total, promoters: promoters.count, neutrals: neutrals.count, detractors: detractors.count });
-    }
-  }
-
-  for (const root of collectPayloadRoots(payload)) {
-    const deep = deepExtractNps(root);
-    if (deep) {
-      const total = deep.promoters.count + deep.neutrals.count + deep.detractors.count;
-      const pct = (n: number, explicit: number) => {
-        if (explicit > 0) return Math.round(explicit * 100) / 100;
-        return total > 0 ? Math.round((n / total) * 10000) / 100 : 0;
-      };
-      const apiNps = asNumber(root.nps, root.npsScore, root.score, root.indiceNps);
-      const npsScore = apiNps !== 0 || root.nps != null
-        ? apiNps
-        : total > 0
-        ? Math.round(((deep.promoters.count - deep.detractors.count) / total) * 10000) / 100
-        : null;
-      return {
+      return countsToMappedOverview({
         total,
-        npsScore,
-        promoters: { count: deep.promoters.count, percent: pct(deep.promoters.count, deep.promoters.percent) },
-        neutrals: { count: deep.neutrals.count, percent: pct(deep.neutrals.count, deep.neutrals.percent) },
-        detractors: { count: deep.detractors.count, percent: pct(deep.detractors.count, deep.detractors.percent) },
-      };
+        promoters: promoters.count,
+        neutrals: neutrals.count,
+        detractors: detractors.count,
+      });
     }
   }
 
-  return countsToMappedOverview({ total: 0, promoters: 0, neutrals: 0, detractors: 0 });
+  const answerRows = allRows.filter((r) => !isCategoryBucketRow(r));
+  if (answerRows.length > 0) {
+    const counts = aggregateAnswerRows(answerRows);
+    if (counts.total > 0) return countsToMappedOverview(counts);
+  }
+
+  return empty;
 };
 
 export const pickSuporteDepartmentId = (

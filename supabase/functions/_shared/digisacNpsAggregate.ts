@@ -85,10 +85,32 @@ const scoreFromClassification = (label: string): number | null => {
   return null;
 };
 
+const INVALID_ANSWER_TEXT = new Set([
+  "nv", "n/a", "na", "não avaliado", "nao avaliado", "não avaliada", "nao avaliada",
+  "-", "null", "undefined", "invalid", "inválido", "invalido",
+]);
+
 /** Resposta textual do cliente na API Digisac (`text`, `aiText`, `reason`). */
 export function parseScoreFromText(raw: string): number | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
+  if (INVALID_ANSWER_TEXT.has(trimmed.toLowerCase())) return null;
+
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed === "number" && parsed >= 0 && parsed <= 10) return Math.round(parsed);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const o = parsed as Record<string, unknown>;
+        for (const k of ["score", "nota", "value", "rating", "answer", "nps"]) {
+          const s = parseScoreFromFieldValue(o[k]);
+          if (s != null) return s;
+        }
+      }
+    } catch {
+      /* texto livre */
+    }
+  }
 
   const fromClass = scoreFromClassification(trimmed.toLowerCase());
   if (fromClass != null) return fromClass;
@@ -96,17 +118,22 @@ export function parseScoreFromText(raw: string): number | null {
   const direct = asNumber(trimmed);
   if (direct != null && direct >= 0 && direct <= 10) return Math.round(direct);
 
-  const digit = trimmed.match(/(?:^|\s)(10|[0-9])(?:\s|$|[^\d])/);
+  const digit = trimmed.match(/\b(10|[0-9])\b/);
   if (digit) {
     const n = Number(digit[1]);
     if (n >= 0 && n <= 10) return n;
   }
 
-  if (/^\d{1,2}$/.test(trimmed)) {
-    const n = Number(trimmed);
-    if (n >= 0 && n <= 10) return n;
-  }
+  return null;
+}
 
+export function parseScoreFromFieldValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const n = Math.round(value);
+    if (n >= 0 && n <= 10) return n;
+    return null;
+  }
+  if (typeof value === "string") return parseScoreFromText(value);
   return null;
 }
 
@@ -130,11 +157,8 @@ const readScoreFromObject = (obj: Record<string, unknown>, depth = 0): number | 
   if (depth > 4) return null;
 
   for (const key of TEXT_SCORE_KEYS) {
-    const val = obj[key];
-    if (typeof val === "string") {
-      const s = parseScoreFromText(val);
-      if (s != null) return s;
-    }
+    const s = parseScoreFromFieldValue(obj[key]);
+    if (s != null) return s;
   }
 
   for (const key of SCORE_FIELD_KEYS) {
@@ -205,12 +229,20 @@ export function filterNpsAnswerRows(
   rows: Record<string, unknown>[],
   fromIso: string,
   toIso: string,
+  npsQuestionIds?: Set<string>,
 ): Record<string, unknown>[] {
   const fromMs = new Date(fromIso).getTime();
   const toMs = new Date(toIso).getTime();
 
   return rows.filter((row) => {
+    if (row.deletedAt != null) return false;
     if (isDigisacCsatAiRow(row)) return false;
+
+    const qid = String(row.questionId ?? row.question_id ?? "").trim();
+    if (npsQuestionIds && npsQuestionIds.size > 0 && qid && !npsQuestionIds.has(qid)) {
+      return false;
+    }
+
     const score = extractAnswerScore(row);
     if (score == null) return false;
 

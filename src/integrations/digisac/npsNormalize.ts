@@ -169,13 +169,73 @@ function countsToOverviewFromAggregate(counts: ReturnType<typeof emptyNpsCounts>
   };
 }
 
+function isPreMappedOverview(root: Record<string, unknown>): boolean {
+  const total = asNumber(root.total);
+  const promoters = root.promoters;
+  return total > 0 && promoters != null && typeof promoters === 'object';
+}
+
+/** Formato Digisac: `data.nps` = [promotores, neutros, detratores, não avaliados, inválidos]. */
+function mapNpsVectorOverview(payload: unknown): NpsOverview | null {
+  const root = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null;
+  if (!root?.data || typeof root.data !== 'object' || Array.isArray(root.data)) return null;
+  const npsArr = (root.data as Record<string, unknown>).nps;
+  if (!Array.isArray(npsArr) || npsArr.length < 3) return null;
+  const promoters = asNumber(npsArr[0]);
+  const neutrals = asNumber(npsArr[1]);
+  const detractors = asNumber(npsArr[2]);
+  const total = promoters + neutrals + detractors;
+  if (total <= 0) return null;
+  const pct = (n: number) => (total > 0 ? Math.round((n / total) * 10000) / 100 : 0);
+  const npsScore = Math.round(((promoters - detractors) / total) * 10000) / 100;
+  return {
+    total,
+    npsScore,
+    promoters: { count: promoters, percent: pct(promoters), label: 'Promotores', scoreRange: '9 - 10' },
+    neutrals: { count: neutrals, percent: pct(neutrals), label: 'Neutros', scoreRange: '7 - 8' },
+    detractors: { count: detractors, percent: pct(detractors), label: 'Detratores', scoreRange: '0 - 6' },
+  };
+}
+
 export function normalizeNpsOverviewPayload(payload: unknown): NpsOverview {
-  const rows = flattenAnswersPayload(payload);
-  if (rows.length > 0) {
-    return countsToOverviewFromAggregate(aggregateAnswerRows(rows));
-  }
+  const vector = mapNpsVectorOverview(payload);
+  if (vector) return vector;
 
   const root = firstObject(payload);
+
+  if (isPreMappedOverview(root)) {
+    const p = root.promoters as Record<string, unknown>;
+    const n = root.neutrals as Record<string, unknown>;
+    const d = root.detractors as Record<string, unknown>;
+    return {
+      total: asNumber(root.total),
+      npsScore: typeof root.npsScore === 'number' ? root.npsScore : null,
+      promoters: {
+        count: asNumber(p.count),
+        percent: asNumber(p.percent),
+        label: 'Promotores',
+        scoreRange: '9 - 10',
+      },
+      neutrals: {
+        count: asNumber(n.count),
+        percent: asNumber(n.percent),
+        label: 'Neutros',
+        scoreRange: '7 - 8',
+      },
+      detractors: {
+        count: asNumber(d.count),
+        percent: asNumber(d.percent),
+        label: 'Detratores',
+        scoreRange: '0 - 6',
+      },
+    };
+  }
+
+  const rows = flattenAnswersPayload(payload);
+  if (rows.length > 0) {
+    const counts = aggregateAnswerRows(rows);
+    if (counts.total > 0) return countsToOverviewFromAggregate(counts);
+  }
   const totals =
     root.totals && typeof root.totals === 'object'
       ? (root.totals as Record<string, unknown>)
