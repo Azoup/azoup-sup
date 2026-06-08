@@ -273,8 +273,15 @@ export function ImageLightbox({ images, index, onClose, onIndexChange }: ImageLi
             </a>
           </div>
 
-          <DialogPrimitive.Close className="absolute right-3 top-3 rounded-sm text-white/80 ring-offset-background transition-opacity hover:text-white focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
-            <X className="h-5 w-5" />
+          <DialogPrimitive.Close
+            className={cn(
+              'fixed right-4 top-4 z-[201] flex h-11 w-11 items-center justify-center rounded-full',
+              'border border-white/30 bg-black/80 text-white shadow-[0_2px_12px_rgba(0,0,0,0.6)] backdrop-blur-sm',
+              'transition-colors hover:border-white/50 hover:bg-black focus:outline-none focus:ring-2 focus:ring-white/60',
+            )}
+            title="Fechar"
+          >
+            <X className="h-6 w-6" strokeWidth={2.5} />
             <span className="sr-only">Fechar</span>
           </DialogPrimitive.Close>
         </DialogPrimitive.Content>
