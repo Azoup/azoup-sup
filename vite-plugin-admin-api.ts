@@ -8,6 +8,7 @@ import { fetchDevKanbanBoardCore } from "./api/lib/devKanbanBoard";
 import { proxyAuthenticatedSupabaseRequest, type RestProxyBody } from "./api/lib/restProxy";
 import { uploadPhotoCore, type UploadPhotoBody } from "./api/lib/uploadPhotoCore";
 import { uploadKanbanImageCore, type UploadKanbanImageBody } from "./api/lib/uploadKanbanImageCore";
+import { uploadKanbanFileCore, type UploadKanbanFileBody } from "./api/lib/uploadKanbanFileCore";
 
 function readBody(req: Connect.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -213,6 +214,69 @@ export function adminApiDevPlugin(env: Record<string, string>): Plugin {
 
           try {
             const result = await uploadKanbanImageCore(authHeader, body, config);
+            res.statusCode = result.status;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify(result.body));
+          } catch (err) {
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json");
+            res.end(
+              JSON.stringify({
+                error: "server_error",
+                message: err instanceof Error ? err.message : "unknown",
+              }),
+            );
+          }
+          return;
+        }
+
+        if (url === "/api/upload-kanban-file") {
+          res.setHeader("Access-Control-Allow-Origin", "*");
+          res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+          res.setHeader("Access-Control-Allow-Headers", "authorization, content-type");
+
+          if (req.method === "OPTIONS") {
+            res.statusCode = 204;
+            res.end();
+            return;
+          }
+
+          if (req.method !== "POST") {
+            res.statusCode = 405;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "method_not_allowed" }));
+            return;
+          }
+
+          const config = adminConfigFromEnv(env as NodeJS.ProcessEnv);
+          if ("error" in config) {
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "server_misconfigured", message: config.error }));
+            return;
+          }
+
+          const authHeader = req.headers.authorization?.trim();
+          if (!authHeader?.startsWith("Bearer ")) {
+            res.statusCode = 401;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "unauthorized" }));
+            return;
+          }
+
+          let body: UploadKanbanFileBody = {} as UploadKanbanFileBody;
+          try {
+            const raw = await readBody(req);
+            body = raw ? (JSON.parse(raw) as UploadKanbanFileBody) : body;
+          } catch {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "invalid_json" }));
+            return;
+          }
+
+          try {
+            const result = await uploadKanbanFileCore(authHeader, body, config);
             res.statusCode = result.status;
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify(result.body));

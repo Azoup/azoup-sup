@@ -6,6 +6,7 @@ import { useSupabaseReady } from '@/hooks/useSupabaseReady';
 import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
 import { actorNameFromUser } from '@/lib/actorName';
 import { fetchKanbanCardFiles } from '@/lib/kanbanCardFiles';
+import { uploadKanbanFileForCard } from '@/lib/uploadKanbanFile';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Paperclip, Download, Trash2, FileText, FileVideo, FileImage, File as FileIcon, Loader2, Eye } from 'lucide-react';
@@ -74,11 +75,6 @@ export function CardFiles({ cardId }: CardFilesProps) {
     setUploads(prev => [...prev, { name: file.name, progress: 0, status: 'uploading' }]);
 
     try {
-      const ext = file.name.split('.').pop() || 'bin';
-      const isRar = ext.toLowerCase() === 'rar';
-      const contentType = isRar ? 'application/octet-stream' : (file.type || 'application/octet-stream');
-      const path = `${cardId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-
       const progressInterval = setInterval(() => {
         setUploads(prev => prev.map((u, i) =>
           i === idx && u.status === 'uploading' && u.progress < 90
@@ -87,28 +83,16 @@ export function CardFiles({ cardId }: CardFilesProps) {
         ));
       }, 300);
 
-      const { error: uploadError } = await supabase.storage
-        .from('kanban-files')
-        .upload(path, file, { contentType, upsert: false });
+      await uploadKanbanFileForCard(
+        'kanban-files',
+        'kanban_card_files',
+        cardId,
+        file,
+        user?.id,
+        user?.email || '',
+      );
 
       clearInterval(progressInterval);
-
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage.from('kanban-files').getPublicUrl(path);
-
-      const { error: dbError } = await supabase.from('kanban_card_files').insert({
-        card_id: cardId,
-        file_url: urlData.publicUrl,
-        file_path: path,
-        file_name: file.name,
-        file_type: file.type || contentType,
-        file_size: file.size,
-        uploaded_by: user?.id,
-        uploaded_by_email: user?.email || '',
-      });
-
-      if (dbError) throw dbError;
 
       setUploads(prev => prev.map((u, i) => i === idx ? { ...u, progress: 100, status: 'done' } : u));
       void queryClient.invalidateQueries({ queryKey: ['card-files', cardId] });

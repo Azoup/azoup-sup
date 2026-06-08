@@ -1,6 +1,8 @@
 import { getConfiguredSupabaseProjectRef } from '@/lib/supabaseProject';
+import type { KanbanCardFileRow } from '@/lib/kanbanCardFiles';
 
-export type KanbanCardImagesTable = 'kanban_card_images' | 'dev_kanban_card_images';
+export type KanbanFilesBucket = 'kanban-files' | 'dev-kanban-files';
+export type KanbanCardFilesTable = 'kanban_card_files' | 'dev_kanban_card_files';
 
 function getStoredAccessToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -37,18 +39,21 @@ async function fileToBase64(file: File): Promise<string> {
   return btoa(binary);
 }
 
-/** Upload de imagem de ticket via API (evita corrupção binária no proxy REST). */
-export async function uploadKanbanImageViaApi(
-  imagesTable: KanbanCardImagesTable,
+export async function uploadKanbanFileViaApi(
+  bucket: KanbanFilesBucket,
+  filesTable: KanbanCardFilesTable,
   cardId: string,
   file: File,
-): Promise<{ publicUrl: string; image?: { id: string; card_id: string; image_url: string; created_at?: string } }> {
+): Promise<KanbanCardFileRow> {
   const token = getStoredAccessToken();
   if (!token) throw new Error('Sessão expirada — faça login novamente.');
 
+  const ext = file.name.split('.').pop() || 'bin';
+  const isRar = ext.toLowerCase() === 'rar';
+  const contentType = isRar ? 'application/octet-stream' : (file.type || 'application/octet-stream');
   const fileBase64 = await fileToBase64(file);
 
-  const res = await fetch('/api/upload-kanban-image', {
+  const res = await fetch('/api/upload-kanban-file', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -56,9 +61,10 @@ export async function uploadKanbanImageViaApi(
     },
     body: JSON.stringify({
       card_id: cardId,
-      images_table: imagesTable,
+      files_table: filesTable,
+      bucket,
       file_name: file.name,
-      content_type: file.type || 'image/png',
+      content_type: contentType,
       file_base64: fileBase64,
     }),
   });
@@ -66,23 +72,16 @@ export async function uploadKanbanImageViaApi(
   const json = (await res.json().catch(() => ({}))) as {
     error?: string;
     message?: string;
-    public_url?: string;
-    id?: string;
+    file?: KanbanCardFileRow;
   };
 
   if (!res.ok) {
-    throw new Error(json.message || json.error || `Erro ${res.status} ao enviar imagem`);
+    throw new Error(json.message || json.error || `Erro ${res.status} ao enviar arquivo`);
   }
 
-  const publicUrl = json.public_url?.trim();
-  if (!publicUrl) {
-    throw new Error('Resposta inválida do servidor ao enviar imagem');
+  if (!json.file?.id) {
+    throw new Error('Resposta inválida do servidor ao enviar arquivo');
   }
 
-  return {
-    publicUrl,
-    image: json.id
-      ? { id: json.id, card_id: cardId, image_url: publicUrl }
-      : undefined,
-  };
+  return json.file;
 }

@@ -77,14 +77,26 @@ async function uploadKanbanImageDirect(
   }
 
   const publicUrl = buildKanbanImagePublicUrl(storagePath);
-  const { error } = await supabase.from(imagesTable).insert({ card_id: cardId, image_url: publicUrl });
+  const { data, error } = await supabase
+    .from(imagesTable)
+    .insert({ card_id: cardId, image_url: publicUrl })
+    .select('id, card_id, image_url, created_at')
+    .single();
   if (error) throw new Error(error.message);
 
-  return { publicUrl };
+  return { publicUrl, image: data };
 }
+
+export type KanbanCardImageRow = {
+  id: string;
+  card_id: string;
+  image_url: string;
+  created_at?: string;
+};
 
 export type UploadKanbanImageResult = {
   publicUrl: string;
+  image?: KanbanCardImageRow | null;
 };
 
 /**

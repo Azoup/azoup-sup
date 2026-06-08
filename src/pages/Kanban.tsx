@@ -14,6 +14,7 @@ import {
   patchKanbanBoardColumns,
 } from '@/lib/kanbanBoardPatch';
 import { uploadKanbanImagesParallel } from '@/lib/uploadKanbanCardAssets';
+import { uploadKanbanFileForCard } from '@/lib/uploadKanbanFile';
 import {
   dedupeCardLabelRows,
   labelsForCardFromRows,
@@ -172,11 +173,14 @@ const Kanban = () => {
       const { cardId, cardTitle, imageFiles, attachmentFiles, analystId, prevAnalystId, logLabel } = opts;
 
       if (imageFiles.length > 0) {
-        const { uploaded, failed } = await uploadKanbanImagesParallel(
+        const { uploaded, failed, images } = await uploadKanbanImagesParallel(
           'kanban_card_images',
           cardId,
           imageFiles,
         );
+        if (images.length > 0) {
+          patchKanbanBoardCardImages(queryClient, (rows) => [...rows, ...images]);
+        }
         if (failed > 0) {
           toast.error(
             failed === imageFiles.length
@@ -238,28 +242,16 @@ const Kanban = () => {
   const uploadAndSaveFiles = async (cardId: string, files: File[]) => {
     for (const file of files) {
       try {
-        const ext = file.name.split('.').pop() || 'bin';
-        const isRar = ext.toLowerCase() === 'rar';
-        const contentType = isRar ? 'application/octet-stream' : (file.type || 'application/octet-stream');
-        const path = `${cardId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-        const { error: upErr } = await supabase.storage
-          .from('kanban-files')
-          .upload(path, file, { contentType, upsert: false });
-        if (upErr) throw upErr;
-        const { data: urlData } = supabase.storage.from('kanban-files').getPublicUrl(path);
-        const { error: fileInsertError } = await supabase.from('kanban_card_files').insert({
-          card_id: cardId,
-          file_url: urlData.publicUrl,
-          file_path: path,
-          file_name: file.name,
-          file_type: file.type || contentType,
-          file_size: file.size,
-          uploaded_by: user?.id,
-          uploaded_by_email: user?.email || '',
-        });
-        if (fileInsertError) throw fileInsertError;
+        await uploadKanbanFileForCard(
+          'kanban-files',
+          'kanban_card_files',
+          cardId,
+          file,
+          user?.id,
+          user?.email || '',
+        );
       } catch (e: any) {
-        console.error("Erro no upload do arquivo:", e);
+        console.error('Erro no upload do arquivo:', e);
         toast.error(`Erro ao enviar ${file.name}: ${e.message}`);
       }
     }

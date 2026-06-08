@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
+import { uploadKanbanFileForCard } from '@/lib/uploadKanbanFile';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Paperclip, Download, Trash2, FileText, FileVideo, FileImage, File as FileIcon, Loader2, Eye } from 'lucide-react';
@@ -81,16 +82,6 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
     setUploads(prev => [...prev, { name: file.name, progress: 0, status: 'uploading' }]);
 
     try {
-      const ext = file.name.split('.').pop() || 'bin';
-      const lowerExt = ext.toLowerCase();
-      const isCompressedFile = lowerExt === 'rar' || lowerExt === 'zip' || file.type === 'application/x-compressed';
-      const contentType = isCompressedFile ? 'application/octet-stream' : (file.type || 'application/octet-stream');
-      const uploadFile = isCompressedFile
-        ? new File([file], file.name, { type: 'application/octet-stream', lastModified: file.lastModified })
-        : file;
-      const path = `${cardId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-
-      // Simulated progress (Supabase JS SDK doesn't expose upload progress directly)
       const progressInterval = setInterval(() => {
         setUploads(prev => prev.map((u, i) =>
           i === idx && u.status === 'uploading' && u.progress < 90
@@ -99,28 +90,16 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
         ));
       }, 300);
 
-      const { error: uploadError } = await supabase.storage
-        .from('dev-kanban-files')
-        .upload(path, uploadFile, { contentType, upsert: false });
+      await uploadKanbanFileForCard(
+        'dev-kanban-files',
+        'dev_kanban_card_files',
+        cardId,
+        file,
+        user?.id,
+        user?.email || '',
+      );
 
       clearInterval(progressInterval);
-
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage.from('dev-kanban-files').getPublicUrl(path);
-
-      const { error: dbError } = await supabase.from('dev_kanban_card_files').insert({
-        card_id: cardId,
-        file_url: urlData.publicUrl,
-        file_path: path,
-        file_name: file.name,
-        file_type: file.type || contentType,
-        file_size: file.size,
-        uploaded_by: user?.id,
-        uploaded_by_email: user?.email || '',
-      });
-
-      if (dbError) throw dbError;
 
       setUploads(prev => prev.map((u, i) => i === idx ? { ...u, progress: 100, status: 'done' } : u));
       queryClient.invalidateQueries({ queryKey: ['dev-card-files', cardId] });
