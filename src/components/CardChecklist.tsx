@@ -161,8 +161,8 @@ export function CardChecklist({ cardId, cardType, description }: Props) {
   const pct = total === 0 ? 0 : Math.round((doneCount / total) * 100);
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
+    <div className="space-y-3 min-w-0">
+      <div className="flex items-center justify-between gap-2 min-w-0">
         <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
           <ListChecks className="h-3.5 w-3.5" /> Checklist {total > 0 && <span>({doneCount}/{total})</span>}
         </p>
@@ -177,7 +177,7 @@ export function CardChecklist({ cardId, cardType, description }: Props) {
 
       <div className="space-y-1">
         {items.map((item) => (
-          <div key={item.id} className="flex items-center gap-2 group">
+          <div key={item.id} className="flex items-start gap-2 group min-w-0">
             <Checkbox
               checked={item.done}
               onCheckedChange={() => toggleDone.mutate(item)}
@@ -204,7 +204,7 @@ export function CardChecklist({ cardId, cardType, description }: Props) {
               </>
             ) : (
               <>
-                <span className={`text-sm flex-1 ${item.done ? "line-through text-muted-foreground" : ""}`}>
+                <span className={`text-sm flex-1 min-w-0 break-words [overflow-wrap:anywhere] ${item.done ? "line-through text-muted-foreground" : ""}`}>
                   {item.content}
                 </span>
                 <button

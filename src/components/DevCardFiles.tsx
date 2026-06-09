@@ -160,9 +160,9 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold flex items-center gap-2">
+    <div className="space-y-3 min-w-0">
+      <div className="flex items-center justify-between gap-2 flex-wrap min-w-0">
+        <h3 className="text-sm font-semibold flex items-center gap-2 min-w-0">
           <Paperclip className="h-4 w-4" />
           Anexos {files.length > 0 && <span className="text-muted-foreground">({files.length})</span>}
         </h3>
@@ -187,9 +187,9 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
       {uploads.length > 0 && (
         <div className="space-y-2">
           {uploads.map((u, i) => (
-            <div key={i} className="rounded-md border bg-muted/30 p-2 text-xs">
-              <div className="flex items-center justify-between mb-1">
-                <span className="truncate">{u.name}</span>
+            <div key={i} className="rounded-md border bg-muted/30 p-2 text-xs min-w-0">
+              <div className="flex items-center justify-between gap-2 mb-1 min-w-0">
+                <span className="break-words [overflow-wrap:anywhere] min-w-0">{u.name}</span>
                 <span className="text-muted-foreground ml-2">
                   {u.status === 'uploading' && `${u.progress}%`}
                   {u.status === 'done' && '✓ Concluído'}
@@ -214,10 +214,10 @@ export function DevCardFiles({ cardId }: DevCardFilesProps) {
           {files.map((f: any) => {
             const Icon = getFileIcon(f.file_type);
             return (
-              <li key={f.id} className="flex items-center gap-2 rounded-md border bg-card p-2 text-sm">
-                <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <li key={f.id} className="flex items-start gap-2 rounded-md border bg-card p-2 text-sm min-w-0">
+                <Icon className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
                 <div className="flex-1 min-w-0">
-                  <p className="truncate font-medium">{f.file_name}</p>
+                  <p className="font-medium break-words [overflow-wrap:anywhere]">{f.file_name}</p>
                   <p className="text-xs text-muted-foreground">
                     {formatSize(f.file_size)} • {format(new Date(f.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
                   </p>

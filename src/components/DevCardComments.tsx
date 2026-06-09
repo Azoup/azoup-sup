@@ -225,7 +225,7 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 min-w-0">
       <p className="text-xs font-semibold text-muted-foreground">Comentários e Atividade</p>
       <div className="flex gap-2">
         <Textarea
@@ -249,8 +249,8 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
       {comments.length === 0 ? (
         <p className="text-xs text-muted-foreground text-center py-2">Nenhum comentário ainda.</p>
       ) : (
-        <ScrollArea className="max-h-60">
-          <div className="space-y-3 pr-2">
+        <ScrollArea className="max-h-60 w-full min-w-0">
+          <div className="space-y-3 pr-2 min-w-0">
             {comments.map((c) => (
               <div key={c.id} className="flex gap-2 group">
                 <ProfileAvatar
@@ -274,7 +274,7 @@ export function DevCardComments({ cardId }: DevCardCommentsProps) {
                       </button>
                     )}
                   </div>
-                  <p className="text-sm whitespace-pre-wrap break-words">{c.content}</p>
+                  <p className="text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{c.content}</p>
                 </div>
               </div>
             ))}

@@ -1174,88 +1174,92 @@ const KanbanDev = () => {
 
       {/* View Card Dialog */}
       <Dialog open={viewOpen} onOpenChange={setViewOpen}>
-        <DialogContent className="max-w-lg sm:max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{viewingCard?.title}</DialogTitle>
-            <DialogDescription>{sortedColumns.find((c: any) => c.slug === viewingCard?.status)?.title}</DialogDescription>
-          </DialogHeader>
+        <DialogContent className="max-w-2xl w-[min(42rem,calc(100vw-2rem))] flex min-h-0 flex-col max-h-[min(90vh,calc(100dvh-2rem))] overflow-hidden gap-0 p-0">
+          <div className="shrink-0 px-6 pt-6 pb-2 pr-14 min-w-0">
+            <DialogHeader>
+              <DialogTitle className="break-words pr-2">{viewingCard?.title}</DialogTitle>
+              <DialogDescription>{sortedColumns.find((c: any) => c.slug === viewingCard?.status)?.title}</DialogDescription>
+            </DialogHeader>
+          </div>
           {viewingCard && (
-            <div className="space-y-4">
-              <DevTicketNumberBadge ticketNumber={viewingCard.ticket_number} variant="field" />
-              {viewingCard.description && (
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground mb-1">Observações do ticket</p>
-                  <p className="text-sm whitespace-pre-wrap">{viewingCard.description}</p>
-                </div>
-              )}
-              {viewingDevNotes && (
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground mb-1">
-                    Observações / correções (DEV)
-                  </p>
-                  <p className="text-sm whitespace-pre-wrap rounded-md border bg-muted/30 p-3">
-                    {viewingDevNotes}
-                  </p>
-                </div>
-              )}
-              {viewingCardImages.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground mb-2">Imagens ({viewingCardImages.length})</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {viewingCardImages.map((img: any, i: number) => (
-                      <KanbanCardImage
-                        key={img.id}
-                        imageUrl={img.image_url}
-                        className="rounded-lg w-full h-32 object-cover border cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={() => openLightbox(viewingCardImages.map((im: any) => im.image_url), i)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-              {viewingCard.labels?.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground mb-1">Etiquetas</p>
-                  <div className="flex flex-wrap gap-1">
-                    {viewingCard.labels.map((l: any) => (
-                      <span key={l.id} className="text-xs px-2 py-1 rounded-full text-white" style={{ backgroundColor: l.color }}>{l.name}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="flex items-center gap-4 flex-wrap">
-                {viewingCard.analyst && (
-                  <div className="flex items-center gap-2">
-                    <ProfileAvatar className="h-7 w-7" photoUrl={viewingCard.analyst.photo_url} fallbackLabel={viewingCard.analyst.name || '?'} />
-                    <span className="text-sm text-muted-foreground">Analista: {viewingCard.analyst.name}</span>
+            <>
+              <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-y-contain px-6 pb-4 [-webkit-overflow-scrolling:touch]">
+                <DevTicketNumberBadge ticketNumber={viewingCard.ticket_number} variant="field" />
+                {viewingCard.description && (
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-muted-foreground mb-1">Observações do ticket</p>
+                    <p className="text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{viewingCard.description}</p>
                   </div>
                 )}
-                {viewingCard.developer && (
-                  <div className="flex items-center gap-2">
-                    <ProfileAvatar className="h-7 w-7" photoUrl={viewingCard.developer.photo_url} fallbackLabel={viewingCard.developer.name || '?'} />
-                    <span className="text-sm text-muted-foreground">Dev: {viewingCard.developer.name}</span>
+                {viewingDevNotes && (
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-muted-foreground mb-1">
+                      Observações / correções (DEV)
+                    </p>
+                    <p className="text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-md border bg-muted/30 p-3">
+                      {viewingDevNotes}
+                    </p>
                   </div>
                 )}
-                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                  <Calendar className="h-4 w-4" />
-                  <span>Criado em: {format(new Date(viewingCard.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
+                {viewingCardImages.length > 0 && (
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-muted-foreground mb-2">Imagens ({viewingCardImages.length})</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {viewingCardImages.map((img: any, i: number) => (
+                        <KanbanCardImage
+                          key={img.id}
+                          imageUrl={img.image_url}
+                          className="rounded-lg w-full h-32 object-cover border cursor-pointer hover:opacity-80 transition-opacity"
+                          onClick={() => openLightbox(viewingCardImages.map((im: any) => im.image_url), i)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {viewingCard.labels?.length > 0 && (
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-muted-foreground mb-1">Etiquetas</p>
+                    <div className="flex flex-wrap gap-1">
+                      {viewingCard.labels.map((l: any) => (
+                        <span key={l.id} className="text-xs px-2 py-1 rounded-full text-white" style={{ backgroundColor: l.color }}>{l.name}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="flex items-center gap-4 flex-wrap min-w-0">
+                  {viewingCard.analyst && (
+                    <div className="flex items-center gap-2 min-w-0">
+                      <ProfileAvatar className="h-7 w-7 shrink-0" photoUrl={viewingCard.analyst.photo_url} fallbackLabel={viewingCard.analyst.name || '?'} />
+                      <span className="text-sm text-muted-foreground break-words">Analista: {viewingCard.analyst.name}</span>
+                    </div>
+                  )}
+                  {viewingCard.developer && (
+                    <div className="flex items-center gap-2 min-w-0">
+                      <ProfileAvatar className="h-7 w-7 shrink-0" photoUrl={viewingCard.developer.photo_url} fallbackLabel={viewingCard.developer.name || '?'} />
+                      <span className="text-sm text-muted-foreground break-words">Dev: {viewingCard.developer.name}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <Calendar className="h-4 w-4 shrink-0" />
+                    <span>Criado em: {format(new Date(viewingCard.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
+                  </div>
+                  {getCardCompletedAt(viewingCard) && (
+                    <div className="flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-400">
+                      <CheckCircle2 className="h-4 w-4 shrink-0" />
+                      <span>Concluído em: {format(new Date(getCardCompletedAt(viewingCard)!), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
+                    </div>
+                  )}
                 </div>
-                {getCardCompletedAt(viewingCard) && (
-                  <div className="flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-400">
-                    <CheckCircle2 className="h-4 w-4" />
-                    <span>Concluído em: {format(new Date(getCardCompletedAt(viewingCard)!), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
-                  </div>
-                )}
+                <CardChecklist cardId={viewingCard.id} cardType="dev" description={viewingCard.description} />
+                <DevCardFiles cardId={viewingCard.id} />
+                <DevCardComments cardId={viewingCard.id} />
               </div>
-              <CardChecklist cardId={viewingCard.id} cardType="dev" description={viewingCard.description} />
-              <DevCardFiles cardId={viewingCard.id} />
-              <DevCardComments cardId={viewingCard.id} />
-              <div className="flex gap-2 pt-2">
+              <div className="shrink-0 flex gap-2 border-t bg-background px-6 py-3">
                 <Button size="sm" variant="outline" onClick={() => { setViewOpen(false); openEdit(viewingCard); }}>
                   <Pencil className="h-3 w-3 mr-1" /> Editar
                 </Button>
               </div>
-            </div>
+            </>
           )}
         </DialogContent>
       </Dialog>
@@ -1291,12 +1295,12 @@ const KanbanDev = () => {
       {/* Edit Dialog */}
       <Dialog open={editOpen} onOpenChange={handleEditOpenChange}>
         <DialogContent
-          className="max-w-lg sm:max-w-2xl flex min-h-0 flex-col max-h-[min(90vh,calc(100dvh-2rem))] overflow-hidden gap-0 p-0"
+          className="max-w-2xl w-[min(42rem,calc(100vw-2rem))] flex min-h-0 flex-col max-h-[min(90vh,calc(100dvh-2rem))] overflow-hidden gap-0 p-0"
           onPointerDownOutside={e => e.preventDefault()}
         >
-          <div className="shrink-0 px-6 pt-6 pb-2 pr-14">
+          <div className="shrink-0 px-6 pt-6 pb-2 pr-14 min-w-0">
             <DialogHeader>
-              <DialogTitle>Editar Card</DialogTitle>
+              <DialogTitle className="break-words pr-2">Editar Card</DialogTitle>
               <DialogDescription>Altere os dados do card.</DialogDescription>
             </DialogHeader>
             {editingCard?.ticket_number != null && (
