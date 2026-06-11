@@ -2,27 +2,10 @@ import { supabase } from '@/integrations/supabase/client';
 import type { DigisacSlaMonitorSummary } from '@/integrations/digisac/slaTypes';
 import { formatSlaDuration } from '@/integrations/digisac/slaNormalize';
 
-async function invokeWithToken(
-  functionName: string,
-  body: Record<string, unknown>,
-  token: string,
-): Promise<DigisacSlaMonitorSummary> {
-  const { data, error } = await supabase.functions.invoke(functionName, {
-    method: 'POST',
-    body,
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  if (error) throw new Error(error.message || 'Falha ao sincronizar alertas SLA');
-  if (!data || typeof data !== 'object') throw new Error('Resposta inválida da sincronização SLA');
-
-  const row = data as DigisacSlaMonitorSummary & { error?: string; message?: string };
-  if (row.error && !row.ok) {
-    throw new Error(row.message || String(row.error));
-  }
-  return row;
-}
-
+/**
+ * Sincroniza alertas SLA via edge function `digisac-dashboard` (action sla_sync).
+ * Não usa função separada — evita limite de serverless na Vercel/Supabase.
+ */
 export async function syncDigisacSlaAlerts(
   departmentId?: string,
 ): Promise<DigisacSlaMonitorSummary> {
@@ -32,23 +15,20 @@ export async function syncDigisacSlaAlerts(
 
   const payload = departmentId && departmentId !== 'all' ? { departmentId } : {};
 
-  try {
-    return await invokeWithToken('digisac-sla-cron', payload, token);
-  } catch (cronErr) {
-    try {
-      const { data, error } = await supabase.functions.invoke('digisac-dashboard', {
-        method: 'POST',
-        body: { action: 'sla_sync', payload },
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (error) throw error;
-      const row = data as DigisacSlaMonitorSummary & { error?: string; message?: string };
-      if (row?.error && !row.ok) throw new Error(row.message || String(row.error));
-      return row;
-    } catch {
-      throw cronErr instanceof Error ? cronErr : new Error(String(cronErr));
-    }
+  const { data, error } = await supabase.functions.invoke('digisac-dashboard', {
+    method: 'POST',
+    body: { action: 'sla_sync', payload },
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (error) throw new Error(error.message || 'Falha ao sincronizar alertas SLA');
+  if (!data || typeof data !== 'object') throw new Error('Resposta inválida da sincronização SLA');
+
+  const row = data as DigisacSlaMonitorSummary & { error?: string | boolean; message?: string };
+  if (row.error && !row.ok) {
+    throw new Error(row.message || String(row.error));
   }
+  return row;
 }
 
 export function describeSlaSyncResult(result: DigisacSlaMonitorSummary): string {
