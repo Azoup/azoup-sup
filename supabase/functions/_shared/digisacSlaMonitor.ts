@@ -13,13 +13,23 @@ export type SlaTicket = {
   durationMinutes: number;
 };
 
+export type SlaMonitorPreview = {
+  protocol: string;
+  analystName: string;
+  durationMinutes: number;
+};
+
 export type SlaMonitorResult = {
+  openTotal: number;
+  over40: number;
+  over45: number;
   scanned: number;
   tracked: number;
   escalated: number;
   notified: number;
   resolved: number;
   errors: string[];
+  preview: SlaMonitorPreview[];
 };
 
 const OPEN_STATUS = new Set([
@@ -135,7 +145,7 @@ export function formatBrazilDateTime(iso: Date | string): string {
   return d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 }
 
-export function normalizeOpenTicket(
+export function parseOpenTicketBase(
   ticket: Record<string, unknown>,
   now = new Date(),
 ): SlaTicket | null {
@@ -144,9 +154,6 @@ export function normalizeOpenTicket(
   const startedAt = extractTicketStartTime(ticket);
   if (!id || !startedAt) return null;
 
-  const durationMinutes = minutesBetween(startedAt, now);
-  if (durationMinutes < WARN_THRESHOLD_MINUTES) return null;
-
   const attendant = extractTicketAttendant(ticket);
   return {
     id,
@@ -154,27 +161,112 @@ export function normalizeOpenTicket(
     analystName: attendant?.name || "Sem atendente",
     digisacUserId: attendant?.userId || "",
     startedAt,
-    durationMinutes,
+    durationMinutes: minutesBetween(startedAt, now),
   };
 }
 
-function buildOpenTicketQueryVariants(departmentId: string): URLSearchParams[] {
-  const base = { limit: "200" };
+export function normalizeOpenTicket(
+  ticket: Record<string, unknown>,
+  now = new Date(),
+): SlaTicket | null {
+  const base = parseOpenTicketBase(ticket, now);
+  if (!base || base.durationMinutes < WARN_THRESHOLD_MINUTES) return null;
+  return base;
+}
+
+export function ticketBelongsToDepartment(
+  ticket: Record<string, unknown>,
+  departmentId: string,
+): boolean {
+  if (!departmentId) return true;
+  const deptIds = [
+    ticket.departmentId,
+    ticket.department_id,
+    ticket.lastDepartmentId,
+    ticket.currentDepartmentId,
+    ticket.openedDepartmentId,
+  ].map((v) => pickString(v)).filter(Boolean);
+
+  const department = ticket.department ?? ticket.lastDepartment;
+  if (department && typeof department === "object") {
+    deptIds.push(pickString((department as Record<string, unknown>).id));
+  }
+
+  if (deptIds.length === 0) return true;
+  return deptIds.includes(departmentId);
+}
+
+function buildOpenTicketQueryVariants(departmentId?: string): URLSearchParams[] {
   const variants: URLSearchParams[] = [];
+  const withDept = (extra: Record<string, string>) => {
+    const combo = { limit: "200", ...extra };
+    if (departmentId) combo.departmentId = departmentId;
+    return new URLSearchParams(combo);
+  };
 
   const combos: Record<string, string>[] = [
-    { ...base, "where[status]": "open", "where[departmentId]": departmentId },
-    { ...base, status: "open", departmentId },
-    { ...base, "where[status][in]": "open,in_progress", "where[departmentId]": departmentId },
-    { ...base, "filter[status]": "open", departmentId },
-    { ...base, "where[isOpen]": "true", "where[departmentId]": departmentId },
-    { ...base, periodType: "open", departmentId },
+    { "where[status]": "open" },
+    { status: "open" },
+    { "where[status][in]": "open,in_progress" },
+    { "filter[status]": "open" },
+    { "where[isOpen]": "true" },
+    { periodType: "open" },
+    { "where[closedAt][null]": "true" },
   ];
 
+  if (departmentId) {
+    combos.unshift(
+      { "where[status]": "open", "where[departmentId]": departmentId },
+      { status: "open", departmentId },
+      { "where[departmentId]": departmentId, periodType: "open" },
+    );
+  }
+
   for (const combo of combos) {
-    variants.push(new URLSearchParams(combo));
+    variants.push(withDept(combo));
   }
   return variants;
+}
+
+export async function fetchAllOpenTickets(
+  fetchDigisac: FetchDigisacFn,
+  departmentId: string,
+  now = new Date(),
+): Promise<SlaTicket[]> {
+  const rawById = new Map<string, Record<string, unknown>>();
+
+  for (const params of buildOpenTicketQueryVariants(departmentId)) {
+    const r = await fetchDigisac("/api/v1/tickets", params);
+    if (!r.ok) continue;
+    for (const raw of flattenTickets(r.data)) {
+      if (!isTicketOpen(raw)) continue;
+      const id = pickString(raw.id);
+      if (!id) continue;
+      if (!ticketBelongsToDepartment(raw, departmentId)) continue;
+      rawById.set(id, raw);
+    }
+  }
+
+  // Fallback: busca ampla e filtra departamento localmente
+  if (rawById.size === 0) {
+    for (const params of buildOpenTicketQueryVariants()) {
+      const r = await fetchDigisac("/api/v1/tickets", params);
+      if (!r.ok) continue;
+      for (const raw of flattenTickets(r.data)) {
+        if (!isTicketOpen(raw)) continue;
+        if (!ticketBelongsToDepartment(raw, departmentId)) continue;
+        const id = pickString(raw.id);
+        if (id) rawById.set(id, raw);
+      }
+    }
+  }
+
+  const tickets: SlaTicket[] = [];
+  for (const raw of rawById.values()) {
+    const parsed = parseOpenTicketBase(raw, now);
+    if (parsed) tickets.push(parsed);
+  }
+  return tickets;
 }
 
 export async function fetchOpenSlaTickets(
@@ -182,19 +274,8 @@ export async function fetchOpenSlaTickets(
   departmentId: string,
   now = new Date(),
 ): Promise<SlaTicket[]> {
-  const seen = new Map<string, SlaTicket>();
-
-  for (const params of buildOpenTicketQueryVariants(departmentId)) {
-    const r = await fetchDigisac("/api/v1/tickets", params);
-    if (!r.ok) continue;
-    for (const raw of flattenTickets(r.data)) {
-      const ticket = normalizeOpenTicket(raw, now);
-      if (ticket) seen.set(ticket.id, ticket);
-    }
-    if (seen.size > 0) break;
-  }
-
-  return [...seen.values()];
+  const all = await fetchAllOpenTickets(fetchDigisac, departmentId, now);
+  return all.filter((t) => t.durationMinutes >= WARN_THRESHOLD_MINUTES);
 }
 
 export async function resolveSuporteDepartmentId(
@@ -253,12 +334,16 @@ export async function runDigisacSlaMonitor(input: {
 }): Promise<SlaMonitorResult> {
   const now = input.now ?? new Date();
   const result: SlaMonitorResult = {
+    openTotal: 0,
+    over40: 0,
+    over45: 0,
     scanned: 0,
     tracked: 0,
     escalated: 0,
     notified: 0,
     resolved: 0,
     errors: [],
+    preview: [],
   };
 
   let departmentId = input.departmentId?.trim() || "";
@@ -270,9 +355,23 @@ export async function runDigisacSlaMonitor(input: {
     return result;
   }
 
-  const openTickets = await fetchOpenSlaTickets(input.fetchDigisac, departmentId, now);
+  const allOpen = await fetchAllOpenTickets(input.fetchDigisac, departmentId, now);
+  const openTickets = allOpen.filter((t) => t.durationMinutes >= WARN_THRESHOLD_MINUTES);
+
+  result.openTotal = allOpen.length;
+  result.over40 = openTickets.length;
+  result.over45 = openTickets.filter((t) => t.durationMinutes >= ESCALATE_THRESHOLD_MINUTES).length;
   result.scanned = openTickets.length;
-  const openIds = new Set(openTickets.map((t) => t.id));
+  result.preview = openTickets
+    .sort((a, b) => b.durationMinutes - a.durationMinutes)
+    .slice(0, 8)
+    .map((t) => ({
+      protocol: t.protocol,
+      analystName: t.analystName,
+      durationMinutes: t.durationMinutes,
+    }));
+
+  const openIds = new Set(allOpen.map((t) => t.id));
 
   const { data: activeAlerts, error: activeErr } = await (input.adminClient as any)
     .from("digisac_sla_alerts")

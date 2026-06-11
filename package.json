@@ -20,6 +20,8 @@
     "supabase:deploy-admin-user-actions": "supabase functions deploy admin-user-actions --project-ref ittmglvkympbyeowgucl",
     "supabase:deploy-digisac-dashboard": "supabase functions deploy digisac-dashboard --project-ref ittmglvkympbyeowgucl",
     "supabase:deploy-digisac-sla-cron": "supabase functions deploy digisac-sla-cron --project-ref ittmglvkympbyeowgucl",
+    "digisac:sla-sync": "node supabase/scripts/run-digisac-sla-sync.mjs",
+    "digisac:sla-sync:dry": "node supabase/scripts/run-digisac-sla-sync.mjs --dry-run",
     "supabase:deploy-admin-users": "supabase functions deploy admin-users --project-ref ittmglvkympbyeowgucl",
     "migrate:storage": "node supabase/scripts/migrate-storage-ffvgrvrk-to-ittmglvk.mjs",
     "migrate:storage:dry-run": "node supabase/scripts/migrate-storage-ffvgrvrk-to-ittmglvk.mjs --dry-run",

@@ -32,6 +32,7 @@ import {
   normalizeAdminBody,
   runAdminUserAction,
 } from "../_shared/adminUserActions.ts";
+import { runDigisacSlaMonitor } from "../_shared/digisacSlaMonitor.ts";
 
 interface CacheItem { data: any; timestamp: number; }
 const cache: Record<string, CacheItem> = {};
@@ -1056,6 +1057,45 @@ Deno.serve(async (req) => {
         cache[cacheKey] = { data: out, timestamp: Date.now() };
       }
       return jsonResponse(out);
+    }
+
+    if (action === "sla_sync") {
+      if (!authHeader?.startsWith("Bearer ")) {
+        return handledErrorResponse(action, "Usuário não autenticado.", { code: "UNAUTHORIZED" });
+      }
+      const slaToken = authHeader.replace("Bearer ", "");
+      const { data: { user: slaUser }, error: slaAuthErr } = await supabaseClient.auth.getUser(slaToken);
+      if (slaAuthErr || !slaUser) {
+        return handledErrorResponse(action, "Usuário não autenticado.", { code: "UNAUTHORIZED" });
+      }
+
+      const adminClient = createClient(
+        Deno.env.get("SUPABASE_URL") ?? "",
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      );
+      const { data: roleRow } = await adminClient
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", slaUser.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      if (!roleRow) {
+        return handledErrorResponse(action, "Apenas administradores podem sincronizar alertas SLA.", {
+          code: "FORBIDDEN",
+        });
+      }
+
+      const digisacFetch = async (endpoint: string, params?: URLSearchParams) => {
+        const r = await fetchDigisac(digisacUrl, digisacToken, endpoint, params);
+        return { ok: r.ok, status: r.status, data: r.data };
+      };
+      const deptId = typeof payload?.departmentId === "string" ? payload.departmentId : undefined;
+      const monitorResult = await runDigisacSlaMonitor({
+        fetchDigisac: digisacFetch,
+        adminClient,
+        departmentId: deptId,
+      });
+      return jsonResponse({ ok: true, ...monitorResult });
     }
 
     if (action === "listar_analysts") {

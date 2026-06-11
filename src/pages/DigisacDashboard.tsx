@@ -7,11 +7,20 @@ import { DigisacMappingModal } from "@/components/DigisacMappingModal";
 import { DigisacDateTimeField } from "@/components/DigisacDateTimeField";
 import { digisacApi, mergeDigisacDashboardFilters, type DigisacDashboardQueryFilters } from "@/integrations/digisac/api";
 import {
+  describeSlaSyncResult,
+  slaSyncPreviewLines,
+  syncDigisacSlaAlerts,
+} from "@/integrations/digisac/slaSync";
+import { useRole } from "@/hooks/useRole";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "sonner";
+import {
   filterDigisacAnalystStatsForDepartment,
   filterDigisacUsersForDepartment,
   isDigisacDepartmentWithScopedAnalysts,
 } from "@/lib/digisacDepartmentAnalystScope";
-import { Clock, Ticket, Users, Filter, MessageSquare, Hourglass, Timer, CheckCircle2, CircleDot, RefreshCw, AlertCircle } from "lucide-react";
+import { Clock, Ticket, Users, Filter, MessageSquare, Hourglass, Timer, CheckCircle2, CircleDot, RefreshCw, AlertCircle, AlertTriangle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, LabelList } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -34,7 +43,11 @@ const getTodayDateStringBrazil = () => {
 };
 
 export default function DigisacDashboard() {
+  const { user } = useAuth();
+  const { isAdmin } = useRole();
+  const queryClient = useQueryClient();
   const today = getTodayDateStringBrazil();
+  const [slaSyncing, setSlaSyncing] = useState(false);
   const [periodStart, setPeriodStart] = useState({ date: today, time: "00:00" });
   const [periodEnd, setPeriodEnd] = useState({ date: today, time: "23:59" });
   const [departmentId, setDepartmentId] = useState<string>("all");
@@ -171,6 +184,39 @@ export default function DigisacDashboard() {
     analistasList.length > 0;
   const showEmptyState = !hasError && !isLoadingGeral && !isLoadingAnalistas && !hasData;
 
+  const runSlaSync = async () => {
+    if (!isAdmin) return;
+    setSlaSyncing(true);
+    try {
+      const result = await syncDigisacSlaAlerts(departmentId);
+      if (user?.id) {
+        queryClient.invalidateQueries({ queryKey: ['digisac-sla-notifications', user.id] });
+      }
+      const preview = slaSyncPreviewLines(result);
+      if (result.errors?.length) {
+        toast.error('Erro ao verificar SLA', { description: result.errors.join(' · ') });
+      } else if (result.notified > 0) {
+        toast.warning('Notificações SLA enviadas', {
+          description: `${describeSlaSyncResult(result)}${preview.length ? `\n${preview.join('\n')}` : ''}`,
+          duration: 15_000,
+        });
+      } else {
+        toast.info('Chamados abertos verificados', {
+          description: preview.length
+            ? `${describeSlaSyncResult(result)}\n${preview.join('\n')}`
+            : describeSlaSyncResult(result),
+          duration: 12_000,
+        });
+      }
+    } catch (e) {
+      toast.error('Falha na sincronização SLA', {
+        description: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setSlaSyncing(false);
+    }
+  };
+
   return (
     <div className="container mx-auto py-8 space-y-8 fade-in max-w-full overflow-x-hidden">
       <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 w-full">
@@ -229,6 +275,19 @@ export default function DigisacDashboard() {
             <RefreshCw className="w-4 h-4" />
             Atualizar
           </Button>
+          {isAdmin && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={runSlaSync}
+              disabled={slaSyncing}
+              className="h-9 gap-2 shrink-0 border-amber-500/50 text-amber-700 dark:text-amber-400"
+              title="Verificar chamados abertos e gerar alertas SLA"
+            >
+              <AlertTriangle className={`w-4 h-4 ${slaSyncing ? 'animate-pulse' : ''}`} />
+              {slaSyncing ? 'Verificando…' : 'Verificar SLA'}
+            </Button>
+          )}
           <div className="hidden lg:block w-px h-10 bg-border mx-1"></div>
           <div className="shrink-0"><DigisacMappingModal /></div>
         </div>
