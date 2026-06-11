@@ -20,6 +20,7 @@ export const APP_REALTIME_TABLES = [
   'dev_kanban_card_files',
   'dev_kanban_card_comments',
   'dev_kanban_notifications',
+  'digisac_sla_notifications',
   'doubt_records',
 ] as const;
 
@@ -139,5 +140,10 @@ export function handleAppRealtimeTableChange(
 
   if (table === 'dev_kanban_notifications') {
     void queryClient.invalidateQueries({ queryKey: ['dev-notifications'] });
+    return;
+  }
+
+  if (table === 'digisac_sla_notifications') {
+    void queryClient.invalidateQueries({ queryKey: ['digisac-sla-notifications'] });
   }
 }

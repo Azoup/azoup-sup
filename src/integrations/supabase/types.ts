@@ -460,6 +460,98 @@ export type Database = {
           },
         ]
       }
+      digisac_sla_alerts: {
+        Row: {
+          admin_notified_at: string | null
+          analyst_name: string | null
+          created_at: string
+          digisac_ticket_id: string
+          digisac_user_id: string | null
+          duration_minutes: number
+          id: string
+          protocol: string
+          resolved_at: string | null
+          started_at: string
+          tier: string
+          updated_at: string
+        }
+        Insert: {
+          admin_notified_at?: string | null
+          analyst_name?: string | null
+          created_at?: string
+          digisac_ticket_id: string
+          digisac_user_id?: string | null
+          duration_minutes?: number
+          id?: string
+          protocol: string
+          resolved_at?: string | null
+          started_at: string
+          tier?: string
+          updated_at?: string
+        }
+        Update: {
+          admin_notified_at?: string | null
+          analyst_name?: string | null
+          created_at?: string
+          digisac_ticket_id?: string
+          digisac_user_id?: string | null
+          duration_minutes?: number
+          id?: string
+          protocol?: string
+          resolved_at?: string | null
+          started_at?: string
+          tier?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      digisac_sla_notifications: {
+        Row: {
+          alert_id: string
+          analyst_name: string | null
+          created_at: string
+          duration_minutes: number
+          id: string
+          message: string
+          protocol: string
+          read: boolean
+          recipient_id: string
+          started_at: string
+        }
+        Insert: {
+          alert_id: string
+          analyst_name?: string | null
+          created_at?: string
+          duration_minutes: number
+          id?: string
+          message: string
+          protocol: string
+          read?: boolean
+          recipient_id: string
+          started_at: string
+        }
+        Update: {
+          alert_id?: string
+          analyst_name?: string | null
+          created_at?: string
+          duration_minutes?: number
+          id?: string
+          message?: string
+          protocol?: string
+          read?: boolean
+          recipient_id?: string
+          started_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "digisac_sla_notifications_alert_id_fkey"
+            columns: ["alert_id"]
+            isOneToOne: false
+            referencedRelation: "digisac_sla_alerts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       doubt_records: {
         Row: {
           analyst_id: string
