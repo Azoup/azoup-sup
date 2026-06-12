@@ -73,7 +73,7 @@ function buildTicketBatchParams(ids: string[]): URLSearchParams[] {
   return variants;
 }
 
-async function fetchTicketBatch(
+export async function fetchTicketBatch(
   fetchDigisac: FetchDigisacFn,
   ids: string[],
 ): Promise<Map<string, TicketAttendantRef>> {

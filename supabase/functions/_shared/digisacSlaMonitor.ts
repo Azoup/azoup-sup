@@ -1,4 +1,4 @@
-import { extractTicketAttendant, type FetchDigisacFn } from "./digisacNpsTickets.ts";
+import { extractTicketAttendant, fetchTicketBatch, type FetchDigisacFn } from "./digisacNpsTickets.ts";
 import { pickSuporteDepartmentId } from "./digisacAnswersOverview.ts";
 
 export const WARN_THRESHOLD_MINUTES = 40;
@@ -311,6 +311,69 @@ type SupabaseAdmin = {
   };
 };
 
+async function loadDigisacAnalystNameMap(admin: SupabaseAdmin): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const { data: mappings, error: mapErr } = await (admin as any)
+    .from("digisac_analyst_mapping")
+    .select("digisac_user_id, digisac_user_name, analyst_id");
+  if (mapErr) return map;
+
+  const { data: analysts, error: analystErr } = await (admin as any)
+    .from("analysts")
+    .select("id, name")
+    .eq("status", "active");
+  if (analystErr) return map;
+
+  const analystsById = new Map(
+    (analysts ?? []).map((a: { id: string; name: string }) => [String(a.id), String(a.name).trim()]),
+  );
+
+  for (const mapping of mappings ?? []) {
+    const userId = String(mapping.digisac_user_id ?? "").trim();
+    if (!userId) continue;
+    const name = pickString(
+      mapping.digisac_user_name,
+      analystsById.get(String(mapping.analyst_id)),
+    );
+    if (name) map.set(userId, name);
+  }
+  return map;
+}
+
+function resolveAnalystName(
+  digisacUserId: string,
+  digisacName: string,
+  mappingNames: Map<string, string>,
+): string {
+  const fromTicket = digisacName.trim();
+  if (fromTicket && fromTicket !== "Sem atendente") return fromTicket;
+  if (digisacUserId) {
+    const mapped = mappingNames.get(digisacUserId);
+    if (mapped) return mapped;
+  }
+  return fromTicket || "Sem atendente";
+}
+
+async function enrichSlaTicketsAttendants(
+  fetchDigisac: FetchDigisacFn,
+  tickets: SlaTicket[],
+  mappingNames: Map<string, string>,
+): Promise<void> {
+  const needsDetail = tickets.filter((t) => !t.digisacUserId || t.analystName === "Sem atendente");
+  const attendantById = needsDetail.length > 0
+    ? await fetchTicketBatch(fetchDigisac, needsDetail.map((t) => t.id))
+    : new Map<string, { userId: string; name: string }>();
+
+  for (const ticket of tickets) {
+    const att = attendantById.get(ticket.id);
+    if (att) {
+      ticket.digisacUserId = att.userId || ticket.digisacUserId;
+      if (att.name) ticket.analystName = att.name;
+    }
+    ticket.analystName = resolveAnalystName(ticket.digisacUserId, ticket.analystName, mappingNames);
+  }
+}
+
 async function loadAdminUserIds(admin: SupabaseAdmin): Promise<string[]> {
   const { data, error } = await (admin as any)
     .from("user_roles")
@@ -356,6 +419,8 @@ export async function runDigisacSlaMonitor(input: {
   }
 
   const allOpen = await fetchAllOpenTickets(input.fetchDigisac, departmentId, now);
+  const mappingNames = await loadDigisacAnalystNameMap(input.adminClient);
+  await enrichSlaTicketsAttendants(input.fetchDigisac, allOpen, mappingNames);
   const openTickets = allOpen.filter((t) => t.durationMinutes >= WARN_THRESHOLD_MINUTES);
 
   result.openTotal = allOpen.length;
@@ -428,6 +493,17 @@ export async function runDigisacSlaMonitor(input: {
     if (upsertErr) {
       result.errors.push(upsertErr.message);
       continue;
+    }
+
+    const alertIdForUpdate = upserted?.id ?? existing?.id;
+    if (alertIdForUpdate) {
+      await (input.adminClient as any)
+        .from("digisac_sla_notifications")
+        .update({
+          analyst_name: ticket.analystName,
+          duration_minutes: ticket.durationMinutes,
+        })
+        .eq("alert_id", alertIdForUpdate);
     }
 
     if (tier === "warn_40") {

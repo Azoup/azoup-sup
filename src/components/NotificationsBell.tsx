@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Bell, CheckCheck, MapPin, Trash2, Eraser, AlertTriangle } from 'lucide-react';
+import { Bell, CheckCheck, MapPin, Trash2, Eraser, AlertTriangle, Copy } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
@@ -196,6 +196,17 @@ export function NotificationsBell() {
 
   const readCount = notifications.length - unreadCount;
 
+  const copyProtocol = async (protocol: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    try {
+      await navigator.clipboard.writeText(protocol);
+      toast.success('Protocolo copiado');
+    } catch {
+      toast.error('Não foi possível copiar o protocolo');
+    }
+  };
+
   const performClear = async (mode: 'read' | 'all') => {
     if (!user) return;
     let kanbanQ = (supabase as any)
@@ -285,10 +296,18 @@ export function NotificationsBell() {
                   const n = item.data;
                   return (
                     <li key={`sla-${n.id}`}>
-                      <button
+                      <div
+                        role="button"
+                        tabIndex={0}
                         onClick={() => handleSlaClick(n)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleSlaClick(n);
+                          }
+                        }}
                         className={cn(
-                          'w-full text-left px-3 py-2.5 hover:bg-accent transition-colors',
+                          'w-full text-left px-3 py-2.5 hover:bg-accent transition-colors cursor-pointer',
                           !n.read && 'bg-amber-500/10',
                         )}
                       >
@@ -299,9 +318,22 @@ export function NotificationsBell() {
                           </span>
                           {!n.read && <span className="h-2 w-2 rounded-full bg-amber-500 mt-1 shrink-0" />}
                         </div>
-                        <p className="text-sm font-medium break-words leading-snug">
-                          Protocolo {n.protocol}
-                        </p>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium break-words leading-snug">
+                            Protocolo {n.protocol}
+                          </p>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                            title="Copiar protocolo"
+                            aria-label={`Copiar protocolo ${n.protocol}`}
+                            onClick={(e) => copyProtocol(n.protocol, e)}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                         <p className="text-xs text-muted-foreground mt-0.5 break-words">
                           {slaNotificationDetail(n)}
                         </p>
@@ -310,7 +342,7 @@ export function NotificationsBell() {
                             {formatDistanceToNow(new Date(n.created_at), { addSuffix: true, locale: ptBR })}
                           </span>
                         </div>
-                      </button>
+                      </div>
                     </li>
                   );
                 }
