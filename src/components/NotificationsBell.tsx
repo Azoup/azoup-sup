@@ -10,7 +10,6 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { useRole } from '@/hooks/useRole';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -274,7 +273,7 @@ export function NotificationsBell() {
             )}
           </div>
         </div>
-        <ScrollArea className="max-h-96">
+        <div className="max-h-80 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
           {notifications.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8 px-4">
               Nenhuma notificação ainda.
@@ -348,7 +347,7 @@ export function NotificationsBell() {
               })}
             </ul>
           )}
-        </ScrollArea>
+        </div>
       </PopoverContent>
 
       <AlertDialog open={confirmMode !== null} onOpenChange={(o) => !o && setConfirmMode(null)}>
