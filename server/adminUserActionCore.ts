@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { isAuthUserNotFoundError, purgeUserData } from "../api/lib/purgeUserData.js";
+import { isAuthUserNotFoundError, purgeUserData } from "./api/purgeUserData.js";
 
 export type AdminBody = {
   action?: string;

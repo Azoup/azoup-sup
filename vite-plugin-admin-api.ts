@@ -1,14 +1,14 @@
 import type { Connect, Plugin } from "vite";
-import { runAdminUserActionCore, type AdminBody } from "./api/lib/adminAction";
-import { adminConfigFromEnv } from "./api/lib/supabaseConfig";
-import { fetchUserAccessCore } from "./api/lib/userAccess";
-import { fetchAppBootstrapCore } from "./api/lib/appBootstrap";
-import { fetchKanbanBoardCore } from "./api/lib/kanbanBoard";
-import { fetchDevKanbanBoardCore } from "./api/lib/devKanbanBoard";
-import { proxyAuthenticatedSupabaseRequest, type RestProxyBody } from "./api/lib/restProxy";
-import { uploadPhotoCore, type UploadPhotoBody } from "./api/lib/uploadPhotoCore";
-import { uploadKanbanImageCore, type UploadKanbanImageBody } from "./api/lib/uploadKanbanImageCore";
-import { uploadKanbanFileCore, type UploadKanbanFileBody } from "./api/lib/uploadKanbanFileCore";
+import { runAdminUserActionCore, type AdminBody } from "./server/api/adminAction";
+import { adminConfigFromEnv } from "./server/api/supabaseConfig";
+import { fetchUserAccessCore } from "./server/api/userAccess";
+import { fetchAppBootstrapCore } from "./server/api/appBootstrap";
+import { fetchKanbanBoardCore } from "./server/api/kanbanBoard";
+import { fetchDevKanbanBoardCore } from "./server/api/devKanbanBoard";
+import { proxyAuthenticatedSupabaseRequest, type RestProxyBody } from "./server/api/restProxy";
+import { uploadPhotoCore, type UploadPhotoBody } from "./server/api/uploadPhotoCore";
+import { uploadKanbanImageCore, type UploadKanbanImageBody } from "./server/api/uploadKanbanImageCore";
+import { uploadKanbanFileCore, type UploadKanbanFileBody } from "./server/api/uploadKanbanFileCore";
 
 function readBody(req: Connect.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {

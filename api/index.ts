@@ -1,15 +1,15 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { runAdminUserActionCore, type AdminBody } from "./lib/adminAction.js";
-import { adminConfigFromEnv } from "./lib/supabaseConfig.js";
-import { fetchAppBootstrapCore } from "./lib/appBootstrap.js";
-import { fetchDevKanbanBoardCore } from "./lib/devKanbanBoard.js";
-import { fetchKanbanBoardCore } from "./lib/kanbanBoard.js";
-import { proxyAuthenticatedSupabaseRequest, type RestProxyBody } from "./lib/restProxy.js";
-import { fetchUserAccessCore } from "./lib/userAccess.js";
-import { uploadKanbanFileCore, type UploadKanbanFileBody } from "./lib/uploadKanbanFileCore.js";
-import { uploadKanbanImageCore, type UploadKanbanImageBody } from "./lib/uploadKanbanImageCore.js";
-import { uploadPhotoCore, type UploadPhotoBody } from "./lib/uploadPhotoCore.js";
-import { routeName } from "./lib/routeName.js";
+import { runAdminUserActionCore, type AdminBody } from "../server/api/adminAction.js";
+import { adminConfigFromEnv } from "../server/api/supabaseConfig.js";
+import { fetchAppBootstrapCore } from "../server/api/appBootstrap.js";
+import { fetchDevKanbanBoardCore } from "../server/api/devKanbanBoard.js";
+import { fetchKanbanBoardCore } from "../server/api/kanbanBoard.js";
+import { proxyAuthenticatedSupabaseRequest, type RestProxyBody } from "../server/api/restProxy.js";
+import { fetchUserAccessCore } from "../server/api/userAccess.js";
+import { uploadKanbanFileCore, type UploadKanbanFileBody } from "../server/api/uploadKanbanFileCore.js";
+import { uploadKanbanImageCore, type UploadKanbanImageBody } from "../server/api/uploadKanbanImageCore.js";
+import { uploadPhotoCore, type UploadPhotoBody } from "../server/api/uploadPhotoCore.js";
+import { routeName } from "../server/api/routeName.js";
 
 const ROUTES = new Set([
   "app-bootstrap",
