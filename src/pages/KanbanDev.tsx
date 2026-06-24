@@ -285,15 +285,13 @@ const KanbanDev = () => {
         created_by: user!.id,
       }).select().single();
       if (error) throw error;
-      if (developerId) {
-        await saveDevKanbanDevNotes(
-          data.id,
-          devNotes.trim() || null,
-          user!.id,
-          user!.email || '',
-        );
-        data.dev_notes = devNotes.trim() || null;
-      }
+      await saveDevKanbanDevNotes(
+        data.id,
+        devNotes.trim() || null,
+        user!.id,
+        user!.email || '',
+      );
+      data.dev_notes = devNotes.trim() || null;
       await syncCardLabels('dev_kanban_card_labels', data.id, selectedLabels);
       return {
         card: data,
@@ -411,7 +409,7 @@ const KanbanDev = () => {
       }
       await saveDevKanbanDevNotes(
         editingCard.id,
-        newDevId ? (devNotes.trim() || null) : null,
+        devNotes.trim() || null,
         user!.id,
         user!.email || '',
       );
@@ -458,7 +456,7 @@ const KanbanDev = () => {
             ...c,
             title,
             description: description || null,
-            dev_notes: developerId ? (devNotes.trim() || null) : null,
+            dev_notes: devNotes.trim() || null,
             analyst_id: analystId || null,
             developer_id: developerId || null,
           };
@@ -862,8 +860,8 @@ const KanbanDev = () => {
     setMoveToColumnSlug(card.status || '');
     setTitle(card.title);
     setDescription(card.description || '');
-    setDevNotes('');
-    initialDevNotesRef.current = '';
+    setDevNotes((card.dev_notes || '').trim());
+    initialDevNotesRef.current = (card.dev_notes || '').trim();
     setAnalystId(card.analyst_id || '');
     setDeveloperId(card.developer_id || '');
     setSelectedLabels(uniqueLabelIds((card.labels || []).map((l: any) => l?.id).filter(Boolean)));
@@ -922,7 +920,9 @@ const KanbanDev = () => {
     const target = cards.find((c: any) => c.id === cardParam);
     if (target) {
       setViewingCard(target);
+      setViewingDevNotes('');
       setViewOpen(true);
+      void loadDevKanbanDevNotes(target.id, target.dev_notes).then(setViewingDevNotes).catch(() => {});
       // Clean up URL so re-opening doesn't reopen the same card
       const next = new URLSearchParams(searchParams);
       next.delete('card');
@@ -1191,16 +1191,20 @@ const KanbanDev = () => {
                     <p className="text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{viewingCard.description}</p>
                   </div>
                 )}
-                {viewingDevNotes && (
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-muted-foreground mb-1">
-                      Observações / correções (DEV)
-                    </p>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-muted-foreground mb-1">
+                    Observações / correções (DEV)
+                  </p>
+                  {viewingDevNotes ? (
                     <p className="text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-md border bg-muted/30 p-3">
                       {viewingDevNotes}
                     </p>
-                  </div>
-                )}
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic rounded-md border border-dashed p-3">
+                      Nenhuma observação registrada.
+                    </p>
+                  )}
+                </div>
                 {viewingCardImages.length > 0 && (
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-muted-foreground mb-2">Imagens ({viewingCardImages.length})</p>
@@ -1560,22 +1564,16 @@ function DevCardFormContent({
           </Select>
         </div>
       )}
-      {developerId ? (
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-muted-foreground">Observações / correções (DEV)</p>
-          <Textarea
-            placeholder="Descreva alterações técnicas, correções aplicadas, detalhes da implementação..."
-            value={devNotes}
-            onChange={e => setDevNotes(e.target.value)}
-            rows={6}
-            className="min-h-[120px] max-h-[min(35vh,280px)] resize-y overflow-y-auto focus-visible:ring-offset-0"
-          />
-        </div>
-      ) : (
-        <p className="text-xs text-muted-foreground rounded-md border border-dashed p-2">
-          Selecione um desenvolvedor responsável para registrar observações e correções técnicas.
-        </p>
-      )}
+      <div className="space-y-1">
+        <p className="text-xs font-medium text-muted-foreground">Observações / correções (DEV)</p>
+        <Textarea
+          placeholder="Descreva alterações técnicas, correções aplicadas, detalhes da implementação..."
+          value={devNotes}
+          onChange={e => setDevNotes(e.target.value)}
+          rows={6}
+          className="min-h-[120px] max-h-[min(35vh,280px)] resize-y overflow-y-auto focus-visible:ring-offset-0"
+        />
+      </div>
 
       {labels.length > 0 && (
         <div className="space-y-1">
