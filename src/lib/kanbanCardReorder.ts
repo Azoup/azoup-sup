@@ -10,6 +10,22 @@ export type KanbanCardPositionUpdate = {
   position: number;
 };
 
+/** Mantém apenas cards cujo status ou position realmente mudou. */
+export function filterChangedPositionUpdates(
+  allCards: KanbanCardLike[],
+  updates: KanbanCardPositionUpdate[],
+): KanbanCardPositionUpdate[] {
+  const byId = new Map(allCards.map((card) => [card.id, card]));
+  return updates.filter((update) => {
+    const current = byId.get(update.id);
+    if (!current) return true;
+    return (
+      current.status !== update.status ||
+      (current.position ?? 0) !== update.position
+    );
+  });
+}
+
 /** Cards de uma coluna ordenados por position. */
 export function sortKanbanCardsByPosition<T extends KanbanCardLike>(cards: T[]): T[] {
   return [...cards].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));

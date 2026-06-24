@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeKanbanDragPositionUpdates,
+  filterChangedPositionUpdates,
   sortKanbanCardsByPosition,
 } from './kanbanCardReorder';
 
@@ -39,6 +40,25 @@ describe('computeKanbanDragPositionUpdates', () => {
       { id: 'c', status: 'todo', position: 1 },
       { id: 'x', status: 'done', position: 0 },
       { id: 'b', status: 'done', position: 1 },
+    ]);
+  });
+});
+
+describe('filterChangedPositionUpdates', () => {
+  it('skips cards already at the target position', () => {
+    const all = [
+      { id: 'a', status: 'todo', position: 0 },
+      { id: 'b', status: 'todo', position: 1 },
+      { id: 'c', status: 'todo', position: 2 },
+    ];
+    const updates = [
+      { id: 'a', status: 'todo', position: 0 },
+      { id: 'b', status: 'todo', position: 0 },
+      { id: 'c', status: 'todo', position: 1 },
+    ];
+    expect(filterChangedPositionUpdates(all, updates)).toEqual([
+      { id: 'b', status: 'todo', position: 0 },
+      { id: 'c', status: 'todo', position: 1 },
     ]);
   });
 });

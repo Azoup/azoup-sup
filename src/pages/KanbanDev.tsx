@@ -13,6 +13,7 @@ import {
   patchDevKanbanBoardCardLabels,
   patchDevKanbanBoardCardImages,
   patchDevKanbanBoardColumns,
+  DEV_KANBAN_BOARD_QUERY_KEY,
 } from '@/lib/devKanbanBoardPatch';
 import { uploadKanbanImagesParallel } from '@/lib/uploadKanbanCardAssets';
 import { uploadKanbanFileForCard } from '@/lib/uploadKanbanFile';
@@ -33,6 +34,7 @@ import { loadDevKanbanDevNotes, saveDevKanbanDevNotes } from '@/lib/devKanbanDev
 import { devTicketLabel, devTicketMatchesSearch, isDevTicketNumberQuery } from '@/lib/devKanbanTicketNumber';
 import { isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
 import { computeKanbanDragPositionUpdates, sortKanbanCardsByPosition } from '@/lib/kanbanCardReorder';
+import { persistDevKanbanCardPositions } from '@/lib/persistDevKanbanCardPositions';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -707,13 +709,17 @@ const KanbanDev = () => {
     }
   }, [ensureDoneLabel, queryClient, labels, cardLabels, isDoneSlug]);
 
-  const onDragEnd = useCallback(async (result: DropResult) => {
+  const onDragEnd = useCallback((result: DropResult) => {
     if (!result.destination || dragBusyRef.current || hasActiveCardFilters) return;
     const { source, destination, draggableId } = result;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
 
+    const boardCards =
+      (queryClient.getQueryData<{ cards?: any[] }>(DEV_KANBAN_BOARD_QUERY_KEY)?.cards as any[]) ??
+      cards;
+
     const positionUpdates = computeKanbanDragPositionUpdates(
-      cards,
+      boardCards,
       draggableId,
       source.droppableId,
       destination.droppableId,
@@ -722,11 +728,11 @@ const KanbanDev = () => {
     );
     if (positionUpdates.length === 0) return;
 
-    const movedCard = cards.find((c: any) => c.id === draggableId);
+    const movedCard = boardCards.find((c: any) => c.id === draggableId);
     const statusChanged = source.droppableId !== destination.droppableId;
     const wasDone = isDoneSlug(source.droppableId);
     const willBeDone = isDoneSlug(destination.droppableId);
-    const previousCards = queryClient.getQueryData<{ cards?: any[] }>(['dev-kanban-board'])?.cards;
+    const previousCards = boardCards;
 
     dragBusyRef.current = true;
     markBoardLocalWrite(statusChanged ? 2 : 1);
@@ -756,68 +762,55 @@ const KanbanDev = () => {
       }),
     );
 
-    try {
-      await withSupabaseRetry(async () => {
-        const results = await Promise.all(
-          positionUpdates.map(async ({ id, status, position }) => {
-            const payload: Record<string, unknown> = { status, position };
-            if (id === draggableId && completedAtOnMove !== undefined) {
-              payload.completed_at = completedAtOnMove;
-            }
-            let { error } = await supabase.from('dev_kanban_cards').update(payload).eq('id', id);
-            if (error && `${error.message}`.toLowerCase().includes('completed_at')) {
-              const retry = await supabase
-                .from('dev_kanban_cards')
-                .update({ status, position })
-                .eq('id', id);
-              error = retry.error;
-            }
-            if (error) throw error;
-          }),
-        );
-        void results;
-      });
-
-      if (statusChanged) {
-        await withSupabaseRetry(() =>
-          applyDoneLabelRule(draggableId, source.droppableId, destination.droppableId),
-        );
-      }
-    } catch (error: unknown) {
-      if (previousCards) {
-        patchDevKanbanBoardCards(queryClient, () => previousCards);
-      } else {
-        flushDevKanbanBoardRefresh(queryClient);
-      }
-      const message = error instanceof Error ? error.message : 'Erro desconhecido';
-      toast.error(
-        isSupabaseLockError(error)
-          ? 'Sistema ocupado — solte o card e tente mover de novo em instantes.'
-          : `Erro ao mover card: ${message}`,
-      );
-      dragBusyRef.current = false;
-      return;
-    }
-
     dragBusyRef.current = false;
 
-    if (statusChanged && movedCard) {
-      const colTitle =
-        sortedColumns.find((c: any) => c.slug === destination.droppableId)?.title || destination.droppableId;
-      const isMoveToDone = !isDoneSlug(source.droppableId) && isDoneSlug(destination.droppableId);
-      void notifyDevAndAnalyst({
-        cardId: movedCard.id,
-        cardTitle: movedCard.title,
-        developerId: movedCard.developer_id || null,
-        analystId: movedCard.analyst_id || null,
-        actionType: 'status',
-        actorId: user?.id,
-        actorName,
-        message: isMoveToDone
-          ? `${actorName} concluiu o ticket ${devTicketLabel(movedCard.ticket_number, movedCard.title)} em ${new Date().toLocaleString('pt-BR')}`
-          : `${actorName} moveu ${devTicketLabel(movedCard.ticket_number, movedCard.title)} para "${colTitle}"`,
-      });
-    }
+    void (async () => {
+      try {
+        await withSupabaseRetry(() =>
+          Promise.all([
+            persistDevKanbanCardPositions(boardCards, positionUpdates, {
+              draggableId,
+              completedAtOnMove,
+            }),
+            statusChanged
+              ? applyDoneLabelRule(draggableId, source.droppableId, destination.droppableId)
+              : Promise.resolve(),
+          ]),
+        );
+      } catch (error: unknown) {
+        if (previousCards) {
+          patchDevKanbanBoardCards(queryClient, () => previousCards);
+        } else {
+          flushDevKanbanBoardRefresh(queryClient);
+        }
+        const message = error instanceof Error ? error.message : 'Erro desconhecido';
+        toast.error(
+          isSupabaseLockError(error)
+            ? 'Sistema ocupado — solte o card e tente mover de novo em instantes.'
+            : `Erro ao mover card: ${message}`,
+        );
+        return;
+      }
+
+      if (statusChanged && movedCard) {
+        const colTitle =
+          sortedColumns.find((c: any) => c.slug === destination.droppableId)?.title ||
+          destination.droppableId;
+        const isMoveToDone = !isDoneSlug(source.droppableId) && isDoneSlug(destination.droppableId);
+        void notifyDevAndAnalyst({
+          cardId: movedCard.id,
+          cardTitle: movedCard.title,
+          developerId: movedCard.developer_id || null,
+          analystId: movedCard.analyst_id || null,
+          actionType: 'status',
+          actorId: user?.id,
+          actorName,
+          message: isMoveToDone
+            ? `${actorName} concluiu o ticket ${devTicketLabel(movedCard.ticket_number, movedCard.title)} em ${new Date().toLocaleString('pt-BR')}`
+            : `${actorName} moveu ${devTicketLabel(movedCard.ticket_number, movedCard.title)} para "${colTitle}"`,
+        });
+      }
+    })();
   }, [queryClient, cards, sortedColumns, user, actorName, applyDoneLabelRule, isDoneSlug, hasActiveCardFilters]);
 
   const resetForm = () => {
@@ -1128,26 +1121,24 @@ const KanbanDev = () => {
                             <div
                               ref={provided.innerRef}
                               {...provided.draggableProps}
-                              className={`bg-card rounded-md border p-3 shadow-sm space-y-2 hover:shadow-md transition-shadow break-words ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''}`}
+                              onClick={() => { if (!snapshot.isDragging) openView(card); }}
+                              className={`bg-card rounded-md border p-3 shadow-sm space-y-2 cursor-pointer hover:shadow-md transition-shadow break-words ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''}`}
                               style={{ wordWrap: 'break-word', overflowWrap: 'anywhere', ...provided.draggableProps.style }}
                             >
-                              <div className="flex items-start gap-2">
-                                <button
-                                  type="button"
-                                  {...provided.dragHandleProps}
-                                  disabled={hasActiveCardFilters}
-                                  className={`mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground touch-none ${hasActiveCardFilters ? 'cursor-not-allowed opacity-40' : 'cursor-grab active:cursor-grabbing hover:text-foreground'}`}
-                                  title={hasActiveCardFilters ? 'Limpe os filtros para reorganizar os cards' : 'Arrastar para reordenar'}
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <GripVertical className="h-4 w-4" />
-                                </button>
-                                <div
-                                  className="min-w-0 flex-1 space-y-2 cursor-pointer"
-                                  onClick={() => { if (!snapshot.isDragging) openView(card); }}
-                                >
                               <div className="flex items-center justify-between gap-2">
-                                <DevTicketNumberBadge ticketNumber={card.ticket_number} />
+                                <div className="flex min-w-0 items-center gap-1">
+                                  <button
+                                    type="button"
+                                    {...provided.dragHandleProps}
+                                    disabled={hasActiveCardFilters}
+                                    className={`shrink-0 touch-none ${hasActiveCardFilters ? 'cursor-not-allowed opacity-40' : 'cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground'}`}
+                                    title={hasActiveCardFilters ? 'Limpe os filtros para reorganizar os cards' : 'Arrastar para reordenar'}
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <GripVertical className="h-3 w-3" />
+                                  </button>
+                                  <DevTicketNumberBadge ticketNumber={card.ticket_number} />
+                                </div>
                                 <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                                   <button onClick={() => openEdit(card)} className="text-muted-foreground hover:text-primary"><Pencil className="h-3 w-3" /></button>
                                   <button onClick={() => deleteCard.mutate(card.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
@@ -1193,8 +1184,6 @@ const KanbanDev = () => {
                                       Concluído em {format(new Date(getCardCompletedAt(card)!), 'dd/MM HH:mm')}
                                     </span>
                                   )}
-                                </div>
-                              </div>
                                 </div>
                               </div>
                             </div>
