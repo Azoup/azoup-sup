@@ -32,6 +32,7 @@ import { filesFromClipboardData } from '@/lib/clipboardImage';
 import { loadDevKanbanDevNotes, saveDevKanbanDevNotes } from '@/lib/devKanbanDevNotes';
 import { devTicketLabel, devTicketMatchesSearch, isDevTicketNumberQuery } from '@/lib/devKanbanTicketNumber';
 import { isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
+import { computeKanbanDragPositionUpdates, sortKanbanCardsByPosition } from '@/lib/kanbanCardReorder';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,7 +44,7 @@ import { Badge } from '@/components/ui/badge';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
-import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar, Search } from 'lucide-react';
+import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar, Search, GripVertical } from 'lucide-react';
 import { DevCardComments } from '@/components/DevCardComments';
 import { DevTicketNumberBadge } from '@/components/DevTicketNumberBadge';
 import { DevCardFiles } from '@/components/DevCardFiles';
@@ -186,8 +187,17 @@ const KanbanDev = () => {
       }
       col.push(enriched);
     });
+    Object.keys(map).forEach((slug) => {
+      map[slug] = sortKanbanCardsByPosition(map[slug]);
+    });
     return map;
   }, [cards, cardLabels, analysts, developers, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, filterDevIds, searchQuery, completionColumnSlug]);
+
+  const hasActiveCardFilters =
+    filterLabelIds.length > 0 ||
+    filterAnalystIds.length > 0 ||
+    filterDevIds.length > 0 ||
+    searchQuery.trim().length > 0;
 
   const runPostSaveBackground = useCallback(
     async (opts: {
@@ -698,9 +708,19 @@ const KanbanDev = () => {
   }, [ensureDoneLabel, queryClient, labels, cardLabels, isDoneSlug]);
 
   const onDragEnd = useCallback(async (result: DropResult) => {
-    if (!result.destination || dragBusyRef.current) return;
+    if (!result.destination || dragBusyRef.current || hasActiveCardFilters) return;
     const { source, destination, draggableId } = result;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+
+    const positionUpdates = computeKanbanDragPositionUpdates(
+      cards,
+      draggableId,
+      source.droppableId,
+      destination.droppableId,
+      source.index,
+      destination.index,
+    );
+    if (positionUpdates.length === 0) return;
 
     const movedCard = cards.find((c: any) => c.id === draggableId);
     const statusChanged = source.droppableId !== destination.droppableId;
@@ -718,42 +738,44 @@ const KanbanDev = () => {
           ? null
           : undefined;
 
-    patchDevKanbanBoardCards(queryClient, (old) =>
-      old.map((card: any) =>
-        card.id === draggableId
-          ? {
-              ...card,
-              status: destination.droppableId,
-              position: destination.index,
-              completed_at:
-                completedAtOnMove !== undefined ? completedAtOnMove : card.completed_at,
-            }
-          : card,
-      ),
-    );
+    const updateById = new Map(positionUpdates.map((u) => [u.id, u]));
 
-    const movePayload: Record<string, unknown> = {
-      status: destination.droppableId,
-      position: destination.index,
-    };
-    if (completedAtOnMove !== undefined) movePayload.completed_at = completedAtOnMove;
+    patchDevKanbanBoardCards(queryClient, (old) =>
+      old.map((card: any) => {
+        const next = updateById.get(card.id);
+        if (!next) return card;
+        return {
+          ...card,
+          status: next.status,
+          position: next.position,
+          completed_at:
+            card.id === draggableId && completedAtOnMove !== undefined
+              ? completedAtOnMove
+              : card.completed_at,
+        };
+      }),
+    );
 
     try {
       await withSupabaseRetry(async () => {
-        let { error } = await supabase
-          .from('dev_kanban_cards')
-          .update(movePayload)
-          .eq('id', draggableId);
-
-        if (error && `${error.message}`.toLowerCase().includes('completed_at')) {
-          const retry = await supabase
-            .from('dev_kanban_cards')
-            .update({ status: destination.droppableId, position: destination.index })
-            .eq('id', draggableId);
-          error = retry.error;
-        }
-
-        if (error) throw error;
+        const results = await Promise.all(
+          positionUpdates.map(async ({ id, status, position }) => {
+            const payload: Record<string, unknown> = { status, position };
+            if (id === draggableId && completedAtOnMove !== undefined) {
+              payload.completed_at = completedAtOnMove;
+            }
+            let { error } = await supabase.from('dev_kanban_cards').update(payload).eq('id', id);
+            if (error && `${error.message}`.toLowerCase().includes('completed_at')) {
+              const retry = await supabase
+                .from('dev_kanban_cards')
+                .update({ status, position })
+                .eq('id', id);
+              error = retry.error;
+            }
+            if (error) throw error;
+          }),
+        );
+        void results;
       });
 
       if (statusChanged) {
@@ -796,7 +818,7 @@ const KanbanDev = () => {
           : `${actorName} moveu ${devTicketLabel(movedCard.ticket_number, movedCard.title)} para "${colTitle}"`,
       });
     }
-  }, [queryClient, cards, sortedColumns, user, actorName, applyDoneLabelRule, isDoneSlug]);
+  }, [queryClient, cards, sortedColumns, user, actorName, applyDoneLabelRule, isDoneSlug, hasActiveCardFilters]);
 
   const resetForm = () => {
     setTitle('');
@@ -1096,16 +1118,34 @@ const KanbanDev = () => {
                       className={`min-h-[120px] flex-1 space-y-2 overflow-y-auto overflow-x-hidden pr-1 transition-colors ${dropSnapshot.isDraggingOver ? 'rounded-md bg-muted/40' : ''}`}
                     >
                       {(cardsByColumn[col.slug] || []).map((card: any, index: number) => (
-                        <Draggable key={card.id} draggableId={card.id} index={index}>
+                        <Draggable
+                          key={card.id}
+                          draggableId={card.id}
+                          index={index}
+                          isDragDisabled={hasActiveCardFilters}
+                        >
                           {(provided, snapshot) => (
                             <div
                               ref={provided.innerRef}
                               {...provided.draggableProps}
-                              {...provided.dragHandleProps}
-                              onClick={() => { if (!snapshot.isDragging) openView(card); }}
-                              className={`bg-card rounded-md border p-3 shadow-sm space-y-2 cursor-pointer hover:shadow-md transition-shadow break-words ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''}`}
+                              className={`bg-card rounded-md border p-3 shadow-sm space-y-2 hover:shadow-md transition-shadow break-words ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''}`}
                               style={{ wordWrap: 'break-word', overflowWrap: 'anywhere', ...provided.draggableProps.style }}
                             >
+                              <div className="flex items-start gap-2">
+                                <button
+                                  type="button"
+                                  {...provided.dragHandleProps}
+                                  disabled={hasActiveCardFilters}
+                                  className={`mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground touch-none ${hasActiveCardFilters ? 'cursor-not-allowed opacity-40' : 'cursor-grab active:cursor-grabbing hover:text-foreground'}`}
+                                  title={hasActiveCardFilters ? 'Limpe os filtros para reorganizar os cards' : 'Arrastar para reordenar'}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <GripVertical className="h-4 w-4" />
+                                </button>
+                                <div
+                                  className="min-w-0 flex-1 space-y-2 cursor-pointer"
+                                  onClick={() => { if (!snapshot.isDragging) openView(card); }}
+                                >
                               <div className="flex items-center justify-between gap-2">
                                 <DevTicketNumberBadge ticketNumber={card.ticket_number} />
                                 <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
@@ -1153,6 +1193,8 @@ const KanbanDev = () => {
                                       Concluído em {format(new Date(getCardCompletedAt(card)!), 'dd/MM HH:mm')}
                                     </span>
                                   )}
+                                </div>
+                              </div>
                                 </div>
                               </div>
                             </div>
