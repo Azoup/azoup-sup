@@ -46,7 +46,7 @@ import { Badge } from '@/components/ui/badge';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
-import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar, Search, GripVertical } from 'lucide-react';
+import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar, Search } from 'lucide-react';
 import { DevCardComments } from '@/components/DevCardComments';
 import { DevTicketNumberBadge } from '@/components/DevTicketNumberBadge';
 import { DevCardFiles } from '@/components/DevCardFiles';
@@ -1121,27 +1121,20 @@ const KanbanDev = () => {
                             <div
                               ref={provided.innerRef}
                               {...provided.draggableProps}
+                              {...provided.dragHandleProps}
                               onClick={() => { if (!snapshot.isDragging) openView(card); }}
-                              className={`bg-card rounded-md border p-3 shadow-sm space-y-2 cursor-pointer hover:shadow-md transition-shadow break-words ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''}`}
+                              className={`bg-card rounded-md border p-3 shadow-sm space-y-2 hover:shadow-md transition-shadow break-words touch-manipulation ${hasActiveCardFilters ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'} ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''}`}
                               style={{ wordWrap: 'break-word', overflowWrap: 'anywhere', ...provided.draggableProps.style }}
                             >
                               <div className="flex items-center justify-between gap-2">
-                                <div className="flex min-w-0 items-center gap-1">
-                                  <button
-                                    type="button"
-                                    {...provided.dragHandleProps}
-                                    disabled={hasActiveCardFilters}
-                                    className={`shrink-0 touch-none ${hasActiveCardFilters ? 'cursor-not-allowed opacity-40' : 'cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground'}`}
-                                    title={hasActiveCardFilters ? 'Limpe os filtros para reorganizar os cards' : 'Arrastar para reordenar'}
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <GripVertical className="h-3 w-3" />
-                                  </button>
-                                  <DevTicketNumberBadge ticketNumber={card.ticket_number} />
-                                </div>
-                                <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
-                                  <button onClick={() => openEdit(card)} className="text-muted-foreground hover:text-primary"><Pencil className="h-3 w-3" /></button>
-                                  <button onClick={() => deleteCard.mutate(card.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
+                                <DevTicketNumberBadge ticketNumber={card.ticket_number} />
+                                <div
+                                  className="flex gap-1 shrink-0"
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <button type="button" onClick={() => openEdit(card)} className="text-muted-foreground hover:text-primary"><Pencil className="h-3 w-3" /></button>
+                                  <button type="button" onClick={() => deleteCard.mutate(card.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
                                 </div>
                               </div>
                               <div className="flex items-start justify-between gap-2">
