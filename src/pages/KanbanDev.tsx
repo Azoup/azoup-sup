@@ -1206,27 +1206,27 @@ const KanbanDev = () => {
                                 )}
                                 <ChecklistBadge cardId={card.id} progressMap={checklistProgress} />
                               </div>
-                              <div className="flex items-center justify-between gap-1 flex-wrap">
+                              <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
                                 {card.analyst && (
-                                  <div className="flex items-center gap-1">
-                                    <ProfileAvatar className="h-5 w-5" photoUrl={card.analyst.photo_url} fallbackLabel={card.analyst.name || '?'} />
-                                    <span className="text-[10px] text-muted-foreground">{card.analyst.name}</span>
+                                  <div className="flex items-center gap-1 min-w-0 shrink">
+                                    <ProfileAvatar className="h-5 w-5 shrink-0" photoUrl={card.analyst.photo_url} fallbackLabel={card.analyst.name || '?'} />
+                                    <span className="text-[10px] text-muted-foreground truncate">{card.analyst.name}</span>
                                   </div>
                                 )}
                                 {card.developer && (
-                                  <div className="flex items-center gap-1">
-                                    <ProfileAvatar className="h-5 w-5" photoUrl={card.developer.photo_url} fallbackLabel={card.developer.name || '?'} />
-                                    <span className="text-[10px] text-muted-foreground">{card.developer.name}</span>
+                                  <div className="flex items-center gap-1 min-w-0 shrink">
+                                    <ProfileAvatar className="h-5 w-5 shrink-0" photoUrl={card.developer.photo_url} fallbackLabel={card.developer.name || '?'} />
+                                    <span className="text-[10px] text-muted-foreground truncate">{card.developer.name}</span>
                                   </div>
                                 )}
-                                <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
-                                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5" title="Data de criação">
-                                    <Calendar className="h-3 w-3" />
+                                <div className="ml-auto flex items-center gap-1.5 shrink-0">
+                                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 whitespace-nowrap" title="Data de criação">
+                                    <Calendar className="h-3 w-3 shrink-0" />
                                     Criado em {format(new Date(card.created_at), 'dd/MM HH:mm')}
                                   </span>
                                   {getCardCompletedAt(card) && (
-                                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5" title="Data de conclusão">
-                                      <CheckCircle2 className="h-3 w-3" />
+                                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5 whitespace-nowrap" title="Data de conclusão">
+                                      <CheckCircle2 className="h-3 w-3 shrink-0" />
                                       Concluído em {format(new Date(getCardCompletedAt(card)!), 'dd/MM HH:mm')}
                                     </span>
                                   )}
