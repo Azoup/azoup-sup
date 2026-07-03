@@ -57,12 +57,12 @@ import { ImageLightbox } from '@/components/ImageLightbox';
 
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-
-const COLUMN_COLOR_OPTIONS = [
-  'border-t-amber-500', 'border-t-blue-500', 'border-t-rose-500',
-  'border-t-emerald-500', 'border-t-purple-500', 'border-t-orange-500',
-  'border-t-cyan-500', 'border-t-pink-500', 'border-t-indigo-500',
-];
+import {
+  columnColorToPickerValue,
+  DEFAULT_KANBAN_COLUMN_COLOR,
+  getKanbanColumnBorderClassName,
+  getKanbanColumnBorderStyle,
+} from '@/lib/kanbanColumnColor';
 
 const KanbanDev = () => {
   const { user } = useAuth();
@@ -104,7 +104,7 @@ const KanbanDev = () => {
 
   const [addColumnOpen, setAddColumnOpen] = useState(false);
   const [newColumnTitle, setNewColumnTitle] = useState('');
-  const [newColumnColor, setNewColumnColor] = useState('border-t-blue-500');
+  const [newColumnColor, setNewColumnColor] = useState(DEFAULT_KANBAN_COLUMN_COLOR);
   const [editColumnOpen, setEditColumnOpen] = useState(false);
   const [editingColumn, setEditingColumn] = useState<any>(null);
   const [editColumnTitle, setEditColumnTitle] = useState('');
@@ -609,7 +609,7 @@ const KanbanDev = () => {
     },
     onSuccess: () => {
       refreshDevKanbanBoard(queryClient);
-      setNewColumnTitle(''); setNewColumnColor('border-t-blue-500');
+      setNewColumnTitle(''); setNewColumnColor(DEFAULT_KANBAN_COLUMN_COLOR);
       setAddColumnOpen(false);
       toast.success('Lista criada!');
     },
@@ -914,7 +914,7 @@ const KanbanDev = () => {
   };
 
   const openEditColumn = (col: any) => {
-    setEditingColumn(col); setEditColumnTitle(col.title); setEditColumnColor(col.color); setEditColumnOpen(true);
+    setEditingColumn(col); setEditColumnTitle(col.title); setEditColumnColor(columnColorToPickerValue(col.color)); setEditColumnOpen(true);
   };
 
   const viewingCardImages = useMemo(() => {
@@ -1085,7 +1085,8 @@ const KanbanDev = () => {
             {sortedColumns.map((col: any, colIdx: number) => (
               <div
                 key={col.id}
-                className={`flex h-full min-h-0 w-[min(92vw,300px)] shrink-0 flex-col rounded-lg border-t-4 bg-muted/30 p-3 sm:w-72 ${col.color}`}
+                className={`flex h-full min-h-0 w-[min(92vw,300px)] shrink-0 flex-col rounded-lg bg-muted/30 p-3 sm:w-72 ${getKanbanColumnBorderClassName(col.color)}`}
+                style={getKanbanColumnBorderStyle(col.color)}
               >
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-semibold text-sm">{col.title}</h3>
@@ -1413,10 +1414,17 @@ const KanbanDev = () => {
             <Input placeholder="Nome da lista" value={newColumnTitle} onChange={e => setNewColumnTitle(e.target.value)} />
             <div>
               <p className="text-xs text-muted-foreground mb-2">Cor da borda:</p>
-              <div className="flex flex-wrap gap-2">
-                {COLUMN_COLOR_OPTIONS.map(c => (
-                  <button key={c} onClick={() => setNewColumnColor(c)} className={`w-8 h-8 rounded-full border-2 border-t-4 ${c} ${newColumnColor === c ? 'ring-2 ring-primary ring-offset-2' : 'border-muted'}`} />
-                ))}
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={newColumnColor}
+                  onChange={(e) => setNewColumnColor(e.target.value)}
+                  className="h-10 w-10 cursor-pointer rounded border-0"
+                />
+                <div
+                  className="h-3 flex-1 rounded border-t-4 bg-muted/40"
+                  style={{ borderTopColor: newColumnColor }}
+                />
               </div>
             </div>
             <Button onClick={() => addColumn.mutate()} disabled={!newColumnTitle.trim() || addColumn.isPending} className="w-full">
@@ -1434,10 +1442,17 @@ const KanbanDev = () => {
             <Input placeholder="Nome da lista" value={editColumnTitle} onChange={e => setEditColumnTitle(e.target.value)} />
             <div>
               <p className="text-xs text-muted-foreground mb-2">Cor da borda:</p>
-              <div className="flex flex-wrap gap-2">
-                {COLUMN_COLOR_OPTIONS.map(c => (
-                  <button key={c} onClick={() => setEditColumnColor(c)} className={`w-8 h-8 rounded-full border-2 border-t-4 ${c} ${editColumnColor === c ? 'ring-2 ring-primary ring-offset-2' : 'border-muted'}`} />
-                ))}
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={editColumnColor}
+                  onChange={(e) => setEditColumnColor(e.target.value)}
+                  className="h-10 w-10 cursor-pointer rounded border-0"
+                />
+                <div
+                  className="h-3 flex-1 rounded border-t-4 bg-muted/40"
+                  style={{ borderTopColor: editColumnColor }}
+                />
               </div>
             </div>
             <Button onClick={() => editColumn.mutate()} disabled={!editColumnTitle.trim() || editColumn.isPending} className="w-full">
