@@ -23,7 +23,13 @@ import {
 } from '@/lib/kanbanCardLabels';
 import { useChecklistProgressMap } from '@/hooks/useChecklistProgressMap';
 import { markBoardLocalWrite } from '@/lib/boardRefreshGuard';
-import { isSupportKanbanCardFormDirty } from '@/lib/kanbanCardFormDirty';
+import { isSupportKanbanCardFormDirty, labelIdsFromCard } from '@/lib/kanbanCardFormDirty';
+import {
+  appendAttachmentActivityLines,
+  buildSupportKanbanCreateActivityDetails,
+  buildSupportKanbanEditActivityDetails,
+  labelNamesByIds,
+} from '@/lib/kanbanActivityLogDetails';
 import { logActivity } from '@/hooks/useActivityLog';
 import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
 import { actorNameFromUser } from '@/lib/actorName';
@@ -169,8 +175,9 @@ const Kanban = () => {
       analystId: string | null;
       prevAnalystId: string | null;
       logLabel?: string;
+      logDetails?: string;
     }) => {
-      const { cardId, cardTitle, imageFiles, attachmentFiles, analystId, prevAnalystId, logLabel } = opts;
+      const { cardId, cardTitle, imageFiles, attachmentFiles, analystId, prevAnalystId, logLabel, logDetails } = opts;
 
       if (imageFiles.length > 0) {
         const { uploaded, failed, images } = await uploadKanbanImagesParallel(
@@ -197,7 +204,14 @@ const Kanban = () => {
         void queryClient.invalidateQueries({ queryKey: ['card-files', cardId] });
       }
 
-      if (logLabel) void logActivity(logLabel, cardTitle);
+      if (logLabel) {
+        const details = appendAttachmentActivityLines(
+          logDetails ?? cardTitle,
+          imageFiles.length,
+          attachmentFiles.length,
+        );
+        void logActivity(logLabel, details);
+      }
 
       const actorName = actorNameFromUser(user);
       try {
@@ -294,6 +308,15 @@ const Kanban = () => {
         imageFiles,
         attachmentFiles,
         logLabel: 'Criou card no Kanban',
+        logDetails: buildSupportKanbanCreateActivityDetails({
+          ticketRef: title,
+          columnSlug: targetColumn,
+          description,
+          analystId: analystId || null,
+          labelNames: labelNamesByIds(labels, selectedLabels),
+          analysts,
+          columns: sortedColumns,
+        }),
       };
     },
     onSuccess: (result) => {
@@ -315,6 +338,7 @@ const Kanban = () => {
           analystId: analystId || null,
           prevAnalystId: null,
           logLabel: result.logLabel,
+          logDetails: result.logDetails,
         });
       }
     },
@@ -380,6 +404,23 @@ const Kanban = () => {
       }
 
       await syncCardLabels('kanban_card_labels', editingCard.id, selectedLabels);
+
+      const logDetails = buildSupportKanbanEditActivityDetails({
+        ticketRef: title,
+        titleFrom: editingCard.title || '',
+        titleTo: title,
+        descriptionFrom: editingCard.description,
+        descriptionTo: description || null,
+        analystFromId: editingCard.analyst_id,
+        analystToId: newAnalystId,
+        statusFrom: editingCard.status,
+        statusTo: statusChanged ? moveToColumnSlug : editingCard.status,
+        labelNamesFrom: labelNamesByIds(labels, labelIdsFromCard(editingCard)),
+        labelNamesTo: labelNamesByIds(labels, selectedLabels),
+        analysts,
+        columns: sortedColumns,
+      });
+
       return {
         cardId: editingCard.id,
         imageFiles,
@@ -387,6 +428,7 @@ const Kanban = () => {
         analystId: newAnalystId,
         prevAnalystId,
         logLabel: 'Editou card no Kanban',
+        logDetails,
         statusMove: statusChanged
           ? {
               fromSlug: editingCard.status,
@@ -434,6 +476,7 @@ const Kanban = () => {
           analystId: result.analystId,
           prevAnalystId: result.prevAnalystId,
           logLabel: result.logLabel,
+          logDetails: result.logDetails,
         });
         if (result.statusMove && editingCard) {
           const analystForNotify = analystId || editingCard.analyst_id;

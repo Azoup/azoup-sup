@@ -781,7 +781,11 @@ const Profile = () => {
                       <div className="flex-1 min-w-0">
                         <p className="font-medium truncate">{log.user_email}</p>
                         <p className="text-muted-foreground">{log.action}</p>
-                        {log.details && <p className="text-xs text-muted-foreground mt-1">{log.details}</p>}
+                        {log.details && (
+                          <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-words">
+                            {log.details}
+                          </p>
+                        )}
                       </div>
                       <span className="text-xs text-muted-foreground whitespace-nowrap">
                         {format(new Date(log.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}

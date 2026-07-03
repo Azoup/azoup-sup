@@ -25,7 +25,13 @@ import {
 } from '@/lib/kanbanCardLabels';
 import { useChecklistProgressMap } from '@/hooks/useChecklistProgressMap';
 import { markBoardLocalWrite } from '@/lib/boardRefreshGuard';
-import { isDevKanbanCardFormDirty } from '@/lib/kanbanCardFormDirty';
+import { isDevKanbanCardFormDirty, labelIdsFromCard } from '@/lib/kanbanCardFormDirty';
+import {
+  appendAttachmentActivityLines,
+  buildDevKanbanCreateActivityDetails,
+  buildDevKanbanEditActivityDetails,
+  labelNamesByIds,
+} from '@/lib/kanbanActivityLogDetails';
 import { logActivity } from '@/hooks/useActivityLog';
 import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { KanbanCardImage } from '@/components/KanbanCardImage';
@@ -211,8 +217,9 @@ const KanbanDev = () => {
       analystId: string | null;
       notify?: { actionType: 'assignee' | 'edit'; message: string };
       logLabel?: string;
+      logDetails?: string;
     }) => {
-      const { cardId, cardTitle, imageFiles, attachmentFiles, developerId, analystId, notify, logLabel } = opts;
+      const { cardId, cardTitle, imageFiles, attachmentFiles, developerId, analystId, notify, logLabel, logDetails } = opts;
 
       if (imageFiles.length > 0) {
         const { uploaded, failed, images } = await uploadKanbanImagesParallel(
@@ -239,7 +246,14 @@ const KanbanDev = () => {
         queryClient.invalidateQueries({ queryKey: ['dev-card-files', cardId] });
       }
 
-      if (logLabel) void logActivity(logLabel, cardTitle);
+      if (logLabel) {
+        const details = appendAttachmentActivityLines(
+          logDetails ?? cardTitle,
+          imageFiles.length,
+          attachmentFiles.length,
+        );
+        void logActivity(logLabel, details);
+      }
 
       if (notify && (developerId || analystId)) {
         try {
@@ -305,6 +319,7 @@ const KanbanDev = () => {
       );
       data.dev_notes = devNotes.trim() || null;
       await syncCardLabels('dev_kanban_card_labels', data.id, selectedLabels);
+      const ticketRef = devTicketLabel(data.ticket_number, title);
       return {
         card: data,
         imageFiles,
@@ -313,10 +328,22 @@ const KanbanDev = () => {
           developerId || analystId
             ? {
                 actionType: 'assignee' as const,
-                message: `${actorName} criou o ticket ${devTicketLabel(data.ticket_number, title)}`,
+                message: `${actorName} criou o ticket ${ticketRef}`,
               }
             : undefined,
         logLabel: 'Criou card no Kanban DEV',
+        logDetails: buildDevKanbanCreateActivityDetails({
+          ticketRef,
+          columnSlug: targetColumn,
+          description,
+          devNotes: devNotes.trim(),
+          analystId: analystId || null,
+          developerId: developerId || null,
+          labelNames: labelNamesByIds(labels, selectedLabels),
+          analysts,
+          developers,
+          columns: sortedColumns,
+        }),
       };
     },
     onSuccess: (result) => {
@@ -350,6 +377,7 @@ const KanbanDev = () => {
           analystId: analystId || null,
           notify: result.notify,
           logLabel: result.logLabel,
+          logDetails: result.logDetails,
         });
       }
     },
@@ -440,12 +468,35 @@ const KanbanDev = () => {
         };
       }
 
+      const ticketRef = devTicketLabel(editingCard.ticket_number, title);
+      const logDetails = buildDevKanbanEditActivityDetails({
+        ticketRef,
+        titleFrom: editingCard.title || '',
+        titleTo: title,
+        descriptionFrom: editingCard.description,
+        descriptionTo: description || null,
+        devNotesFrom: initialDevNotesRef.current,
+        devNotesTo: devNotes.trim(),
+        analystFromId: editingCard.analyst_id,
+        analystToId: analystId || null,
+        developerFromId: editingCard.developer_id,
+        developerToId: newDevId,
+        statusFrom: editingCard.status,
+        statusTo: statusChanged ? moveToColumnSlug : editingCard.status,
+        labelNamesFrom: labelNamesByIds(labels, labelIdsFromCard(editingCard)),
+        labelNamesTo: labelNamesByIds(labels, selectedLabels),
+        analysts,
+        developers,
+        columns: sortedColumns,
+      });
+
       return {
         cardId: editingCard.id,
         imageFiles,
         attachmentFiles,
         notify,
         logLabel: 'Editou card no Kanban DEV',
+        logDetails,
         statusMove: statusChanged
           ? {
               fromSlug: editingCard.status,
@@ -507,6 +558,7 @@ const KanbanDev = () => {
           analystId: analystId || null,
           notify: result.notify,
           logLabel: result.logLabel,
+          logDetails: result.logDetails,
         });
         if (result.statusMove && editingCard) {
           const { fromSlug, toSlug } = result.statusMove;
