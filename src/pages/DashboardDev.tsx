@@ -12,30 +12,14 @@ import { ptBR } from 'date-fns/locale';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
+import {
+  buildStatusChartRows,
+  collectDashboardMonths,
+  countCompletedInPeriod,
+  filterCardsForDashboard,
+} from '@/lib/dashboardDevMetrics';
 
 const COLORS = ['#f59e0b', '#3b82f6', '#ef4444', '#10b981', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
-
-function isInDateRange(
-  isoDate: string | null | undefined,
-  dateFrom: string,
-  dateTo: string,
-): boolean {
-  if (!isoDate) return false;
-  const d = new Date(isoDate);
-  if (dateFrom && d < new Date(dateFrom)) return false;
-  if (dateTo && d > new Date(dateTo + 'T23:59:59')) return false;
-  return true;
-}
-
-function matchesPeopleFilter(
-  card: { analyst_id?: string | null; developer_id?: string | null },
-  filterAnalystId: string,
-  filterDevId: string,
-): boolean {
-  if (filterAnalystId && filterAnalystId !== 'all' && card.analyst_id !== filterAnalystId) return false;
-  if (filterDevId && filterDevId !== 'all' && card.developer_id !== filterDevId) return false;
-  return true;
-}
 
 const DashboardDev = () => {
   const [dateFrom, setDateFrom] = useState('');
@@ -58,6 +42,8 @@ const DashboardDev = () => {
       const { data } = await supabase.from('dev_kanban_cards').select('*');
       return data || [];
     },
+    staleTime: 30_000,
+    refetchOnMount: 'always',
   });
 
   const { data: analysts = [] } = useQuery({
@@ -104,33 +90,23 @@ const DashboardDev = () => {
     [columns],
   );
 
-  const filteredCards = useMemo(() => {
-    return cards.filter((c: any) => {
-      if (dateFrom && new Date(c.created_at) < new Date(dateFrom)) return false;
-      if (dateTo && new Date(c.created_at) > new Date(dateTo + 'T23:59:59')) return false;
-      if (!matchesPeopleFilter(c, filterAnalystId, filterDevId)) return false;
-      return true;
-    });
-  }, [cards, dateFrom, dateTo, filterAnalystId, filterDevId]);
+  const filteredCards = useMemo(
+    () => filterCardsForDashboard(cards, dateFrom, dateTo, filterAnalystId, filterDevId),
+    [cards, dateFrom, dateTo, filterAnalystId, filterDevId],
+  );
 
   const totalCards = filteredCards.length;
 
-  /** Com filtro de datas: tickets concluídos no período (completed_at). Sem filtro: tickets na coluna de conclusão. */
   const doneCards = useMemo(() => {
     if (hasDateFilter) {
-      return cards.filter((c: any) => {
-        if (!matchesPeopleFilter(c, filterAnalystId, filterDevId)) return false;
-        if (c.completed_at && isInDateRange(c.completed_at, dateFrom, dateTo)) return true;
-        // Fallback: cards antigos sem completed_at, mas já na coluna de conclusão e criados no período
-        if (
-          !c.completed_at &&
-          isKanbanCompletionSlug(c.status, completionColumnSlug) &&
-          isInDateRange(c.created_at, dateFrom, dateTo)
-        ) {
-          return true;
-        }
-        return false;
-      }).length;
+      return countCompletedInPeriod(
+        cards,
+        dateFrom,
+        dateTo,
+        completionColumnSlug,
+        filterAnalystId,
+        filterDevId,
+      );
     }
     return filteredCards.filter((c: any) =>
       isKanbanCompletionSlug(c.status, completionColumnSlug),
@@ -139,18 +115,18 @@ const DashboardDev = () => {
 
   const inProgressCards = filteredCards.filter((c: any) => c.status === 'em-andamento').length;
 
-  const statusData = useMemo(() => {
-    const colSlugs = new Set(columns.map((col: any) => col.slug));
-    const rows = columns.map((col: any) => ({
-      name: col.title,
-      cards: filteredCards.filter((c: any) => c.status === col.slug).length,
-    }));
-    const orphanCards = filteredCards.filter((c: any) => !colSlugs.has(c.status)).length;
-    if (orphanCards > 0) {
-      rows.push({ name: 'Sem lista correspondente', cards: orphanCards });
-    }
-    return rows;
-  }, [filteredCards, columns]);
+  const statusData = useMemo(
+    () =>
+      buildStatusChartRows(columns, cards, filteredCards, {
+        hasDateFilter,
+        dateFrom,
+        dateTo,
+        completionColumnSlug,
+        filterAnalystId,
+        filterDevId,
+      }),
+    [columns, cards, filteredCards, hasDateFilter, dateFrom, dateTo, completionColumnSlug, filterAnalystId, filterDevId],
+  );
 
   const statusChartLayout = useMemo(() => {
     const rowCount = Math.max(statusData.length, 1);
@@ -198,11 +174,7 @@ const DashboardDev = () => {
     return Object.values(map);
   }, [cardLabels, filteredCards]);
 
-  const months = useMemo(() => {
-    const set = new Set<string>();
-    cards.forEach((c: any) => set.add(format(new Date(c.created_at), 'yyyy-MM')));
-    return [...set].sort().reverse();
-  }, [cards]);
+  const months = useMemo(() => collectDashboardMonths(cards), [cards]);
 
   const handleExportPDF = async () => {
     const el = document.getElementById('dashboard-dev-content');
@@ -237,7 +209,7 @@ const DashboardDev = () => {
         </div>
         <div>
           <label className="text-xs text-muted-foreground">Mês</label>
-          <Select value={monthFilter} onValueChange={applyMonthFilter}>
+          <Select value={monthFilter || 'all'} onValueChange={applyMonthFilter}>
             <SelectTrigger className="w-40"><SelectValue placeholder="Todos" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
@@ -249,7 +221,7 @@ const DashboardDev = () => {
         </div>
         <div>
           <label className="text-xs text-muted-foreground">Analista</label>
-          <Select value={filterAnalystId} onValueChange={setFilterAnalystId}>
+          <Select value={filterAnalystId || 'all'} onValueChange={setFilterAnalystId}>
             <SelectTrigger className="w-40"><SelectValue placeholder="Todos" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
@@ -259,7 +231,7 @@ const DashboardDev = () => {
         </div>
         <div>
           <label className="text-xs text-muted-foreground">Desenvolvedor</label>
-          <Select value={filterDevId} onValueChange={setFilterDevId}>
+          <Select value={filterDevId || 'all'} onValueChange={setFilterDevId}>
             <SelectTrigger className="w-44"><SelectValue placeholder="Todos" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
@@ -312,8 +284,8 @@ const DashboardDev = () => {
               <CardTitle className="text-sm">Cards por Status (listas do Kanban DEV)</CardTitle>
               <p className="text-xs text-muted-foreground font-normal">
                 {hasDateFilter
-                  ? 'Tickets criados no período selecionado, agrupados pela lista em que estão hoje.'
-                  : 'Todos os tickets, agrupados pela lista em que estão hoje.'}
+                  ? 'Demais listas: tickets criados no período. Concluídos: tickets finalizados no período (data de conclusão), como na lista Concluídos do Kanban.'
+                  : 'Mesma base do Kanban DEV — todos os tickets, pela lista em que estão hoje. Filtros do Kanban (busca/etiqueta) não se aplicam aqui.'}
               </p>
             </CardHeader>
             <CardContent>
