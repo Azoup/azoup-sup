@@ -7,12 +7,35 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, ClipboardList, CheckCircle2, Clock, Users, Code2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
-import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
 
 const COLORS = ['#f59e0b', '#3b82f6', '#ef4444', '#10b981', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+
+function isInDateRange(
+  isoDate: string | null | undefined,
+  dateFrom: string,
+  dateTo: string,
+): boolean {
+  if (!isoDate) return false;
+  const d = new Date(isoDate);
+  if (dateFrom && d < new Date(dateFrom)) return false;
+  if (dateTo && d > new Date(dateTo + 'T23:59:59')) return false;
+  return true;
+}
+
+function matchesPeopleFilter(
+  card: { analyst_id?: string | null; developer_id?: string | null },
+  filterAnalystId: string,
+  filterDevId: string,
+): boolean {
+  if (filterAnalystId && filterAnalystId !== 'all' && card.analyst_id !== filterAnalystId) return false;
+  if (filterDevId && filterDevId !== 'all' && card.developer_id !== filterDevId) return false;
+  return true;
+}
 
 const DashboardDev = () => {
   const [dateFrom, setDateFrom] = useState('');
@@ -63,28 +86,57 @@ const DashboardDev = () => {
 
   const applyMonthFilter = (month: string) => {
     setMonthFilter(month);
-    if (month) {
+    if (month && month !== 'all') {
       const d = parseISO(month + '-01');
       setDateFrom(format(startOfMonth(d), 'yyyy-MM-dd'));
       setDateTo(format(endOfMonth(d), 'yyyy-MM-dd'));
     } else {
+      setMonthFilter('');
       setDateFrom('');
       setDateTo('');
     }
   };
 
+  const hasDateFilter = !!(dateFrom || dateTo);
+
+  const completionColumnSlug = useMemo(
+    () => resolveCompletionColumnSlug(columns, 'dev'),
+    [columns],
+  );
+
   const filteredCards = useMemo(() => {
     return cards.filter((c: any) => {
       if (dateFrom && new Date(c.created_at) < new Date(dateFrom)) return false;
       if (dateTo && new Date(c.created_at) > new Date(dateTo + 'T23:59:59')) return false;
-      if (filterAnalystId && c.analyst_id !== filterAnalystId) return false;
-      if (filterDevId && c.developer_id !== filterDevId) return false;
+      if (!matchesPeopleFilter(c, filterAnalystId, filterDevId)) return false;
       return true;
     });
   }, [cards, dateFrom, dateTo, filterAnalystId, filterDevId]);
 
   const totalCards = filteredCards.length;
-  const doneCards = filteredCards.filter((c: any) => c.status === 'finalizados').length;
+
+  /** Com filtro de datas: tickets concluídos no período (completed_at). Sem filtro: tickets na coluna de conclusão. */
+  const doneCards = useMemo(() => {
+    if (hasDateFilter) {
+      return cards.filter((c: any) => {
+        if (!matchesPeopleFilter(c, filterAnalystId, filterDevId)) return false;
+        if (c.completed_at && isInDateRange(c.completed_at, dateFrom, dateTo)) return true;
+        // Fallback: cards antigos sem completed_at, mas já na coluna de conclusão e criados no período
+        if (
+          !c.completed_at &&
+          isKanbanCompletionSlug(c.status, completionColumnSlug) &&
+          isInDateRange(c.created_at, dateFrom, dateTo)
+        ) {
+          return true;
+        }
+        return false;
+      }).length;
+    }
+    return filteredCards.filter((c: any) =>
+      isKanbanCompletionSlug(c.status, completionColumnSlug),
+    ).length;
+  }, [cards, filteredCards, hasDateFilter, dateFrom, dateTo, filterAnalystId, filterDevId, completionColumnSlug]);
+
   const inProgressCards = filteredCards.filter((c: any) => c.status === 'em-andamento').length;
 
   const statusData = useMemo(() => {
@@ -224,14 +276,18 @@ const DashboardDev = () => {
             <CardContent className="pt-4 text-center">
               <ClipboardList className="h-6 w-6 mx-auto text-primary mb-1" />
               <p className="text-2xl font-bold">{totalCards}</p>
-              <p className="text-xs text-muted-foreground">Total de Cards</p>
+              <p className="text-xs text-muted-foreground">
+                {hasDateFilter ? 'Criados no período' : 'Total de Cards'}
+              </p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-4 text-center">
               <CheckCircle2 className="h-6 w-6 mx-auto text-emerald-500 mb-1" />
               <p className="text-2xl font-bold">{doneCards}</p>
-              <p className="text-xs text-muted-foreground">Finalizados</p>
+              <p className="text-xs text-muted-foreground">
+                {hasDateFilter ? 'Concluídos no período' : 'Finalizados (lista atual)'}
+              </p>
             </CardContent>
           </Card>
           <Card>
@@ -254,6 +310,11 @@ const DashboardDev = () => {
           <Card className={statusData.length > 4 ? 'lg:col-span-2' : undefined}>
             <CardHeader>
               <CardTitle className="text-sm">Cards por Status (listas do Kanban DEV)</CardTitle>
+              <p className="text-xs text-muted-foreground font-normal">
+                {hasDateFilter
+                  ? 'Tickets criados no período selecionado, agrupados pela lista em que estão hoje.'
+                  : 'Todos os tickets, agrupados pela lista em que estão hoje.'}
+              </p>
             </CardHeader>
             <CardContent>
               {statusData.length === 0 ? (
