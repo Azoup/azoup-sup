@@ -1,4 +1,4 @@
-import tus from 'tus-js-client';
+import { Upload as TusUpload } from 'tus-js-client';
 import { supabase } from '@/integrations/supabase/client';
 import type { KanbanCardFileRow } from '@/lib/kanbanCardFiles';
 import {
@@ -63,7 +63,7 @@ export async function uploadKanbanFileResumable(
   const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
   await new Promise<void>((resolve, reject) => {
-    const upload = new tus.Upload(file, {
+    const upload = new TusUpload(file, {
       endpoint: `${supabaseUrl}/storage/v1/upload/resumable`,
       retryDelays: [0, 3000, 5000, 10000, 20000],
       headers: {
