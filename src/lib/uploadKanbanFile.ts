@@ -1,18 +1,23 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { KanbanCardFileRow } from '@/lib/kanbanCardFiles';
 import {
+  KANBAN_API_UPLOAD_MAX_BYTES,
+  resolveKanbanFileContentType,
+  validateKanbanFileSize,
+} from '@/lib/kanbanFileUploadLimits';
+import {
   uploadKanbanFileViaApi,
   type KanbanCardFilesTable,
   type KanbanFilesBucket,
 } from '@/lib/uploadKanbanFileApi';
+import {
+  shouldUseResumableKanbanUpload,
+  uploadKanbanFileResumable,
+} from '@/lib/uploadKanbanFileResumable';
 
-function resolveContentType(file: File): string {
-  const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
-  if (ext === 'rar' || ext === 'zip') return 'application/octet-stream';
-  return file.type || 'application/octet-stream';
-}
+export type KanbanFileUploadProgress = (progress: number) => void;
 
-/** Upload direto ao Storage (fallback quando a API não está disponível). */
+/** Upload direto ao Storage (arquivos pequenos/médios). */
 async function uploadKanbanFileDirect(
   bucket: KanbanFilesBucket,
   filesTable: KanbanCardFilesTable,
@@ -20,15 +25,20 @@ async function uploadKanbanFileDirect(
   file: File,
   userId?: string,
   userEmail?: string,
+  onProgress?: KanbanFileUploadProgress,
 ): Promise<KanbanCardFileRow> {
   const ext = file.name.split('.').pop() || 'bin';
-  const contentType = resolveContentType(file);
+  const contentType = resolveKanbanFileContentType(file);
   const path = `${cardId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
+  onProgress?.(10);
 
   const { error: uploadError } = await supabase.storage
     .from(bucket)
     .upload(path, file, { contentType, upsert: false });
   if (uploadError) throw uploadError;
+
+  onProgress?.(90);
 
   const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(path);
   const { data, error } = await supabase
@@ -47,10 +57,15 @@ async function uploadKanbanFileDirect(
     .single();
 
   if (error) throw error;
+  onProgress?.(100);
   return data as KanbanCardFileRow;
 }
 
-/** Envia anexo de ticket: API (service role) com fallback para upload direto. */
+/**
+ * Envia anexo de ticket.
+ * - Até ~48 MB: tenta API (service role), com fallback para Storage direto.
+ * - Acima de 6 MB: upload resumável (TUS) direto ao Storage.
+ */
 export async function uploadKanbanFileForCard(
   bucket: KanbanFilesBucket,
   filesTable: KanbanCardFilesTable,
@@ -58,11 +73,33 @@ export async function uploadKanbanFileForCard(
   file: File,
   userId?: string,
   userEmail?: string,
+  onProgress?: KanbanFileUploadProgress,
 ): Promise<KanbanCardFileRow> {
-  try {
-    return await uploadKanbanFileViaApi(bucket, filesTable, cardId, file);
-  } catch (apiErr) {
-    console.warn('[kanban] upload de arquivo via API falhou, tentando storage direto', apiErr);
-    return uploadKanbanFileDirect(bucket, filesTable, cardId, file, userId, userEmail);
+  const sizeError = validateKanbanFileSize(file);
+  if (sizeError) throw new Error(sizeError);
+
+  if (shouldUseResumableKanbanUpload(file.size)) {
+    return uploadKanbanFileResumable(
+      bucket,
+      filesTable,
+      cardId,
+      file,
+      userId,
+      userEmail,
+      onProgress,
+    );
   }
+
+  if (file.size <= KANBAN_API_UPLOAD_MAX_BYTES) {
+    try {
+      onProgress?.(20);
+      const row = await uploadKanbanFileViaApi(bucket, filesTable, cardId, file);
+      onProgress?.(100);
+      return row;
+    } catch (apiErr) {
+      console.warn('[kanban] upload de arquivo via API falhou, tentando storage direto', apiErr);
+    }
+  }
+
+  return uploadKanbanFileDirect(bucket, filesTable, cardId, file, userId, userEmail, onProgress);
 }

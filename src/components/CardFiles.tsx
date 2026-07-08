@@ -7,6 +7,11 @@ import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
 import { actorNameFromUser } from '@/lib/actorName';
 import { fetchKanbanCardFiles } from '@/lib/kanbanCardFiles';
 import { uploadKanbanFileForCard } from '@/lib/uploadKanbanFile';
+import {
+  formatKanbanFileSize,
+  KANBAN_MAX_FILE_SIZE_LABEL,
+  validateKanbanFileSize,
+} from '@/lib/kanbanFileUploadLimits';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Paperclip, Download, Trash2, FileText, FileVideo, FileImage, File as FileIcon, Loader2, Eye } from 'lucide-react';
@@ -19,8 +24,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
-const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
-
 interface CardFilesProps {
   cardId: string;
 }
@@ -30,13 +33,6 @@ interface UploadStatus {
   progress: number;
   status: 'uploading' | 'done' | 'error';
   error?: string;
-}
-
-function formatSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 function getFileIcon(type: string | null) {
@@ -66,8 +62,9 @@ export function CardFiles({ cardId }: CardFilesProps) {
   });
 
   const uploadFile = useCallback(async (file: File) => {
-    if (file.size > MAX_FILE_SIZE) {
-      toast.error(`${file.name}: excede o limite de 100MB`);
+    const sizeError = validateKanbanFileSize(file);
+    if (sizeError) {
+      toast.error(sizeError);
       return;
     }
 
@@ -75,14 +72,6 @@ export function CardFiles({ cardId }: CardFilesProps) {
     setUploads(prev => [...prev, { name: file.name, progress: 0, status: 'uploading' }]);
 
     try {
-      const progressInterval = setInterval(() => {
-        setUploads(prev => prev.map((u, i) =>
-          i === idx && u.status === 'uploading' && u.progress < 90
-            ? { ...u, progress: u.progress + 10 }
-            : u
-        ));
-      }, 300);
-
       await uploadKanbanFileForCard(
         'kanban-files',
         'kanban_card_files',
@@ -90,9 +79,12 @@ export function CardFiles({ cardId }: CardFilesProps) {
         file,
         user?.id,
         user?.email || '',
+        (progress) => {
+          setUploads(prev => prev.map((u, i) =>
+            i === idx && u.status === 'uploading' ? { ...u, progress } : u
+          ));
+        },
       );
-
-      clearInterval(progressInterval);
 
       setUploads(prev => prev.map((u, i) => i === idx ? { ...u, progress: 100, status: 'done' } : u));
       void queryClient.invalidateQueries({ queryKey: ['card-files', cardId] });
@@ -168,10 +160,14 @@ export function CardFiles({ cardId }: CardFilesProps) {
           <Paperclip className="h-3.5 w-3.5 mr-1" />
           Anexar arquivos
         </Button>
+        <span className="text-[10px] text-muted-foreground w-full sm:w-auto">
+          Até {KANBAN_MAX_FILE_SIZE_LABEL} por arquivo
+        </span>
         <input
           ref={fileInputRef}
           type="file"
           multiple
+          accept="*/*"
           className="hidden"
           onChange={(e) => handleFiles(e.target.files)}
         />
@@ -211,7 +207,7 @@ export function CardFiles({ cardId }: CardFilesProps) {
                 <div className="flex-1 min-w-0">
                   <p className="truncate font-medium">{f.file_name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {formatSize(f.file_size ?? 0)} • {format(new Date(f.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                    {formatKanbanFileSize(f.file_size ?? 0)} • {format(new Date(f.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
                   </p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">

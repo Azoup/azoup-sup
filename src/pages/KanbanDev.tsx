@@ -18,6 +18,11 @@ import {
 import { uploadKanbanImagesParallel } from '@/lib/uploadKanbanCardAssets';
 import { uploadKanbanFileForCard } from '@/lib/uploadKanbanFile';
 import {
+  formatKanbanFileSize,
+  KANBAN_MAX_FILE_SIZE_LABEL,
+  validateKanbanFileSize,
+} from '@/lib/kanbanFileUploadLimits';
+import {
   dedupeCardLabelRows,
   labelsForCardFromRows,
   syncCardLabels,
@@ -372,6 +377,11 @@ const KanbanDev = () => {
 
   const uploadAndSaveFiles = async (cardId: string, files: File[]) => {
     for (const file of files) {
+      const sizeError = validateKanbanFileSize(file);
+      if (sizeError) {
+        toast.error(sizeError);
+        continue;
+      }
       try {
         await uploadKanbanFileForCard(
           'dev-kanban-files',
@@ -1652,16 +1662,27 @@ function DevCardFormContent({
     e.target.value = '';
   };
 
+  const addPendingFiles = useCallback((files: File[]) => {
+    const accepted: File[] = [];
+    for (const file of files) {
+      const sizeError = validateKanbanFileSize(file);
+      if (sizeError) {
+        toast.error(sizeError);
+        continue;
+      }
+      accepted.push(file);
+    }
+    if (accepted.length > 0) setPendingFiles([...pendingFiles, ...accepted]);
+  }, [pendingFiles, setPendingFiles]);
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length > 0) setPendingFiles([...pendingFiles, ...files]);
+    addPendingFiles(Array.from(e.target.files || []));
     e.target.value = '';
   };
 
   const handleFileDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    const files = Array.from(e.dataTransfer.files || []);
-    if (files.length > 0) setPendingFiles([...pendingFiles, ...files]);
+    addPendingFiles(Array.from(e.dataTransfer.files || []));
   };
 
   const removePending = (index: number) => {
@@ -1671,12 +1692,7 @@ function DevCardFormContent({
     setPendingFiles(pendingFiles.filter((_, i) => i !== index));
   };
 
-  const formatSize = (b: number) => {
-    if (b < 1024) return `${b} B`;
-    if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
-    if (b < 1024 * 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(b / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-  };
+  const formatSize = formatKanbanFileSize;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" onPaste={handlePaste}>
@@ -1786,7 +1802,7 @@ function DevCardFormContent({
         onDrop={handleFileDrop}
       >
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <span className="flex items-center gap-1"><Paperclip className="h-3 w-3" /> Anexar arquivos (qualquer formato) — arraste aqui ou</span>
+          <span className="flex items-center gap-1"><Paperclip className="h-3 w-3" /> Anexar arquivos (até {KANBAN_MAX_FILE_SIZE_LABEL}) — arraste aqui ou</span>
           <label className="cursor-pointer text-primary hover:underline">
             selecionar
             <input type="file" accept="*/*" multiple className="hidden" onChange={handleFileSelect} />

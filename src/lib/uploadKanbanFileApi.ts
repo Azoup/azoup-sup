@@ -1,5 +1,6 @@
 import { getConfiguredSupabaseProjectRef } from '@/lib/supabaseProject';
 import type { KanbanCardFileRow } from '@/lib/kanbanCardFiles';
+import { resolveKanbanFileContentType } from '@/lib/kanbanFileUploadLimits';
 
 export type KanbanFilesBucket = 'kanban-files' | 'dev-kanban-files';
 export type KanbanCardFilesTable = 'kanban_card_files' | 'dev_kanban_card_files';
@@ -48,9 +49,7 @@ export async function uploadKanbanFileViaApi(
   const token = getStoredAccessToken();
   if (!token) throw new Error('Sessão expirada — faça login novamente.');
 
-  const ext = file.name.split('.').pop() || 'bin';
-  const isRar = ext.toLowerCase() === 'rar';
-  const contentType = isRar ? 'application/octet-stream' : (file.type || 'application/octet-stream');
+  const contentType = resolveKanbanFileContentType(file);
   const fileBase64 = await fileToBase64(file);
 
   const res = await fetch('/api/upload-kanban-file', {

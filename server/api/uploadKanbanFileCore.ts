@@ -18,6 +18,11 @@ const BUCKET_TABLE_MAP: Record<KanbanFilesBucket, KanbanCardFilesTable> = {
   "dev-kanban-files": "dev_kanban_card_files",
 };
 
+/** Limite da API (base64); arquivos maiores usam upload direto/resumável no cliente. */
+const KANBAN_API_MAX_FILE_BYTES = 48 * 1024 * 1024;
+/** Limite do bucket ao criar via API (5 GB). */
+const KANBAN_BUCKET_MAX_FILE_BYTES = 5 * 1024 * 1024 * 1024;
+
 const ALLOWED_MIME_TYPES = [
   "image/jpeg",
   "image/png",
@@ -26,6 +31,10 @@ const ALLOWED_MIME_TYPES = [
   "video/mp4",
   "video/quicktime",
   "video/webm",
+  "video/x-msvideo",
+  "video/x-matroska",
+  "video/mpeg",
+  "video/x-ms-wmv",
   "application/pdf",
   "text/plain",
   "text/csv",
@@ -38,6 +47,9 @@ const ALLOWED_MIME_TYPES = [
   "application/vnd.rar",
   "application/x-compressed",
   "application/rar",
+  "application/x-7z-compressed",
+  "application/gzip",
+  "application/x-tar",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.ms-excel",
@@ -63,7 +75,7 @@ async function ensureKanbanFilesBucket(admin: SupabaseClient, bucketId: KanbanFi
 
   const { error: createErr } = await admin.storage.createBucket(bucketId, {
     public: true,
-    fileSizeLimit: 104857600,
+    fileSizeLimit: KANBAN_BUCKET_MAX_FILE_BYTES,
     allowedMimeTypes: ALLOWED_MIME_TYPES,
   });
   if (createErr && !/already exists/i.test(createErr.message)) {
@@ -115,7 +127,7 @@ export async function uploadKanbanFileCore(
   if (fileBuffer.length < 1) {
     return { status: 400, body: { error: "empty_file" } };
   }
-  if (fileBuffer.length > 104857600) {
+  if (fileBuffer.length > KANBAN_API_MAX_FILE_BYTES) {
     return { status: 400, body: { error: "file_too_large" } };
   }
 
