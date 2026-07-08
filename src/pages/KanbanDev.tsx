@@ -44,7 +44,7 @@ import { filesFromClipboardData } from '@/lib/clipboardImage';
 import { loadDevKanbanDevNotes, saveDevKanbanDevNotes } from '@/lib/devKanbanDevNotes';
 import { devTicketLabel, devTicketMatchesSearch, isDevTicketNumberQuery } from '@/lib/devKanbanTicketNumber';
 import { isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
-import { computeKanbanDragPositionUpdates, sortKanbanCardsByPosition } from '@/lib/kanbanCardReorder';
+import { computeKanbanDragPositionUpdates, computeKanbanDragPositionUpdatesWithVisible, sortKanbanCardsByPosition } from '@/lib/kanbanCardReorder';
 import { persistDevKanbanCardPositions } from '@/lib/persistDevKanbanCardPositions';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
@@ -867,7 +867,7 @@ const KanbanDev = () => {
   }, [ensureDoneLabel, queryClient, labels, cardLabels, isDoneSlug]);
 
   const onDragEnd = useCallback((result: DropResult) => {
-    if (!result.destination || dragBusyRef.current || hasActiveCardFilters) return;
+    if (!result.destination || dragBusyRef.current) return;
     const { source, destination, draggableId } = result;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
 
@@ -875,14 +875,24 @@ const KanbanDev = () => {
       (queryClient.getQueryData<{ cards?: any[] }>(DEV_KANBAN_BOARD_QUERY_KEY)?.cards as any[]) ??
       cards;
 
-    const positionUpdates = computeKanbanDragPositionUpdates(
-      boardCards,
-      draggableId,
-      source.droppableId,
-      destination.droppableId,
-      source.index,
-      destination.index,
-    );
+    const positionUpdates = hasActiveCardFilters
+      ? computeKanbanDragPositionUpdatesWithVisible(
+          boardCards,
+          cardsByColumn,
+          draggableId,
+          source.droppableId,
+          destination.droppableId,
+          source.index,
+          destination.index,
+        )
+      : computeKanbanDragPositionUpdates(
+          boardCards,
+          draggableId,
+          source.droppableId,
+          destination.droppableId,
+          source.index,
+          destination.index,
+        );
     if (positionUpdates.length === 0) return;
 
     const movedCard = boardCards.find((c: any) => c.id === draggableId);
@@ -968,7 +978,7 @@ const KanbanDev = () => {
         });
       }
     })();
-  }, [queryClient, cards, sortedColumns, user, actorName, applyDoneLabelRule, isDoneSlug, hasActiveCardFilters]);
+  }, [queryClient, cards, cardsByColumn, sortedColumns, user, actorName, applyDoneLabelRule, isDoneSlug, hasActiveCardFilters]);
 
   const resetForm = () => {
     setTitle('');
@@ -1273,7 +1283,6 @@ const KanbanDev = () => {
                           key={card.id}
                           draggableId={card.id}
                           index={index}
-                          isDragDisabled={hasActiveCardFilters}
                         >
                           {(provided, snapshot) => (
                             <div
@@ -1281,7 +1290,7 @@ const KanbanDev = () => {
                               {...provided.draggableProps}
                               {...provided.dragHandleProps}
                               onClick={() => { if (!snapshot.isDragging) openView(card); }}
-                              className={`bg-card rounded-md border p-3 shadow-sm space-y-2 hover:shadow-md transition-shadow break-words touch-manipulation ${hasActiveCardFilters ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'} ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''}`}
+                              className={`bg-card rounded-md border p-3 shadow-sm space-y-2 hover:shadow-md transition-shadow break-words touch-manipulation cursor-grab active:cursor-grabbing ${snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/20' : ''}`}
                               style={{ wordWrap: 'break-word', overflowWrap: 'anywhere', ...provided.draggableProps.style }}
                             >
                               <div className="flex items-center justify-between gap-2">
