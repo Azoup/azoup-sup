@@ -1,6 +1,6 @@
 import { extractTicketAttendant, fetchTicketBatch, type FetchDigisacFn } from "./digisacNpsTickets.ts";
 import { pickSuporteDepartmentId } from "./digisacAnswersOverview.ts";
-import { extractTicketContact } from "./digisacTicketContact.ts";
+import { extractTicketContact, extractTicketContactId, fetchContactBatch } from "./digisacTicketContact.ts";
 
 export const WARN_THRESHOLD_MINUTES = 40;
 /** Notifica admins no app ao completar este tempo de atendimento. */
@@ -11,6 +11,7 @@ export type SlaTicket = {
   protocol: string;
   analystName: string;
   digisacUserId: string;
+  contactId: string;
   clientName: string;
   clientContact: string;
   startedAt: Date;
@@ -165,6 +166,7 @@ export function parseOpenTicketBase(
     protocol: extractTicketProtocol(ticket),
     analystName: attendant?.name || "Sem atendente",
     digisacUserId: attendant?.userId || "",
+    contactId: extractTicketContactId(ticket),
     clientName: client?.name || "",
     clientContact: client?.contact || "",
     startedAt,
@@ -212,8 +214,8 @@ function buildOpenTicketQueryVariants(departmentId?: string): URLSearchParams[] 
   };
 
   const combos: Record<string, string>[] = [
-    { "where[status]": "open" },
     { status: "open" },
+    { "where[status]": "open" },
     { "where[status][in]": "open,in_progress" },
     { "filter[status]": "open" },
     { "where[isOpen]": "true" },
@@ -366,14 +368,11 @@ async function enrichSlaTicketsDetails(
   tickets: SlaTicket[],
   mappingNames: Map<string, string>,
 ): Promise<void> {
-  const needsDetail = tickets.filter(
-    (t) => !t.digisacUserId
-      || t.analystName === "Sem atendente"
-      || !t.clientName
-      || !t.clientContact,
+  const needsAttendant = tickets.filter(
+    (t) => !t.digisacUserId || t.analystName === "Sem atendente",
   );
-  const attendantById = needsDetail.length > 0
-    ? await fetchTicketBatch(fetchDigisac, needsDetail.map((t) => t.id))
+  const attendantById = needsAttendant.length > 0
+    ? await fetchTicketBatch(fetchDigisac, needsAttendant.map((t) => t.id))
     : new Map<string, { userId: string; name: string }>();
 
   for (const ticket of tickets) {
@@ -385,25 +384,22 @@ async function enrichSlaTicketsDetails(
     ticket.analystName = resolveAnalystName(ticket.digisacUserId, ticket.analystName, mappingNames);
   }
 
-  const stillMissingContact = tickets.filter((t) => !t.clientName || !t.clientContact);
-  const take = stillMissingContact.slice(0, 80);
-  await Promise.all(
-    take.map(async (ticket) => {
-      const r = await fetchDigisac(`/api/v1/tickets/${ticket.id}`);
-      if (!r.ok || !r.data || typeof r.data !== "object") return;
-      const payload = r.data as Record<string, unknown>;
-      const raw = payload.data && typeof payload.data === "object"
-        ? payload.data as Record<string, unknown>
-        : payload;
-      const client = extractTicketContact(raw);
-      if (client) {
-        if (!ticket.clientName) ticket.clientName = client.name;
-        if (!ticket.clientContact || ticket.clientContact === "—") {
-          ticket.clientContact = client.contact;
-        }
-      }
-    }),
-  );
+  const contactIds = tickets
+    .filter((t) => !t.clientName || !t.clientContact || t.clientContact === "—")
+    .map((t) => t.contactId)
+    .filter(Boolean);
+
+  const contactById = contactIds.length > 0
+    ? await fetchContactBatch(fetchDigisac, contactIds)
+    : new Map<string, { name: string; contact: string }>();
+
+  for (const ticket of tickets) {
+    if (!ticket.contactId) continue;
+    const client = contactById.get(ticket.contactId);
+    if (!client) continue;
+    ticket.clientName = client.name;
+    ticket.clientContact = client.contact;
+  }
 }
 
 async function loadAdminUserIds(admin: SupabaseAdmin): Promise<string[]> {

@@ -108,6 +108,54 @@ function extractAttendant(ticket) {
   return { userId: "", name: "Sem atendente" };
 }
 
+function formatPhoneDisplay(raw) {
+  const digits = String(raw || "").replace(/\D/g, "");
+  if (digits.length === 13 && digits.startsWith("55")) {
+    const ddd = digits.slice(2, 4);
+    const rest = digits.slice(4);
+    if (rest.length === 9) return `+55 (${ddd}) ${rest.slice(0, 5)}-${rest.slice(5)}`;
+    if (rest.length === 8) return `+55 (${ddd}) ${rest.slice(0, 4)}-${rest.slice(4)}`;
+  }
+  if (digits.length === 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  if (digits.length === 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return String(raw || "").trim();
+}
+
+function parseContactRecord(record) {
+  if (!record || typeof record !== "object") return null;
+  const name = pickStr(
+    record.internalName,
+    record.name,
+    record.alternativeName,
+    record.fullName,
+    record.displayName,
+  );
+  const nested = record.data && typeof record.data === "object" ? record.data : null;
+  const phone = pickStr(
+    nested?.number,
+    record.number,
+    nested?.jidId?.split?.("@")?.[0],
+    record.jidId?.split?.("@")?.[0],
+  );
+  if (!name && !phone) return null;
+  return { name: name || "Cliente", contact: phone ? formatPhoneDisplay(phone) : "—" };
+}
+
+async function fetchContactsByIds(ids) {
+  const map = new Map();
+  const unique = [...new Set(ids.filter(Boolean))];
+  for (const id of unique) {
+    const r = await digisacGet(`/contacts/${id}`);
+    if (!r.ok || !r.data || typeof r.data !== "object") continue;
+    const record = r.data.data && !Array.isArray(r.data.data) && r.data.data.id
+      ? r.data.data
+      : (Array.isArray(r.data.data) ? r.data.data[0] : r.data);
+    const parsed = parseContactRecord(record);
+    if (parsed) map.set(id, parsed);
+  }
+  return map;
+}
+
 function extractContact(ticket) {
   for (const key of ["contact", "person", "client", "customer", "lastContact"]) {
     const nested = ticket[key];
@@ -139,6 +187,7 @@ function normalizeTicket(raw, now) {
     protocol,
     analystName: att.name,
     digisacUserId: att.userId,
+    contactId: pickStr(raw.contactId, raw.contact_id),
     clientName: client.name,
     clientContact: client.contact,
     startedAt,
@@ -158,8 +207,8 @@ async function pickSuporteDeptId() {
 
 async function fetchOpenTickets(deptId, now) {
   const variants = [
-    { limit: "200", "where[status]": "open", "where[departmentId]": deptId },
     { limit: "200", status: "open", departmentId: deptId },
+    { limit: "200", "where[status]": "open", "where[departmentId]": deptId },
     { limit: "200", "where[isOpen]": "true", "where[departmentId]": deptId },
     { limit: "200", periodType: "open", departmentId: deptId },
     { limit: "200", "where[status]": "open" },
@@ -333,7 +382,7 @@ async function main() {
 
   if (!deptId) {
     console.log("Tentando sem filtro de departamento...");
-    const r = await digisacGet("/tickets", new URLSearchParams({ limit: "200", "where[status]": "open" }));
+    const r = await digisacGet("/tickets", new URLSearchParams({ limit: "200", status: "open" }));
     for (const raw of flatten(r.data)) {
       const t = normalizeTicket(raw, now);
       if (t) tickets.push(t);
@@ -346,9 +395,24 @@ async function main() {
     return;
   }
 
+  const contactIds = tickets
+    .filter((t) => !t.clientName || !t.clientContact)
+    .map((t) => t.contactId)
+    .filter(Boolean);
+  if (contactIds.length) {
+    console.log(`Buscando ${contactIds.length} contato(s) na Digisac...`);
+    const contacts = await fetchContactsByIds(contactIds);
+    for (const ticket of tickets) {
+      const client = contacts.get(ticket.contactId);
+      if (!client) continue;
+      ticket.clientName = client.name;
+      ticket.clientContact = client.contact;
+    }
+  }
+
   for (const t of tickets.sort((a, b) => b.durationMinutes - a.durationMinutes)) {
     const flag = t.durationMinutes >= ESCALATE_MIN ? "→ NOTIFICA" : "→ rastreio";
-    console.log(`  ${t.protocol} | ${t.durationMinutes} min | ${t.analystName} | início ${t.startedAt.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} ${flag}`);
+    console.log(`  ${t.protocol} | ${t.durationMinutes} min | ${t.clientName || "?"} | ${t.clientContact || "?"} | ${t.analystName} ${flag}`);
   }
 
   if (DRY_RUN) {
