@@ -7,7 +7,7 @@ import {
   unwrapDigisacRecord,
 } from "./digisacTicketContact.ts";
 
-Deno.test("unwrapDigisacRecord não confunde data aninhado com wrapper", () => {
+Deno.test("unwrapDigisacRecord mantém contato no root e data.number aninhado", () => {
   const contact = {
     id: "c1",
     name: "Maria Silva",
@@ -16,7 +16,26 @@ Deno.test("unwrapDigisacRecord não confunde data aninhado com wrapper", () => {
   };
   const unwrapped = unwrapDigisacRecord(contact);
   assertEquals(unwrapped?.name, "Maria Silva");
+  assertEquals(unwrapped?.internalName, "Maria - Loja");
   assertEquals((unwrapped?.data as Record<string, string>)?.number, "5511999999999");
+});
+
+Deno.test("unwrapDigisacRecord não troca contato por data.number apenas", () => {
+  // Caso real: GET /contacts/{id} devolve name no root e number em data
+  const apiResponse = {
+    id: "ec190c63-b244-4b59-8626-246f5ca94f29",
+    name: "Adriel Schimack",
+    internalName: "Adriel - Avicultura Brasil",
+    data: {
+      jidId: "5519996090140@c.us",
+      number: "5519996090140",
+    },
+  };
+  const parsed = parseDigisacContactRecord(unwrapDigisacRecord(apiResponse)!);
+  assertEquals(parsed, {
+    name: "Adriel - Avicultura Brasil",
+    contact: "+55 (19) 99609-0140",
+  });
 });
 
 Deno.test("parseDigisacContactRecord prioriza internalName e número em data", () => {

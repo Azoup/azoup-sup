@@ -363,6 +363,37 @@ function resolveAnalystName(
   return fromTicket || "Sem atendente";
 }
 
+async function ensureTicketContactIds(
+  fetchDigisac: FetchDigisacFn,
+  tickets: SlaTicket[],
+): Promise<void> {
+  const missing = tickets.filter((t) => !t.contactId);
+  if (!missing.length) return;
+
+  const take = missing.slice(0, 80);
+  await Promise.all(
+    take.map(async (ticket) => {
+      const r = await fetchDigisac(`/api/v1/tickets/${ticket.id}`);
+      if (!r.ok || !r.data || typeof r.data !== "object") return;
+      const payload = r.data as Record<string, unknown>;
+      // Ticket completo no root; `data` aninhado (se houver) não é o ticket.
+      const raw =
+        payload.id || payload.contactId || payload.protocol
+          ? payload
+          : payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)
+            ? payload.data as Record<string, unknown>
+            : payload;
+      const contactId = extractTicketContactId(raw);
+      if (contactId) ticket.contactId = contactId;
+      if (!ticket.digisacUserId) {
+        const att = extractTicketAttendant(raw);
+        if (att?.userId) ticket.digisacUserId = att.userId;
+        if (att?.name) ticket.analystName = att.name;
+      }
+    }),
+  );
+}
+
 async function enrichSlaTicketsDetails(
   fetchDigisac: FetchDigisacFn,
   tickets: SlaTicket[],
@@ -384,10 +415,12 @@ async function enrichSlaTicketsDetails(
     ticket.analystName = resolveAnalystName(ticket.digisacUserId, ticket.analystName, mappingNames);
   }
 
+  await ensureTicketContactIds(fetchDigisac, tickets);
+
+  // Sempre busca contatos faltantes em GET /api/v1/contacts/{id}
   const contactIds = tickets
-    .filter((t) => !t.clientName || !t.clientContact || t.clientContact === "—")
-    .map((t) => t.contactId)
-    .filter(Boolean);
+    .filter((t) => t.contactId && (!t.clientName || !t.clientContact || t.clientContact === "—"))
+    .map((t) => t.contactId);
 
   const contactById = contactIds.length > 0
     ? await fetchContactBatch(fetchDigisac, contactIds)
@@ -531,15 +564,18 @@ export async function runDigisacSlaMonitor(input: {
 
     const alertIdForUpdate = upserted?.id ?? existing?.id;
     if (alertIdForUpdate) {
-      await (input.adminClient as any)
+      const message = buildEscalationMessage(ticket);
+      const { error: backfillErr } = await (input.adminClient as any)
         .from("digisac_sla_notifications")
         .update({
           analyst_name: ticket.analystName,
           duration_minutes: ticket.durationMinutes,
           client_name: ticket.clientName || null,
           client_contact: ticket.clientContact || null,
+          message,
         })
         .eq("alert_id", alertIdForUpdate);
+      if (backfillErr) result.errors.push(backfillErr.message);
     }
 
     if (tier === "warn_40") {

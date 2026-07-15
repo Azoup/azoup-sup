@@ -47,7 +47,10 @@ const pickPhone = (obj: unknown): string => {
   return "";
 };
 
-/** Evita confundir o objeto `data` aninhado (telefone) com wrapper `{ data: contact }`. */
+/**
+ * A API Digisac retorna o contato no root (`name`, `internalName`, `data.number`).
+ * `data` aninhado é só WhatsApp/telefone — não é o contato em si.
+ */
 export function unwrapDigisacRecord(payload: unknown): Record<string, unknown> | null {
   if (!payload || typeof payload !== "object") return null;
   const root = payload as Record<string, unknown>;
@@ -56,13 +59,17 @@ export function unwrapDigisacRecord(payload: unknown): Record<string, unknown> |
     return root.data[0] as Record<string, unknown>;
   }
 
+  // Contato completo no root (tem name/internalName/id no nível superior)
+  if (root.id || root.name || root.internalName || root.alternativeName) {
+    return root;
+  }
+
   const wrapped = root.data;
   if (wrapped && typeof wrapped === "object" && !Array.isArray(wrapped)) {
     const inner = wrapped as Record<string, unknown>;
-    if (inner.id || inner.name || inner.internalName || inner.contactId) return inner;
+    if (inner.id || inner.name || inner.internalName) return inner;
   }
 
-  if (root.id || root.name || root.internalName || root.contactId) return root;
   return root;
 }
 
@@ -123,7 +130,6 @@ export function extractTicketContact(ticket: Record<string, unknown>): TicketCon
     ticket.phone,
     ticket.phoneNumber,
     ticket.phone_number,
-    ticket.number,
     ticket.whatsapp,
   );
 
@@ -137,23 +143,27 @@ export function extractTicketContact(ticket: Record<string, unknown>): TicketCon
   return null;
 }
 
-function buildContactBatchParams(ids: string[]): URLSearchParams[] {
-  const variants: URLSearchParams[] = [];
-  const limit = String(Math.min(ids.length, 200));
-
-  const inBracket = new URLSearchParams({ limit });
-  inBracket.set("where[id][in]", ids.join(","));
-  variants.push(inBracket);
-
-  for (const id of ids.slice(0, 50)) {
-    const single = new URLSearchParams({ limit: "1", "where[id]": id });
-    variants.push(single);
-  }
-
-  return variants;
+async function mapPool<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  let index = 0;
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (index < items.length) {
+      const current = items[index++];
+      results.push(await worker(current));
+    }
+  });
+  await Promise.all(runners);
+  return results;
 }
 
-/** Busca nome e telefone dos contatos na API Digisac. */
+/**
+ * Busca nome e telefone via `GET /api/v1/contacts/{id}` (fonte oficial Digisac).
+ * Fallback: listagem `GET /api/v1/contacts?perPage=...&where[id]=...`
+ */
 export async function fetchContactBatch(
   fetchDigisac: FetchDigisacFn,
   ids: string[],
@@ -162,44 +172,45 @@ export async function fetchContactBatch(
   const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
   if (!unique.length) return map;
 
-  for (const params of buildContactBatchParams(unique)) {
+  await mapPool(unique, 8, async (id) => {
+    const r = await fetchDigisac(`/api/v1/contacts/${id}`);
+    if (!r.ok) return;
+    const record = unwrapDigisacRecord(r.data);
+    if (!record) return;
+    const parsed = parseDigisacContactRecord(record);
+    if (parsed) map.set(id, parsed);
+  });
+
+  const missing = unique.filter((id) => !map.has(id));
+  await mapPool(missing, 4, async (id) => {
+    const params = new URLSearchParams({
+      perPage: "40",
+      limit: "40",
+      "where[id]": id,
+    });
     const r = await fetchDigisac("/api/v1/contacts", params);
-    if (!r.ok) continue;
+    if (!r.ok) return;
 
     const payload = r.data;
-    const rows: Record<string, unknown>[] = [];
+    let rows: Record<string, unknown>[] = [];
     if (Array.isArray(payload)) {
-      rows.push(...payload.filter((x) => x && typeof x === "object") as Record<string, unknown>[]);
+      rows = payload.filter((x) => x && typeof x === "object") as Record<string, unknown>[];
     } else if (payload && typeof payload === "object") {
       const data = (payload as Record<string, unknown>).data;
       if (Array.isArray(data)) {
-        rows.push(...data.filter((x) => x && typeof x === "object") as Record<string, unknown>[]);
+        rows = data.filter((x) => x && typeof x === "object") as Record<string, unknown>[];
       } else {
         const single = unwrapDigisacRecord(payload);
-        if (single) rows.push(single);
+        if (single) rows = [single];
       }
     }
 
     for (const row of rows) {
-      const id = pickString(row.id);
+      const rowId = pickString(row.id) || id;
       const parsed = parseDigisacContactRecord(row);
-      if (id && parsed) map.set(id, parsed);
+      if (parsed) map.set(rowId, parsed);
     }
-
-    if (map.size >= unique.length) break;
-  }
-
-  const missing = unique.filter((id) => !map.has(id));
-  await Promise.all(
-    missing.slice(0, 80).map(async (id) => {
-      const r = await fetchDigisac(`/api/v1/contacts/${id}`);
-      if (!r.ok) return;
-      const record = unwrapDigisacRecord(r.data);
-      if (!record) return;
-      const parsed = parseDigisacContactRecord(record);
-      if (parsed) map.set(id, parsed);
-    }),
-  );
+  });
 
   return map;
 }
