@@ -1,5 +1,6 @@
 import { extractTicketAttendant, fetchTicketBatch, type FetchDigisacFn } from "./digisacNpsTickets.ts";
 import { pickSuporteDepartmentId } from "./digisacAnswersOverview.ts";
+import { extractTicketContact } from "./digisacTicketContact.ts";
 
 export const WARN_THRESHOLD_MINUTES = 40;
 /** Notifica admins no app ao completar este tempo de atendimento. */
@@ -10,6 +11,8 @@ export type SlaTicket = {
   protocol: string;
   analystName: string;
   digisacUserId: string;
+  clientName: string;
+  clientContact: string;
   startedAt: Date;
   durationMinutes: number;
 };
@@ -156,11 +159,14 @@ export function parseOpenTicketBase(
   if (!id || !startedAt) return null;
 
   const attendant = extractTicketAttendant(ticket);
+  const client = extractTicketContact(ticket);
   return {
     id,
     protocol: extractTicketProtocol(ticket),
     analystName: attendant?.name || "Sem atendente",
     digisacUserId: attendant?.userId || "",
+    clientName: client?.name || "",
+    clientContact: client?.contact || "",
     startedAt,
     durationMinutes: minutesBetween(startedAt, now),
   };
@@ -355,12 +361,17 @@ function resolveAnalystName(
   return fromTicket || "Sem atendente";
 }
 
-async function enrichSlaTicketsAttendants(
+async function enrichSlaTicketsDetails(
   fetchDigisac: FetchDigisacFn,
   tickets: SlaTicket[],
   mappingNames: Map<string, string>,
 ): Promise<void> {
-  const needsDetail = tickets.filter((t) => !t.digisacUserId || t.analystName === "Sem atendente");
+  const needsDetail = tickets.filter(
+    (t) => !t.digisacUserId
+      || t.analystName === "Sem atendente"
+      || !t.clientName
+      || !t.clientContact,
+  );
   const attendantById = needsDetail.length > 0
     ? await fetchTicketBatch(fetchDigisac, needsDetail.map((t) => t.id))
     : new Map<string, { userId: string; name: string }>();
@@ -373,6 +384,26 @@ async function enrichSlaTicketsAttendants(
     }
     ticket.analystName = resolveAnalystName(ticket.digisacUserId, ticket.analystName, mappingNames);
   }
+
+  const stillMissingContact = tickets.filter((t) => !t.clientName || !t.clientContact);
+  const take = stillMissingContact.slice(0, 80);
+  await Promise.all(
+    take.map(async (ticket) => {
+      const r = await fetchDigisac(`/api/v1/tickets/${ticket.id}`);
+      if (!r.ok || !r.data || typeof r.data !== "object") return;
+      const payload = r.data as Record<string, unknown>;
+      const raw = payload.data && typeof payload.data === "object"
+        ? payload.data as Record<string, unknown>
+        : payload;
+      const client = extractTicketContact(raw);
+      if (client) {
+        if (!ticket.clientName) ticket.clientName = client.name;
+        if (!ticket.clientContact || ticket.clientContact === "—") {
+          ticket.clientContact = client.contact;
+        }
+      }
+    }),
+  );
 }
 
 async function loadAdminUserIds(admin: SupabaseAdmin): Promise<string[]> {
@@ -387,7 +418,9 @@ async function loadAdminUserIds(admin: SupabaseAdmin): Promise<string[]> {
 function buildEscalationMessage(ticket: SlaTicket): string {
   const duration = formatDurationMinutes(ticket.durationMinutes);
   const started = formatBrazilDateTime(ticket.startedAt);
-  return `Atendimento ${ticket.protocol} aberto há ${duration}. Analista: ${ticket.analystName}. Início: ${started}.`;
+  const clientName = ticket.clientName || "Não informado";
+  const clientContact = ticket.clientContact || "Não informado";
+  return `Atendimento ${ticket.protocol} aberto há ${duration}. Cliente: ${clientName}. Contato: ${clientContact}. Analista: ${ticket.analystName}. Início: ${started}.`;
 }
 
 export async function runDigisacSlaMonitor(input: {
@@ -421,7 +454,7 @@ export async function runDigisacSlaMonitor(input: {
 
   const allOpen = await fetchAllOpenTickets(input.fetchDigisac, departmentId, now);
   const mappingNames = await loadDigisacAnalystNameMap(input.adminClient);
-  await enrichSlaTicketsAttendants(input.fetchDigisac, allOpen, mappingNames);
+  await enrichSlaTicketsDetails(input.fetchDigisac, allOpen, mappingNames);
   const openTickets = allOpen.filter((t) => t.durationMinutes >= WARN_THRESHOLD_MINUTES);
 
   result.openTotal = allOpen.length;
@@ -485,6 +518,8 @@ export async function runDigisacSlaMonitor(input: {
         protocol: ticket.protocol,
         analyst_name: ticket.analystName,
         digisac_user_id: ticket.digisacUserId || null,
+        client_name: ticket.clientName || null,
+        client_contact: ticket.clientContact || null,
         started_at: ticket.startedAt.toISOString(),
         duration_minutes: ticket.durationMinutes,
         tier,
@@ -505,6 +540,8 @@ export async function runDigisacSlaMonitor(input: {
         .update({
           analyst_name: ticket.analystName,
           duration_minutes: ticket.durationMinutes,
+          client_name: ticket.clientName || null,
+          client_contact: ticket.clientContact || null,
         })
         .eq("alert_id", alertIdForUpdate);
     }
@@ -525,6 +562,8 @@ export async function runDigisacSlaMonitor(input: {
       alert_id: alertId,
       protocol: ticket.protocol,
       analyst_name: ticket.analystName,
+      client_name: ticket.clientName || null,
+      client_contact: ticket.clientContact || null,
       duration_minutes: ticket.durationMinutes,
       started_at: ticket.startedAt.toISOString(),
       message,

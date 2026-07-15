@@ -3,6 +3,7 @@ import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/AppSidebar';
 import { AppRealtimeSync } from '@/components/AppRealtimeSync';
 import { DigisacSlaSyncRunner } from '@/components/DigisacSlaSyncRunner';
+import { DigisacSlaNotificationHub } from '@/components/DigisacSlaNotificationHub';
 import { NotificationsBell } from '@/components/NotificationsBell';
 
 export function AppLayout({ children }: { children: ReactNode }) {
@@ -10,6 +11,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     <SidebarProvider>
       <AppRealtimeSync />
       <DigisacSlaSyncRunner />
+      <DigisacSlaNotificationHub />
       <div className="min-h-screen flex w-full">
         <AppSidebar />
         <div className="flex-1 flex flex-col min-w-0">

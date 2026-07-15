@@ -108,6 +108,20 @@ function extractAttendant(ticket) {
   return { userId: "", name: "Sem atendente" };
 }
 
+function extractContact(ticket) {
+  for (const key of ["contact", "person", "client", "customer", "lastContact"]) {
+    const nested = ticket[key];
+    if (!nested || typeof nested !== "object") continue;
+    const name = pickStr(nested.name, nested.fullName, nested.displayName, nested.alias);
+    const contact = pickStr(nested.number, nested.phone, nested.phoneNumber, nested.mobile, nested.whatsapp);
+    if (name || contact) return { name: name || "Cliente", contact: contact || "—" };
+  }
+  const name = pickStr(ticket.contactName, ticket.contact_name, ticket.clientName, ticket.client_name);
+  const contact = pickStr(ticket.contactNumber, ticket.contact_number, ticket.phone, ticket.number);
+  if (name || contact) return { name: name || "Cliente", contact: contact || "—" };
+  return { name: "", contact: "" };
+}
+
 function normalizeTicket(raw, now) {
   if (!isOpen(raw)) return null;
   const id = pickStr(raw.id);
@@ -118,8 +132,18 @@ function normalizeTicket(raw, now) {
   const durationMinutes = Math.max(0, Math.floor((now - startedAt) / 60_000));
   if (durationMinutes < WARN_MIN) return null;
   const att = extractAttendant(raw);
+  const client = extractContact(raw);
   const protocol = pickStr(raw.protocol, raw.protocolNumber, raw.number) || `#${id.slice(0, 8)}`;
-  return { id, protocol, analystName: att.name, digisacUserId: att.userId, startedAt, durationMinutes };
+  return {
+    id,
+    protocol,
+    analystName: att.name,
+    digisacUserId: att.userId,
+    clientName: client.name,
+    clientContact: client.contact,
+    startedAt,
+    durationMinutes,
+  };
 }
 
 async function pickSuporteDeptId() {
@@ -217,6 +241,8 @@ async function runSync(tickets, now) {
         protocol: ticket.protocol,
         analyst_name: ticket.analystName,
         digisac_user_id: ticket.digisacUserId || null,
+        client_name: ticket.clientName || null,
+        client_contact: ticket.clientContact || null,
         started_at: ticket.startedAt.toISOString(),
         duration_minutes: ticket.durationMinutes,
         tier,
@@ -248,13 +274,15 @@ async function runSync(tickets, now) {
     const h = Math.floor(ticket.durationMinutes / 60);
     const m = ticket.durationMinutes % 60;
     const dur = h > 0 ? `${h}h ${m}min` : `${m} min`;
-    const message = `Atendimento ${ticket.protocol} aberto há ${dur}. Analista: ${ticket.analystName}. Início: ${started}.`;
+    const message = `Atendimento ${ticket.protocol} aberto há ${dur}. Cliente: ${ticket.clientName || "Não informado"}. Contato: ${ticket.clientContact || "Não informado"}. Analista: ${ticket.analystName}. Início: ${started}.`;
 
     const notifs = adminIds.map((recipient_id) => ({
       recipient_id,
       alert_id: alertId,
       protocol: ticket.protocol,
       analyst_name: ticket.analystName,
+      client_name: ticket.clientName || null,
+      client_contact: ticket.clientContact || null,
       duration_minutes: ticket.durationMinutes,
       started_at: ticket.startedAt.toISOString(),
       message,

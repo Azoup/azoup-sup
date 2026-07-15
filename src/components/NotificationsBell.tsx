@@ -24,7 +24,6 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   slaNotificationDetail,
-  slaNotificationTitle,
 } from '@/integrations/digisac/slaNormalize';
 import type { DigisacSlaNotification } from '@/integrations/digisac/slaTypes';
 
@@ -108,33 +107,6 @@ export function NotificationsBell() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [user, queryClient]);
-
-  useEffect(() => {
-    if (!user || !isAdmin) return;
-    const channel = supabase
-      .channel('digisac-sla-notifications-rt')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'digisac_sla_notifications',
-          filter: `recipient_id=eq.${user.id}`,
-        },
-        (payload) => {
-          queryClient.invalidateQueries({ queryKey: ['digisac-sla-notifications', user.id] });
-          const row = payload.new as DigisacSlaNotification;
-          if (row?.protocol) {
-            toast.warning(slaNotificationTitle(row), {
-              description: slaNotificationDetail(row),
-              duration: 12_000,
-            });
-          }
-        },
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [user, isAdmin, queryClient]);
 
   const notifications: UnifiedNotification[] = useMemo(() => {
     const merged: UnifiedNotification[] = [

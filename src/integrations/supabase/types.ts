@@ -464,6 +464,8 @@ export type Database = {
         Row: {
           admin_notified_at: string | null
           analyst_name: string | null
+          client_contact: string | null
+          client_name: string | null
           created_at: string
           digisac_ticket_id: string
           digisac_user_id: string | null
@@ -478,6 +480,8 @@ export type Database = {
         Insert: {
           admin_notified_at?: string | null
           analyst_name?: string | null
+          client_contact?: string | null
+          client_name?: string | null
           created_at?: string
           digisac_ticket_id: string
           digisac_user_id?: string | null
@@ -492,6 +496,8 @@ export type Database = {
         Update: {
           admin_notified_at?: string | null
           analyst_name?: string | null
+          client_contact?: string | null
+          client_name?: string | null
           created_at?: string
           digisac_ticket_id?: string
           digisac_user_id?: string | null
@@ -509,6 +515,8 @@ export type Database = {
         Row: {
           alert_id: string
           analyst_name: string | null
+          client_contact: string | null
+          client_name: string | null
           created_at: string
           duration_minutes: number
           id: string
@@ -521,6 +529,8 @@ export type Database = {
         Insert: {
           alert_id: string
           analyst_name?: string | null
+          client_contact?: string | null
+          client_name?: string | null
           created_at?: string
           duration_minutes: number
           id?: string
@@ -533,6 +543,8 @@ export type Database = {
         Update: {
           alert_id?: string
           analyst_name?: string | null
+          client_contact?: string | null
+          client_name?: string | null
           created_at?: string
           duration_minutes?: number
           id?: string

@@ -4,6 +4,8 @@ export interface DigisacSlaNotification {
   alert_id: string;
   protocol: string;
   analyst_name: string | null;
+  client_name: string | null;
+  client_contact: string | null;
   duration_minutes: number;
   started_at: string;
   message: string;
