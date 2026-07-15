@@ -2,7 +2,8 @@ import { extractTicketAttendant, fetchTicketBatch, type FetchDigisacFn } from ".
 import { pickSuporteDepartmentId } from "./digisacAnswersOverview.ts";
 
 export const WARN_THRESHOLD_MINUTES = 40;
-export const ESCALATE_THRESHOLD_MINUTES = 45;
+/** Notifica admins no app ao completar este tempo de atendimento. */
+export const ESCALATE_THRESHOLD_MINUTES = 40;
 
 export type SlaTicket = {
   id: string;
@@ -470,7 +471,9 @@ export async function runDigisacSlaMonitor(input: {
   }
 
   for (const ticket of openTickets) {
-    const tier = ticket.durationMinutes >= ESCALATE_THRESHOLD_MINUTES ? "escalate_45" : "warn_40";
+    // Mantém `escalate_45` no banco por compatibilidade do CHECK; limiar real = 40 min.
+    const tier =
+      ticket.durationMinutes >= ESCALATE_THRESHOLD_MINUTES ? "escalate_45" : "warn_40";
     const existing = (activeAlerts ?? []).find(
       (a: { digisac_ticket_id: string }) => a.digisac_ticket_id === ticket.id,
     );

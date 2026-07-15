@@ -1,5 +1,5 @@
 /**
- * Executa sincronização SLA Digisac: lista chamados abertos, registra > 40 min e notifica admins > 45 min.
+ * Executa sincronização SLA Digisac: lista chamados abertos ≥ 40 min e notifica admins no app.
  * Uso: node supabase/scripts/run-digisac-sla-sync.mjs [--dry-run]
  */
 import { readFileSync, existsSync } from "node:fs";
@@ -30,7 +30,7 @@ loadEnv();
 
 const DRY_RUN = process.argv.includes("--dry-run");
 const WARN_MIN = 40;
-const ESCALATE_MIN = 45;
+const ESCALATE_MIN = 40;
 
 const token = process.env.DIGISAC_API_TOKEN || process.env.VITE_DIGISAC_API_TOKEN;
 let base = (process.env.DIGISAC_API_URL || process.env.VITE_DIGISAC_API_URL || "").replace(/\/$/, "");

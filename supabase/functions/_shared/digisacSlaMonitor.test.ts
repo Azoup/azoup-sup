@@ -57,7 +57,7 @@ Deno.test("minutesBetween e formatDurationMinutes", () => {
 
 Deno.test("limiares SLA", () => {
   assertEquals(WARN_THRESHOLD_MINUTES, 40);
-  assertEquals(ESCALATE_THRESHOLD_MINUTES, 45);
+  assertEquals(ESCALATE_THRESHOLD_MINUTES, 40);
 });
 
 Deno.test("extractTicketStartTime tenta múltiplos campos", () => {

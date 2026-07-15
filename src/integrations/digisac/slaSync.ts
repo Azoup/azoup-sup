@@ -32,10 +32,10 @@ export async function syncDigisacSlaAlerts(
 }
 
 export function describeSlaSyncResult(result: DigisacSlaMonitorSummary): string {
+  const over40 = result.over40 ?? result.over45 ?? result.scanned ?? 0;
   const parts = [
     `${result.openTotal ?? 0} aberto(s) agora`,
-    `${result.over40 ?? result.scanned ?? 0} com +40 min`,
-    `${result.over45 ?? 0} com +45 min`,
+    `${over40} com +40 min (notifica)`,
   ];
   if (result.tracked) parts.push(`${result.tracked} rastreado(s)`);
   if (result.notified) parts.push(`${result.notified} notificação(ões) enviada(s)`);
