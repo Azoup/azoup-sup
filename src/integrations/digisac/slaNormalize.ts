@@ -1,4 +1,4 @@
-import type { DigisacSlaNotification } from './slaTypes';
+import type { DigisacSlaAlert, DigisacSlaNotification } from './slaTypes';
 
 export function formatSlaDuration(minutes: number): string {
   const h = Math.floor(minutes / 60);
@@ -55,4 +55,22 @@ export function slaNotificationFields(n: DigisacSlaNotification): SlaNotificatio
     { label: 'Início do atendimento', value: formatSlaStartedAt(n.started_at) },
     { label: 'Tempo de atendimento', value: formatSlaDuration(n.duration_minutes) },
   ];
+}
+
+/** Converte alerta do histórico no formato do modal de notificação SLA. */
+export function slaAlertToNotification(alert: DigisacSlaAlert): DigisacSlaNotification {
+  return {
+    id: alert.id,
+    recipient_id: '',
+    alert_id: alert.id,
+    protocol: alert.protocol,
+    analyst_name: alert.analyst_name,
+    client_name: alert.client_name,
+    client_contact: alert.client_contact,
+    duration_minutes: alert.duration_minutes,
+    started_at: alert.started_at,
+    message: `Atendimento aberto há mais de 40 minutos no Digisac.`,
+    read: true,
+    created_at: alert.created_at,
+  };
 }

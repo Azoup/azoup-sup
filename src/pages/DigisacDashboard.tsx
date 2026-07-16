@@ -192,6 +192,7 @@ export default function DigisacDashboard() {
       if (user?.id) {
         queryClient.invalidateQueries({ queryKey: ['digisac-sla-notifications', user.id] });
       }
+      queryClient.invalidateQueries({ queryKey: ['digisac-sla-alerts-history'] });
       const preview = slaSyncPreviewLines(result);
       if (result.errors?.length) {
         toast.error('Erro ao verificar SLA', { description: result.errors.join(' · ') });

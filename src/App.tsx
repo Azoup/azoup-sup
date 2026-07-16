@@ -23,6 +23,7 @@ import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import DigisacDashboard from "./pages/DigisacDashboard";
 import DigisacNpsDashboard from "./pages/DigisacNpsDashboard";
+import DigisacSlaHistory from "./pages/DigisacSlaHistory";
 import { getFirstAllowedPath } from "@/lib/allowedRoutes";
 import { buildAuthPath } from "@/lib/authPaths";
 import { Loader2 } from "lucide-react";
@@ -121,6 +122,7 @@ function AppRoutes() {
       <Route path="/developers" element={<RequireAuth screen="developers"><Developers /></RequireAuth>} />
       <Route path="/digisac-dashboard" element={<RequireAuth screen="digisac_dashboard"><DigisacDashboard /></RequireAuth>} />
       <Route path="/digisac-nps" element={<RequireAuth screen="digisac_nps"><DigisacNpsDashboard /></RequireAuth>} />
+      <Route path="/digisac-sla-history" element={<RequireAuth screen="digisac_sla_history"><DigisacSlaHistory /></RequireAuth>} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

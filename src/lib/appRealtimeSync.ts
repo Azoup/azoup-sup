@@ -145,5 +145,6 @@ export function handleAppRealtimeTableChange(
 
   if (table === 'digisac_sla_notifications') {
     void queryClient.invalidateQueries({ queryKey: ['digisac-sla-notifications'] });
+    void queryClient.invalidateQueries({ queryKey: ['digisac-sla-alerts-history'] });
   }
 }

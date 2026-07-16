@@ -19,6 +19,7 @@ const DEFAULT_USER_PERMISSIONS: Record<string, boolean> = {
   analysts_delete: false,
   dashboard_view: false,
   digisac_dashboard_view: false,
+  digisac_sla_history_view: false,
   digisac_nps_view: false,
   dashboard_bu_view: false,
   entries_view: false,
@@ -85,5 +86,6 @@ export const ROUTE_SCREEN_MAP: Record<string, string> = {
   '/dashboard-dev': 'dashboard_dev',
   '/developers': 'developers',
   '/digisac-dashboard': 'digisac_dashboard',
+  '/digisac-sla-history': 'digisac_sla_history',
   '/digisac-nps': 'digisac_nps',
 };
