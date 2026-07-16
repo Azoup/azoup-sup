@@ -188,7 +188,7 @@ export default function DigisacDashboard() {
     if (!isAdmin) return;
     setSlaSyncing(true);
     try {
-      const result = await syncDigisacSlaAlerts(departmentId);
+      const result = await syncDigisacSlaAlerts();
       if (user?.id) {
         queryClient.invalidateQueries({ queryKey: ['digisac-sla-notifications', user.id] });
       }
@@ -283,7 +283,7 @@ export default function DigisacDashboard() {
               onClick={runSlaSync}
               disabled={slaSyncing}
               className="h-9 gap-2 shrink-0 border-amber-500/50 text-amber-700 dark:text-amber-400"
-              title="Verificar chamados abertos e gerar alertas SLA"
+              title="Verificar chamados abertos do departamento SUPORTE e gerar alertas SLA"
             >
               <AlertTriangle className={`w-4 h-4 ${slaSyncing ? 'animate-pulse' : ''}`} />
               {slaSyncing ? 'Verificando…' : 'Verificar SLA'}

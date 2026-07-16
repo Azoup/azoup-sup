@@ -31,6 +31,7 @@ export function DigisacSlaSyncRunner() {
       try {
         const result = await syncDigisacSlaAlerts();
         queryClient.invalidateQueries({ queryKey: ['digisac-sla-notifications', user.id] });
+        queryClient.invalidateQueries({ queryKey: ['digisac-sla-alerts-history'] });
 
         if (showToast) {
           const preview = slaSyncPreviewLines(result);

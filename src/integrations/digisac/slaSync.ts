@@ -1,19 +1,27 @@
 import { supabase } from '@/integrations/supabase/client';
+import { digisacApi } from '@/integrations/digisac/api';
 import type { DigisacSlaMonitorSummary } from '@/integrations/digisac/slaTypes';
 import { formatSlaDuration } from '@/integrations/digisac/slaNormalize';
+import { pickSuporteDepartmentId } from '@/lib/digisacSuporteDepartment';
 
 /**
  * Sincroniza alertas SLA via edge function `digisac-dashboard` (action sla_sync).
- * Não usa função separada — evita limite de serverless na Vercel/Supabase.
+ * Sempre restrito ao departamento Digisac SUPORTE.
  */
-export async function syncDigisacSlaAlerts(
-  departmentId?: string,
-): Promise<DigisacSlaMonitorSummary> {
+export async function syncDigisacSlaAlerts(): Promise<DigisacSlaMonitorSummary> {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
   if (!token) throw new Error('Faça login para sincronizar alertas SLA.');
 
-  const payload = departmentId && departmentId !== 'all' ? { departmentId } : {};
+  let departmentId: string | undefined;
+  try {
+    const departments = await digisacApi.getDepartments();
+    departmentId = pickSuporteDepartmentId(departments);
+  } catch {
+    // Backend resolve SUPORTE se o payload vier sem departmentId.
+  }
+
+  const payload = departmentId ? { departmentId } : {};
 
   const { data, error } = await supabase.functions.invoke('digisac-dashboard', {
     method: 'POST',

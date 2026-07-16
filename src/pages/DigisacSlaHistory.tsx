@@ -32,6 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { digisacApi } from '@/integrations/digisac/api';
 import {
   describeSlaSyncResult,
   slaSyncPreviewLines,
@@ -45,6 +46,7 @@ import {
   slaClientName,
 } from '@/integrations/digisac/slaNormalize';
 import type { DigisacSlaAlert } from '@/integrations/digisac/slaTypes';
+import { pickSuporteDepartment } from '@/lib/digisacSuporteDepartment';
 import { cn } from '@/lib/utils';
 
 const getTodayDateStringBrazil = () => {
@@ -59,11 +61,6 @@ const getTodayDateStringBrazil = () => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   }
-};
-
-const getMonthStartBrazil = () => {
-  const today = getTodayDateStringBrazil();
-  return `${today.slice(0, 7)}-01`;
 };
 
 type StatusFilter = 'all' | 'active' | 'resolved';
@@ -84,20 +81,38 @@ export default function DigisacSlaHistory() {
   const navigate = useNavigate();
 
   const today = getTodayDateStringBrazil();
-  const monthStart = getMonthStartBrazil();
 
-  const [dateFrom, setDateFrom] = useState(monthStart);
+  const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
   const [analystFilter, setAnalystFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [applied, setApplied] = useState({
-    dateFrom: monthStart,
+    dateFrom: today,
     dateTo: today,
     analyst: 'all',
     status: 'all' as StatusFilter,
   });
   const [slaSyncing, setSlaSyncing] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState<DigisacSlaAlert | null>(null);
+
+  const { data: departments } = useQuery({
+    queryKey: ['digisac-departments'],
+    queryFn: () => digisacApi.getDepartments(),
+    staleTime: 10 * 60 * 1000,
+    enabled: !!user && isAdmin,
+  });
+
+  const { data: analystsList = [] } = useQuery({
+    queryKey: ['digisac-analysts-list'],
+    queryFn: () => digisacApi.getAnalysts(),
+    staleTime: 10 * 60 * 1000,
+    enabled: !!user && isAdmin,
+  });
+
+  const suporteDepartment = useMemo(
+    () => pickSuporteDepartment(departments),
+    [departments],
+  );
 
   const { data: alerts = [], isLoading, isFetching, refetch } = useQuery({
     queryKey: ['digisac-sla-alerts-history', applied.dateFrom, applied.dateTo],
@@ -120,12 +135,16 @@ export default function DigisacSlaHistory() {
 
   const analystOptions = useMemo(() => {
     const names = new Set<string>();
+    for (const a of analystsList) {
+      const name = a.name?.trim();
+      if (name) names.add(name);
+    }
     for (const a of alerts) {
       const name = a.analyst_name?.trim();
       if (name) names.add(name);
     }
     return [...names].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  }, [alerts]);
+  }, [alerts, analystsList]);
 
   const filtered = useMemo(() => {
     return alerts.filter((a) => {
@@ -226,7 +245,11 @@ export default function DigisacSlaHistory() {
         <div>
           <h1 className="text-2xl font-heading font-bold">Histórico SLA</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Atendimentos Digisac que ultrapassaram 40 minutos e geraram alerta no sistema.
+            Atendimentos do departamento{' '}
+            <span className="font-medium text-foreground">
+              {suporteDepartment?.name ?? 'SUPORTE'}
+            </span>{' '}
+            na Digisac que ultrapassaram 40 minutos e geraram alerta no sistema.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -247,7 +270,7 @@ export default function DigisacSlaHistory() {
             onClick={runSlaSync}
             disabled={slaSyncing}
             className="h-9 gap-2 border-amber-500/50 text-amber-700 dark:text-amber-400"
-            title="Verificar chamados abertos e gerar alertas SLA"
+            title={`Verificar chamados abertos do departamento ${suporteDepartment?.name ?? 'SUPORTE'} e gerar alertas SLA`}
           >
             <AlertTriangle className={cn('w-4 h-4', slaSyncing && 'animate-pulse')} />
             {slaSyncing ? 'Verificando…' : 'Verificar SLA'}
