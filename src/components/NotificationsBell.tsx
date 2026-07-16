@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { DigisacSlaAlertDialog } from '@/components/DigisacSlaAlertDialog';
 import {
   slaNotificationDetail,
 } from '@/integrations/digisac/slaNormalize';
@@ -62,6 +63,7 @@ export function NotificationsBell() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [confirmMode, setConfirmMode] = useState<null | 'read' | 'all'>(null);
+  const [selectedSla, setSelectedSla] = useState<DigisacSlaNotification | null>(null);
 
   const { data: kanbanNotifications = [] } = useQuery({
     queryKey: ['dev-notifications', user?.id],
@@ -137,10 +139,15 @@ export function NotificationsBell() {
 
   const handleSlaClick = async (n: DigisacSlaNotification) => {
     setOpen(false);
+    setSelectedSla(n);
     if (!n.read) {
       await supabase.from('digisac_sla_notifications').update({ read: true }).eq('id', n.id);
       queryClient.invalidateQueries({ queryKey: ['digisac-sla-notifications', user?.id] });
     }
+  };
+
+  const openSlaDashboard = () => {
+    setSelectedSla(null);
     if (canView('digisac_dashboard')) {
       navigate('/digisac-dashboard');
     }
@@ -256,7 +263,7 @@ export function NotificationsBell() {
             )}
           </div>
         </div>
-        <div className="max-h-80 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
+        <div className="max-h-[30rem] overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
           {notifications.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8 px-4">
               Nenhuma notificação ainda.
@@ -374,6 +381,13 @@ export function NotificationsBell() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <DigisacSlaAlertDialog
+        notification={selectedSla}
+        open={!!selectedSla}
+        onOpenChange={(isOpen) => { if (!isOpen) setSelectedSla(null); }}
+        onOpenDashboard={canView('digisac_dashboard') ? openSlaDashboard : undefined}
+      />
     </Popover>
   );
 }
