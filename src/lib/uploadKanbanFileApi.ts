@@ -2,8 +2,8 @@ import { getConfiguredSupabaseProjectRef } from '@/lib/supabaseProject';
 import type { KanbanCardFileRow } from '@/lib/kanbanCardFiles';
 import { resolveKanbanFileContentType } from '@/lib/kanbanFileUploadLimits';
 
-export type KanbanFilesBucket = 'kanban-files' | 'dev-kanban-files';
-export type KanbanCardFilesTable = 'kanban_card_files' | 'dev_kanban_card_files';
+export type KanbanFilesBucket = 'kanban-files' | 'dev-kanban-files' | 'confec-kanban-files';
+export type KanbanCardFilesTable = 'kanban_card_files' | 'dev_kanban_card_files' | 'confec_kanban_card_files';
 
 function getStoredAccessToken(): string | null {
   if (typeof window === 'undefined') return null;

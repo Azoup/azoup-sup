@@ -1,6 +1,6 @@
 import { getConfiguredSupabaseProjectRef } from '@/lib/supabaseProject';
 
-export type KanbanCardImagesTable = 'kanban_card_images' | 'dev_kanban_card_images';
+export type KanbanCardImagesTable = 'kanban_card_images' | 'dev_kanban_card_images' | 'confec_kanban_card_images';
 
 function getStoredAccessToken(): string | null {
   if (typeof window === 'undefined') return null;

@@ -2,6 +2,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { consumeBoardRealtimeSkip } from '@/lib/boardRefreshGuard';
 import { invalidateKanbanBoard } from '@/hooks/useKanbanBoard';
 import { refreshDevKanbanBoard } from '@/hooks/useDevKanbanBoard';
+import { refreshConfecKanbanBoard } from '@/hooks/useConfecKanbanBoard';
 /** Tabelas com postgres_changes na publicação Supabase Realtime. */
 export const APP_REALTIME_TABLES = [
   'kanban_cards',
@@ -20,6 +21,13 @@ export const APP_REALTIME_TABLES = [
   'dev_kanban_card_files',
   'dev_kanban_card_comments',
   'dev_kanban_notifications',
+  'confec_kanban_cards',
+  'confec_kanban_card_images',
+  'confec_kanban_columns',
+  'confec_kanban_labels',
+  'confec_kanban_card_labels',
+  'confec_kanban_card_files',
+  'confec_kanban_card_comments',
   'digisac_sla_notifications',
   'doubt_records',
 ] as const;
@@ -31,6 +39,7 @@ const SUPPORT_CARD_SCOPED_TABLES = new Set([
 ]);
 
 const DEV_CARD_SCOPED_TABLES = new Set(['dev_kanban_card_files']);
+const CONFEC_CARD_SCOPED_TABLES = new Set(['confec_kanban_card_files']);
 
 const SUPPORT_BOARD_TABLES = new Set([
   'kanban_cards',
@@ -46,6 +55,14 @@ const DEV_BOARD_TABLES = new Set([
   'dev_kanban_columns',
   'dev_kanban_labels',
   'dev_kanban_card_labels',
+]);
+
+const CONFEC_BOARD_TABLES = new Set([
+  'confec_kanban_cards',
+  'confec_kanban_card_images',
+  'confec_kanban_columns',
+  'confec_kanban_labels',
+  'confec_kanban_card_labels',
 ]);
 
 function invalidateSupportKanbanViews(queryClient: QueryClient): void {
@@ -65,6 +82,13 @@ function invalidateDevKanbanViews(queryClient: QueryClient): void {
   void queryClient.invalidateQueries({ queryKey: ['dev-kanban-card-labels-dash'] });
   void queryClient.invalidateQueries({ queryKey: ['checklist-progress-map', 'dev'] });
   void queryClient.invalidateQueries({ queryKey: ['dev-card-files'] });
+}
+
+function invalidateConfecKanbanViews(queryClient: QueryClient): void {
+  refreshConfecKanbanBoard(queryClient);
+  void queryClient.invalidateQueries({ queryKey: ['confec-kanban-columns'] });
+  void queryClient.invalidateQueries({ queryKey: ['checklist-progress-map', 'confec'] });
+  void queryClient.invalidateQueries({ queryKey: ['confec-card-files'] });
 }
 
 function invalidateDoubtRecords(queryClient: QueryClient): void {
@@ -96,6 +120,12 @@ function invalidateDevCardScoped(queryClient: QueryClient, table: string): void 
   }
 }
 
+function invalidateConfecCardScoped(queryClient: QueryClient, table: string): void {
+  if (table === 'confec_kanban_card_files') {
+    void queryClient.invalidateQueries({ queryKey: ['confec-card-files'] });
+  }
+}
+
 /** Reage a um evento Realtime e invalida caches React Query afetados. */
 export function handleAppRealtimeTableChange(
   table: string,
@@ -111,6 +141,11 @@ export function handleAppRealtimeTableChange(
     return;
   }
 
+  if (CONFEC_CARD_SCOPED_TABLES.has(table)) {
+    invalidateConfecCardScoped(queryClient, table);
+    return;
+  }
+
   if (SUPPORT_BOARD_TABLES.has(table)) {
     if (consumeBoardRealtimeSkip()) return;
     invalidateSupportKanbanViews(queryClient);
@@ -120,6 +155,12 @@ export function handleAppRealtimeTableChange(
   if (DEV_BOARD_TABLES.has(table)) {
     if (consumeBoardRealtimeSkip()) return;
     invalidateDevKanbanViews(queryClient);
+    return;
+  }
+
+  if (CONFEC_BOARD_TABLES.has(table)) {
+    if (consumeBoardRealtimeSkip()) return;
+    invalidateConfecKanbanViews(queryClient);
     return;
   }
 
@@ -135,6 +176,11 @@ export function handleAppRealtimeTableChange(
 
   if (table === 'dev_kanban_card_comments') {
     void queryClient.invalidateQueries({ queryKey: ['dev-card-comments'] });
+    return;
+  }
+
+  if (table === 'confec_kanban_card_comments') {
+    void queryClient.invalidateQueries({ queryKey: ['confec-card-comments'] });
     return;
   }
 

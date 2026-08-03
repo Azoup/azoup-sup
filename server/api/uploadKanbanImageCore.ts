@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import type { AdminConfig } from "./supabaseConfig.js";
 
-export type KanbanCardImagesTable = "kanban_card_images" | "dev_kanban_card_images";
+export type KanbanCardImagesTable = "kanban_card_images" | "dev_kanban_card_images" | "confec_kanban_card_images";
 
 export type UploadKanbanImageBody = {
   card_id: string;
@@ -11,7 +11,7 @@ export type UploadKanbanImageBody = {
   file_base64: string;
 };
 
-const ALLOWED_TABLES: KanbanCardImagesTable[] = ["kanban_card_images", "dev_kanban_card_images"];
+const ALLOWED_TABLES: KanbanCardImagesTable[] = ["kanban_card_images", "dev_kanban_card_images", "confec_kanban_card_images"];
 
 function normalizeStorageHost(url: string, supabaseUrl: string): string {
   const legacy = "ffvgrvrkuiypjzfdcfyw.supabase.co";

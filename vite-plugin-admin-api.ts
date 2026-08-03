@@ -5,6 +5,7 @@ import { fetchUserAccessCore } from "./server/api/userAccess";
 import { fetchAppBootstrapCore } from "./server/api/appBootstrap";
 import { fetchKanbanBoardCore } from "./server/api/kanbanBoard";
 import { fetchDevKanbanBoardCore } from "./server/api/devKanbanBoard";
+import { fetchConfecKanbanBoardCore } from "./server/api/confecKanbanBoard";
 import { proxyAuthenticatedSupabaseRequest, type RestProxyBody } from "./server/api/restProxy";
 import { uploadPhotoCore, type UploadPhotoBody } from "./server/api/uploadPhotoCore";
 import { uploadKanbanImageCore, type UploadKanbanImageBody } from "./server/api/uploadKanbanImageCore";
@@ -165,6 +166,10 @@ export function adminApiDevPlugin(env: Record<string, string>): Plugin {
 
         if (url === "/api/dev-kanban-board") {
           if (await handleGetApi(fetchDevKanbanBoardCore)) return;
+        }
+
+        if (url === "/api/confec-kanban-board") {
+          if (await handleGetApi(fetchConfecKanbanBoardCore)) return;
         }
 
         if (url === "/api/upload-kanban-image") {

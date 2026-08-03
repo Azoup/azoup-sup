@@ -1,6 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 
-type CardType = 'dev' | 'support';
+type CardType = 'dev' | 'support' | 'confec';
 type NotifyActionType = 'edit' | 'comment' | 'attachment' | 'status' | 'assignee';
 
 interface NotifyArgs {
@@ -206,6 +206,7 @@ export async function notifyDevAndAnalyst(params: {
   actorId: string | null | undefined;
   actorName: string;
   message: string;
+  cardType?: CardType;
 }) {
   const [devUserId, analystUserId] = await Promise.all([
     resolveDeveloperUserId(params.developerId),
@@ -225,6 +226,7 @@ export async function notifyDevAndAnalyst(params: {
         actorId: params.actorId,
         actorName: params.actorName,
         message: params.message,
+        cardType: params.cardType ?? 'dev',
       })
     )
   );

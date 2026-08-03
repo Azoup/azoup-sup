@@ -1,8 +1,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { AdminConfig } from "./supabaseConfig.js";
 
-export type KanbanFilesBucket = "kanban-files" | "dev-kanban-files";
-export type KanbanCardFilesTable = "kanban_card_files" | "dev_kanban_card_files";
+export type KanbanFilesBucket = "kanban-files" | "dev-kanban-files" | "confec-kanban-files";
+export type KanbanCardFilesTable = "kanban_card_files" | "dev_kanban_card_files" | "confec_kanban_card_files";
 
 export type UploadKanbanFileBody = {
   card_id: string;
@@ -16,6 +16,7 @@ export type UploadKanbanFileBody = {
 const BUCKET_TABLE_MAP: Record<KanbanFilesBucket, KanbanCardFilesTable> = {
   "kanban-files": "kanban_card_files",
   "dev-kanban-files": "dev_kanban_card_files",
+  "confec-kanban-files": "confec_kanban_card_files",
 };
 
 /** Limite da API (base64); arquivos maiores usam upload direto/resumável no cliente. */

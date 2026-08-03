@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Plus, Trash2, Pencil, X, Check, ListChecks, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
-type CardType = "kanban" | "dev";
+type CardType = "kanban" | "dev" | "confec";
 
 interface ChecklistItem {
   id: string;

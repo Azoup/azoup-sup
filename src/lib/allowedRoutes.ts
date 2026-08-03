@@ -3,6 +3,7 @@ export const ROUTE_PRIORITY: ReadonlyArray<{ path: string; screen: string }> = [
   { path: '/', screen: 'kanban' },
   { path: '/kanban-dashboard', screen: 'kanban_dashboard' },
   { path: '/kanban-dev', screen: 'kanban_dev' },
+  { path: '/kanban-confec', screen: 'kanban_confec' },
   { path: '/dashboard-dev', screen: 'dashboard_dev' },
   { path: '/dashboard', screen: 'dashboard' },
   { path: '/dashboard-bu', screen: 'dashboard_bu' },

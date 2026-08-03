@@ -6,7 +6,7 @@ const STALE_MS = 30 * 1000;
 
 /** Um único fetch para todos os cards do board (evita N+1 no ChecklistBadge). */
 export function useChecklistProgressMap(
-  cardType: 'kanban' | 'dev',
+  cardType: 'kanban' | 'dev' | 'confec',
   enabled: boolean,
 ): ChecklistProgressMap {
   const { data } = useQuery({

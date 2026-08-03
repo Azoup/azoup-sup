@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, FileSpreadsheet, BarChart3, UserCircle, Code2, FolderKanban, ChevronDown, GripVertical, Star, History } from 'lucide-react';
+import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, FileSpreadsheet, BarChart3, UserCircle, Code2, FolderKanban, ChevronDown, GripVertical, Star, History, Scissors } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/hooks/useAuth';
 import { useSignOut } from '@/hooks/useSignOut';
@@ -45,6 +45,7 @@ const DEFAULT_MENU: MenuItem[] = [
   { id: 'kanban', type: 'leaf', title: 'Kanban Pendências', url: '/', icon: LayoutDashboard },
   { id: 'kanban-dashboard', type: 'leaf', title: 'Dashboard Kanban', url: '/kanban-dashboard', icon: BarChart3 },
   { id: 'kanban-dev', type: 'leaf', title: 'Kanban DEV', url: '/kanban-dev', icon: Code2 },
+  { id: 'kanban-confec', type: 'leaf', title: 'Kanban Confec', url: '/kanban-confec', icon: Scissors },
   { id: 'dashboard-dev', type: 'leaf', title: 'Dashboard DEV', url: '/dashboard-dev', icon: BarChart3 },
   { id: 'dashboard', type: 'leaf', title: 'Dashboard Dúvidas', url: '/dashboard', icon: BarChart3 },
   { id: 'dashboard-bu', type: 'leaf', title: 'Dashboard B.U', url: '/dashboard-bu', icon: Building2 },

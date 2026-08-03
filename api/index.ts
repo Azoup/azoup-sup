@@ -3,6 +3,7 @@ import { runAdminUserActionCore, type AdminBody } from "../server/api/adminActio
 import { adminConfigFromEnv } from "../server/api/supabaseConfig.js";
 import { fetchAppBootstrapCore } from "../server/api/appBootstrap.js";
 import { fetchDevKanbanBoardCore } from "../server/api/devKanbanBoard.js";
+import { fetchConfecKanbanBoardCore } from "../server/api/confecKanbanBoard.js";
 import { fetchKanbanBoardCore } from "../server/api/kanbanBoard.js";
 import { proxyAuthenticatedSupabaseRequest, type RestProxyBody } from "../server/api/restProxy.js";
 import { fetchUserAccessCore } from "../server/api/userAccess.js";
@@ -16,6 +17,7 @@ const ROUTES = new Set([
   "my-access",
   "kanban-board",
   "dev-kanban-board",
+  "confec-kanban-board",
   "admin-user-action",
   "rest-proxy",
   "upload-photo",
@@ -111,6 +113,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const authHeader = requireAuth(req, res);
         if (!authHeader) return;
         const result = await fetchDevKanbanBoardCore(authHeader, config);
+        return res.status(result.status).json(result.body);
+      }
+
+      case "confec-kanban-board": {
+        setCors(res, "GET, OPTIONS");
+        if (req.method === "OPTIONS") return res.status(200).end();
+        if (req.method !== "GET") return res.status(405).json({ error: "method_not_allowed" });
+        const config = requireConfig(res);
+        if (!config) return;
+        const authHeader = requireAuth(req, res);
+        if (!authHeader) return;
+        const result = await fetchConfecKanbanBoardCore(authHeader, config);
         return res.status(result.status).json(result.body);
       }
 

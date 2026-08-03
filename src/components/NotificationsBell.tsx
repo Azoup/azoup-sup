@@ -39,6 +39,7 @@ const ACTION_LABEL: Record<string, string> = {
 const BOARD_LABEL: Record<string, string> = {
   dev: 'Kanban DEV',
   support: 'Kanban Pendências',
+  confec: 'Kanban Confec',
 };
 
 type KanbanNotification = {
@@ -122,8 +123,17 @@ export function NotificationsBell() {
   const unreadCount = notifications.filter((n) => !n.data.read).length;
 
   const handleKanbanClick = async (n: KanbanNotification) => {
-    const isSupport = n.card_type === 'support';
-    const screen = isSupport ? 'kanban' : 'kanban_dev';
+    const screenByType: Record<string, string> = {
+      support: 'kanban',
+      confec: 'kanban_confec',
+      dev: 'kanban_dev',
+    };
+    const routeByType: Record<string, string> = {
+      support: '/kanban',
+      confec: '/kanban-confec',
+      dev: '/kanban-dev',
+    };
+    const screen = screenByType[n.card_type] ?? 'kanban_dev';
     if (!canView(screen)) {
       toast.error('Você não possui acesso a este ticket');
       return;
@@ -133,7 +143,7 @@ export function NotificationsBell() {
       await (supabase as any).from('dev_kanban_notifications').update({ read: true }).eq('id', n.id);
       queryClient.invalidateQueries({ queryKey: ['dev-notifications', user?.id] });
     }
-    const route = isSupport ? '/kanban' : '/kanban-dev';
+    const route = routeByType[n.card_type] ?? '/kanban-dev';
     navigate(`${route}?card=${n.card_id}`);
   };
 

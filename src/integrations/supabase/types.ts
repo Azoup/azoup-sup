@@ -398,6 +398,310 @@ export type Database = {
         }
         Relationships: []
       }
+      confec_kanban_card_comments: {
+        Row: {
+          card_id: string
+          content: string
+          created_at: string
+          id: string
+          updated_at: string
+          user_email: string
+          user_id: string
+        }
+        Insert: {
+          card_id: string
+          content: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_email?: string
+          user_id: string
+        }
+        Update: {
+          card_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_email?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "confec_kanban_card_comments_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "confec_kanban_cards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      confec_kanban_card_files: {
+        Row: {
+          card_id: string
+          created_at: string
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string | null
+          file_url: string
+          id: string
+          uploaded_by: string | null
+          uploaded_by_email: string | null
+        }
+        Insert: {
+          card_id: string
+          created_at?: string
+          file_name: string
+          file_path: string
+          file_size?: number
+          file_type?: string | null
+          file_url: string
+          id?: string
+          uploaded_by?: string | null
+          uploaded_by_email?: string | null
+        }
+        Update: {
+          card_id?: string
+          created_at?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number
+          file_type?: string | null
+          file_url?: string
+          id?: string
+          uploaded_by?: string | null
+          uploaded_by_email?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "confec_kanban_card_files_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "confec_kanban_cards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      confec_kanban_card_images: {
+        Row: {
+          card_id: string
+          created_at: string
+          id: string
+          image_url: string
+        }
+        Insert: {
+          card_id: string
+          created_at?: string
+          id?: string
+          image_url: string
+        }
+        Update: {
+          card_id?: string
+          created_at?: string
+          id?: string
+          image_url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "confec_kanban_card_images_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "confec_kanban_cards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      confec_kanban_card_labels: {
+        Row: {
+          card_id: string
+          id: string
+          label_id: string
+        }
+        Insert: {
+          card_id: string
+          id?: string
+          label_id: string
+        }
+        Update: {
+          card_id?: string
+          id?: string
+          label_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "confec_kanban_card_labels_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "confec_kanban_cards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "confec_kanban_card_labels_label_id_fkey"
+            columns: ["label_id"]
+            isOneToOne: false
+            referencedRelation: "confec_kanban_labels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      confec_kanban_cards: {
+        Row: {
+          analyst_id: string | null
+          completed_at: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          dev_notes: string | null
+          developer_id: string | null
+          id: string
+          image_url: string | null
+          position: number
+          status: string
+          ticket_number: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          analyst_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          dev_notes?: string | null
+          developer_id?: string | null
+          id?: string
+          image_url?: string | null
+          position?: number
+          status?: string
+          ticket_number?: number
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          analyst_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          dev_notes?: string | null
+          developer_id?: string | null
+          id?: string
+          image_url?: string | null
+          position?: number
+          status?: string
+          ticket_number?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "confec_kanban_cards_analyst_id_fkey"
+            columns: ["analyst_id"]
+            isOneToOne: false
+            referencedRelation: "analysts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "confec_kanban_cards_developer_id_fkey"
+            columns: ["developer_id"]
+            isOneToOne: false
+            referencedRelation: "developers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      confec_kanban_columns: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          position: number
+          slug: string
+          title: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id?: string
+          position?: number
+          slug: string
+          title: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          position?: number
+          slug?: string
+          title?: string
+        }
+        Relationships: []
+      }
+      confec_kanban_labels: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      confec_kanban_notifications: {
+        Row: {
+          action_type: string
+          actor_id: string | null
+          actor_name: string
+          card_id: string
+          card_title: string
+          card_type: string
+          created_at: string
+          id: string
+          message: string
+          read: boolean
+          recipient_id: string
+        }
+        Insert: {
+          action_type: string
+          actor_id?: string | null
+          actor_name: string
+          card_id: string
+          card_title: string
+          card_type?: string
+          created_at?: string
+          id?: string
+          message: string
+          read?: boolean
+          recipient_id: string
+        }
+        Update: {
+          action_type?: string
+          actor_id?: string | null
+          actor_name?: string
+          card_id?: string
+          card_title?: string
+          card_type?: string
+          created_at?: string
+          id?: string
+          message?: string
+          read?: boolean
+          recipient_id?: string
+        }
+        Relationships: []
+      }
+
       developers: {
         Row: {
           created_at: string
