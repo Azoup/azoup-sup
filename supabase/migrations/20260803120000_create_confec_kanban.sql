@@ -50,7 +50,7 @@ CREATE POLICY "Auth update confec cards" ON public.confec_kanban_cards FOR UPDAT
 CREATE POLICY "Auth delete confec cards" ON public.confec_kanban_cards FOR DELETE TO authenticated USING (true);
 CREATE TRIGGER update_confec_cards_updated_at
   BEFORE UPDATE ON public.confec_kanban_cards
-  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
 COMMENT ON COLUMN public.confec_kanban_cards.dev_notes IS
   'Observações e correções técnicas registradas no card.';
@@ -109,7 +109,7 @@ CREATE POLICY "Users can update own confec comments" ON public.confec_kanban_car
 CREATE POLICY "Users or admin can delete confec comments" ON public.confec_kanban_card_comments FOR DELETE TO authenticated USING ((user_id = auth.uid()) OR has_role(auth.uid(), 'admin'));
 CREATE TRIGGER update_confec_comments_updated_at
   BEFORE UPDATE ON public.confec_kanban_card_comments
-  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
 -- Files metadata
 CREATE TABLE public.confec_kanban_card_files (

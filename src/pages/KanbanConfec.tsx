@@ -772,7 +772,7 @@ const KanbanConfec = () => {
       setAddColumnOpen(false);
       toast.success('Lista criada!');
     },
-    onError: () => toast.error('Erro ao criar lista.'),
+    onError: (e: Error) => toast.error(e?.message ? `Erro ao criar lista: ${e.message}` : 'Erro ao criar lista.'),
   });
 
   const editColumn = useMutation({
