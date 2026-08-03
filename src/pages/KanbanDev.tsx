@@ -44,6 +44,7 @@ import { filesFromClipboardData } from '@/lib/clipboardImage';
 import { loadDevKanbanDevNotes, saveDevKanbanDevNotes } from '@/lib/devKanbanDevNotes';
 import { devTicketLabel, devTicketMatchesSearch, isDevTicketNumberQuery } from '@/lib/devKanbanTicketNumber';
 import { isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
+import { normalizeKanbanCardTitle } from '@/lib/normalizeKanbanCardTitle';
 import { computeKanbanDragPositionUpdates, computeKanbanDragPositionUpdatesWithVisible, sortKanbanCardsByPosition } from '@/lib/kanbanCardReorder';
 import { persistDevKanbanCardPositions } from '@/lib/persistDevKanbanCardPositions';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -401,12 +402,13 @@ const KanbanDev = () => {
   const createCard = useMutation({
     mutationFn: async () => {
       markBoardLocalWrite(10);
+      const savedTitle = normalizeKanbanCardTitle(title);
       const imageFiles = [...pendingImages];
       const attachmentFiles = [...pendingFiles];
       const colCards = cardsByColumn[targetColumn] || [];
       const position = colCards.length;
       const { data, error } = await supabase.from('dev_kanban_cards').insert({
-        title,
+        title: savedTitle,
         description: description || null,
         status: targetColumn,
         position,
@@ -424,9 +426,10 @@ const KanbanDev = () => {
       );
       data.dev_notes = devNotes.trim() || null;
       await syncCardLabels('dev_kanban_card_labels', data.id, selectedLabels);
-      const ticketRef = devTicketLabel(data.ticket_number, title);
+      const ticketRef = devTicketLabel(data.ticket_number, savedTitle);
       return {
         card: data,
+        savedTitle,
         imageFiles,
         attachmentFiles,
         notify:
@@ -475,7 +478,7 @@ const KanbanDev = () => {
       if (result?.card) {
         void runPostSaveBackground({
           cardId: result.card.id,
-          cardTitle: title,
+          cardTitle: result.savedTitle,
           imageFiles: result.imageFiles,
           attachmentFiles: result.attachmentFiles,
           developerId: developerId || null,
@@ -493,11 +496,12 @@ const KanbanDev = () => {
     mutationFn: async () => {
       markBoardLocalWrite(10);
       if (!editingCard) return;
+      const savedTitle = normalizeKanbanCardTitle(title);
       const imageFiles = [...pendingImages];
       const attachmentFiles = [...pendingFiles];
       const prevDevId = editingCard.developer_id || null;
       const newDevId = developerId || null;
-      const titleChanged = editingCard.title !== title;
+      const titleChanged = editingCard.title !== savedTitle;
       const descChanged = (editingCard.description || '') !== (description || '');
       const devNotesChanged = initialDevNotesRef.current !== (devNotes.trim() || '');
       const analystChanged = (editingCard.analyst_id || null) !== (analystId || null);
@@ -519,7 +523,7 @@ const KanbanDev = () => {
       }
 
       const updatePayload: Record<string, unknown> = {
-        title,
+        title: savedTitle,
         description: description || null,
         analyst_id: analystId || null,
         developer_id: newDevId,
@@ -564,20 +568,20 @@ const KanbanDev = () => {
       if (devChanged) {
         notify = {
           actionType: 'assignee',
-          message: `${actorName} alterou o responsável do ticket ${devTicketLabel(editingCard.ticket_number, title)}`,
+          message: `${actorName} alterou o responsável do ticket ${devTicketLabel(editingCard.ticket_number, savedTitle)}`,
         };
       } else if (titleChanged || descChanged || devNotesChanged || analystChanged) {
         notify = {
           actionType: 'edit',
-          message: `${actorName} editou o ticket ${devTicketLabel(editingCard.ticket_number, title)}`,
+          message: `${actorName} editou o ticket ${devTicketLabel(editingCard.ticket_number, savedTitle)}`,
         };
       }
 
-      const ticketRef = devTicketLabel(editingCard.ticket_number, title);
+      const ticketRef = devTicketLabel(editingCard.ticket_number, savedTitle);
       const logDetails = buildDevKanbanEditActivityDetails({
         ticketRef,
         titleFrom: editingCard.title || '',
-        titleTo: title,
+        titleTo: savedTitle,
         descriptionFrom: editingCard.description,
         descriptionTo: description || null,
         devNotesFrom: initialDevNotesRef.current,
@@ -597,6 +601,7 @@ const KanbanDev = () => {
 
       return {
         cardId: editingCard.id,
+        savedTitle,
         imageFiles,
         attachmentFiles,
         notify,
@@ -616,13 +621,14 @@ const KanbanDev = () => {
     onSuccess: (result) => {
       const cardId = result?.cardId ?? editingCard?.id;
       if (!cardId) return;
+      const savedTitle = result?.savedTitle ?? normalizeKanbanCardTitle(title);
       markBoardLocalWrite(4);
       patchDevKanbanBoardCards(queryClient, (list) =>
         list.map((c: any) => {
           if (c.id !== cardId) return c;
           const next: any = {
             ...c,
-            title,
+            title: savedTitle,
             description: description || null,
             dev_notes: devNotes.trim() || null,
             analyst_id: analystId || null,
@@ -656,7 +662,7 @@ const KanbanDev = () => {
       if (result) {
         void runPostSaveBackground({
           cardId,
-          cardTitle: title,
+          cardTitle: savedTitle,
           imageFiles: result.imageFiles,
           attachmentFiles: result.attachmentFiles,
           developerId: developerId || null,
@@ -672,15 +678,15 @@ const KanbanDev = () => {
           const isMoveToDone = !isDoneSlug(fromSlug) && isDoneSlug(toSlug);
           void notifyDevAndAnalyst({
             cardId,
-            cardTitle: title,
+            cardTitle: savedTitle,
             developerId: developerId || editingCard.developer_id || null,
             analystId: analystId || editingCard.analyst_id || null,
             actionType: 'status',
             actorId: user?.id,
             actorName,
             message: isMoveToDone
-              ? `${actorName} concluiu o ticket ${devTicketLabel(editingCard.ticket_number, title)} em ${new Date().toLocaleString('pt-BR')}`
-              : `${actorName} moveu ${devTicketLabel(editingCard.ticket_number, title)} para "${colTitle}"`,
+              ? `${actorName} concluiu o ticket ${devTicketLabel(editingCard.ticket_number, savedTitle)} em ${new Date().toLocaleString('pt-BR')}`
+              : `${actorName} moveu ${devTicketLabel(editingCard.ticket_number, savedTitle)} para "${colTitle}"`,
           });
         }
       }

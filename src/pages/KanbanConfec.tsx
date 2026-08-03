@@ -42,8 +42,13 @@ import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { KanbanCardImage } from '@/components/KanbanCardImage';
 import { filesFromClipboardData } from '@/lib/clipboardImage';
 import { loadConfecKanbanNotes, saveConfecKanbanNotes } from '@/lib/confecKanbanDevNotes';
+import {
+  downloadConfecCompletedDemandsPdf,
+  filterConfecCompletedCardsByPeriod,
+} from '@/lib/confecCompletedDemandsPdf';
 import { devTicketLabel, devTicketMatchesSearch, isDevTicketNumberQuery } from '@/lib/confecKanbanTicketNumber';
 import { isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
+import { normalizeKanbanCardTitle } from '@/lib/normalizeKanbanCardTitle';
 import { computeKanbanDragPositionUpdates, computeKanbanDragPositionUpdatesWithVisible, sortKanbanCardsByPosition } from '@/lib/kanbanCardReorder';
 import { persistConfecKanbanCardPositions } from '@/lib/persistConfecKanbanCardPositions';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -57,7 +62,7 @@ import { Badge } from '@/components/ui/badge';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
-import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar, Search } from 'lucide-react';
+import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar, Search, FileText } from 'lucide-react';
 import { ConfecCardComments } from '@/components/ConfecCardComments';
 import { DevTicketNumberBadge } from '@/components/DevTicketNumberBadge';
 import { ConfecCardFiles } from '@/components/ConfecCardFiles';
@@ -66,7 +71,7 @@ import { ChecklistBadge } from '@/components/ChecklistBadge';
 import { KanbanSkeleton } from '@/components/KanbanSkeleton';
 import { ImageLightbox } from '@/components/ImageLightbox';
 
-import { format } from 'date-fns';
+import { format, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
   columnColorToPickerValue,
@@ -216,6 +221,10 @@ const KanbanConfec = () => {
   const [editColumnTitle, setEditColumnTitle] = useState('');
   const [editColumnColor, setEditColumnColor] = useState('');
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
+  const [completedPdfOpen, setCompletedPdfOpen] = useState(false);
+  const [pdfDateFrom, setPdfDateFrom] = useState(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+  const [pdfDateTo, setPdfDateTo] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [pdfGenerating, setPdfGenerating] = useState(false);
   const dragBusyRef = useRef(false);
   const ticketNumberRefetchDone = useRef(false);
 
@@ -402,12 +411,13 @@ const KanbanConfec = () => {
   const createCard = useMutation({
     mutationFn: async () => {
       markBoardLocalWrite(10);
+      const savedTitle = normalizeKanbanCardTitle(title);
       const imageFiles = [...pendingImages];
       const attachmentFiles = [...pendingFiles];
       const colCards = cardsByColumn[targetColumn] || [];
       const position = colCards.length;
       const { data, error } = await supabase.from('confec_kanban_cards').insert({
-        title,
+        title: savedTitle,
         description: description || null,
         status: targetColumn,
         position,
@@ -425,9 +435,10 @@ const KanbanConfec = () => {
       );
       data.dev_notes = devNotes.trim() || null;
       await syncCardLabels('confec_kanban_card_labels', data.id, selectedLabels);
-      const ticketRef = devTicketLabel(data.ticket_number, title);
+      const ticketRef = devTicketLabel(data.ticket_number, savedTitle);
       return {
         card: data,
+        savedTitle,
         imageFiles,
         attachmentFiles,
         notify:
@@ -476,7 +487,7 @@ const KanbanConfec = () => {
       if (result?.card) {
         void runPostSaveBackground({
           cardId: result.card.id,
-          cardTitle: title,
+          cardTitle: result.savedTitle,
           imageFiles: result.imageFiles,
           attachmentFiles: result.attachmentFiles,
           developerId: developerId || null,
@@ -494,11 +505,12 @@ const KanbanConfec = () => {
     mutationFn: async () => {
       markBoardLocalWrite(10);
       if (!editingCard) return;
+      const savedTitle = normalizeKanbanCardTitle(title);
       const imageFiles = [...pendingImages];
       const attachmentFiles = [...pendingFiles];
       const prevDevId = editingCard.developer_id || null;
       const newDevId = developerId || null;
-      const titleChanged = editingCard.title !== title;
+      const titleChanged = editingCard.title !== savedTitle;
       const descChanged = (editingCard.description || '') !== (description || '');
       const devNotesChanged = initialDevNotesRef.current !== (devNotes.trim() || '');
       const analystChanged = (editingCard.analyst_id || null) !== (analystId || null);
@@ -520,7 +532,7 @@ const KanbanConfec = () => {
       }
 
       const updatePayload: Record<string, unknown> = {
-        title,
+        title: savedTitle,
         description: description || null,
         analyst_id: analystId || null,
         developer_id: newDevId,
@@ -565,20 +577,20 @@ const KanbanConfec = () => {
       if (devChanged) {
         notify = {
           actionType: 'assignee',
-          message: `${actorName} alterou o responsável do ticket ${devTicketLabel(editingCard.ticket_number, title)}`,
+          message: `${actorName} alterou o responsável do ticket ${devTicketLabel(editingCard.ticket_number, savedTitle)}`,
         };
       } else if (titleChanged || descChanged || devNotesChanged || analystChanged) {
         notify = {
           actionType: 'edit',
-          message: `${actorName} editou o ticket ${devTicketLabel(editingCard.ticket_number, title)}`,
+          message: `${actorName} editou o ticket ${devTicketLabel(editingCard.ticket_number, savedTitle)}`,
         };
       }
 
-      const ticketRef = devTicketLabel(editingCard.ticket_number, title);
+      const ticketRef = devTicketLabel(editingCard.ticket_number, savedTitle);
       const logDetails = buildDevKanbanEditActivityDetails({
         ticketRef,
         titleFrom: editingCard.title || '',
-        titleTo: title,
+        titleTo: savedTitle,
         descriptionFrom: editingCard.description,
         descriptionTo: description || null,
         devNotesFrom: initialDevNotesRef.current,
@@ -598,6 +610,7 @@ const KanbanConfec = () => {
 
       return {
         cardId: editingCard.id,
+        savedTitle,
         imageFiles,
         attachmentFiles,
         notify,
@@ -617,13 +630,14 @@ const KanbanConfec = () => {
     onSuccess: (result) => {
       const cardId = result?.cardId ?? editingCard?.id;
       if (!cardId) return;
+      const savedTitle = result?.savedTitle ?? normalizeKanbanCardTitle(title);
       markBoardLocalWrite(4);
       patchConfecKanbanBoardCards(queryClient, (list) =>
         list.map((c: any) => {
           if (c.id !== cardId) return c;
           const next: any = {
             ...c,
-            title,
+            title: savedTitle,
             description: description || null,
             dev_notes: devNotes.trim() || null,
             analyst_id: analystId || null,
@@ -657,7 +671,7 @@ const KanbanConfec = () => {
       if (result) {
         void runPostSaveBackground({
           cardId,
-          cardTitle: title,
+          cardTitle: savedTitle,
           imageFiles: result.imageFiles,
           attachmentFiles: result.attachmentFiles,
           developerId: developerId || null,
@@ -673,15 +687,15 @@ const KanbanConfec = () => {
           const isMoveToDone = !isDoneSlug(fromSlug) && isDoneSlug(toSlug);
           void notifyDevAndAnalyst({
             cardId,
-            cardTitle: title,
+            cardTitle: savedTitle,
             developerId: developerId || editingCard.developer_id || null,
             analystId: analystId || editingCard.analyst_id || null,
             actionType: 'status',
             actorId: user?.id,
             actorName,
             message: isMoveToDone
-              ? `${actorName} concluiu o ticket ${devTicketLabel(editingCard.ticket_number, title)} em ${new Date().toLocaleString('pt-BR')}`
-              : `${actorName} moveu ${devTicketLabel(editingCard.ticket_number, title)} para "${colTitle}"`,
+              ? `${actorName} concluiu o ticket ${devTicketLabel(editingCard.ticket_number, savedTitle)} em ${new Date().toLocaleString('pt-BR')}`
+              : `${actorName} moveu ${devTicketLabel(editingCard.ticket_number, savedTitle)} para "${colTitle}"`,
             cardType: 'confec',
           });
         }
@@ -1143,11 +1157,71 @@ const KanbanConfec = () => {
     setFilterDevIds(prev => prev.includes(dId) ? prev.filter(id => id !== dId) : [...prev, dId]);
   }, []);
 
+  const completedPdfPreviewCount = useMemo(
+    () =>
+      filterConfecCompletedCardsByPeriod(cards, completionColumnSlug, pdfDateFrom, pdfDateTo).length,
+    [cards, completionColumnSlug, pdfDateFrom, pdfDateTo],
+  );
+
+  const handleGenerateCompletedPdf = useCallback(async () => {
+    if (!pdfDateFrom || !pdfDateTo) {
+      toast.error('Informe o período (data inicial e final).');
+      return;
+    }
+    if (pdfDateFrom > pdfDateTo) {
+      toast.error('A data inicial não pode ser maior que a data final.');
+      return;
+    }
+    if (!completionColumnSlug) {
+      toast.error('Coluna de concluídos não encontrada.');
+      return;
+    }
+
+    setPdfGenerating(true);
+    try {
+      const filtered = filterConfecCompletedCardsByPeriod(
+        cards,
+        completionColumnSlug,
+        pdfDateFrom,
+        pdfDateTo,
+      );
+      const withNotes = await Promise.all(
+        filtered.map(async (card) => {
+          if (!card.id) return card;
+          try {
+            const notes = await loadConfecKanbanNotes(card.id, card.dev_notes);
+            return { ...card, dev_notes: notes || card.dev_notes || null };
+          } catch {
+            return card;
+          }
+        }),
+      );
+      downloadConfecCompletedDemandsPdf({
+        cards: withNotes,
+        dateFrom: pdfDateFrom,
+        dateTo: pdfDateTo,
+      });
+      if (withNotes.length === 0) {
+        toast.message('PDF gerado sem demandas no período.');
+      } else {
+        toast.success(`PDF gerado com ${withNotes.length} demanda(s).`);
+      }
+      setCompletedPdfOpen(false);
+    } catch (e: any) {
+      toast.error(e?.message ? `Erro ao gerar PDF: ${e.message}` : 'Erro ao gerar PDF.');
+    } finally {
+      setPdfGenerating(false);
+    }
+  }, [cards, completionColumnSlug, pdfDateFrom, pdfDateTo]);
+
   return (
     <div className="flex h-[calc(100dvh-5.5rem)] max-h-[calc(100dvh-5.5rem)] min-h-0 flex-col gap-3 overflow-hidden animate-fade-in md:h-[calc(100dvh-6.5rem)] md:max-h-[calc(100dvh-6.5rem)]">
       <div className="flex shrink-0 items-center justify-between">
         <h1 className="text-2xl font-heading font-bold">Kanban Confec</h1>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setCompletedPdfOpen(true)}>
+            <FileText className="h-4 w-4 mr-1" /> PDF concluídos
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setLabelOpen(true)}>
             <Tag className="h-4 w-4 mr-1" /> Etiquetas
           </Button>
@@ -1576,6 +1650,49 @@ const KanbanConfec = () => {
             </div>
             <Button onClick={() => addColumn.mutate()} disabled={!newColumnTitle.trim() || addColumn.isPending} className="w-full">
               {addColumn.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Criar Lista
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* PDF demandas concluídas */}
+      <Dialog open={completedPdfOpen} onOpenChange={setCompletedPdfOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>PDF — Demandas concluídas</DialogTitle>
+            <DialogDescription>
+              Filtre pelo período de conclusão e gere o PDF dos cards da coluna de Finalizados.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">Data inicial</label>
+                <Input
+                  type="date"
+                  value={pdfDateFrom}
+                  onChange={(e) => setPdfDateFrom(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">Data final</label>
+                <Input
+                  type="date"
+                  value={pdfDateTo}
+                  onChange={(e) => setPdfDateTo(e.target.value)}
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {completedPdfPreviewCount} demanda(s) no período
+            </p>
+            <Button
+              className="w-full"
+              onClick={() => void handleGenerateCompletedPdf()}
+              disabled={pdfGenerating || !pdfDateFrom || !pdfDateTo}
+            >
+              {pdfGenerating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Gerar PDF
             </Button>
           </div>
         </DialogContent>
