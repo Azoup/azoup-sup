@@ -435,13 +435,47 @@ async function enrichSlaTicketsDetails(
   }
 }
 
+async function loadSlaNotificationRecipientIds(admin: SupabaseAdmin): Promise<string[]> {
+  const SLA_VIEW_KEY = "digisac_sla_history_view";
+
+  const [{ data: adminRows, error: adminErr }, { data: permRows, error: permErr }] =
+    await Promise.all([
+      (admin as any).from("user_roles").select("user_id").eq("role", "admin"),
+      (admin as any)
+        .from("user_permissions")
+        .select("user_id, allowed")
+        .eq("permission_key", SLA_VIEW_KEY),
+    ]);
+
+  if (adminErr) throw new Error(adminErr.message);
+  if (permErr) throw new Error(permErr.message);
+
+  const adminIds = (adminRows ?? [])
+    .map((r: { user_id: string }) => r.user_id)
+    .filter(Boolean) as string[];
+
+  const usersWithSlaPermRow = new Set<string>();
+  const explicitlyAllowed = new Set<string>();
+  for (const row of permRows ?? []) {
+    const userId = row.user_id as string;
+    if (!userId) continue;
+    usersWithSlaPermRow.add(userId);
+    if (row.allowed === true || row.allowed === "true" || row.allowed === 1) {
+      explicitlyAllowed.add(userId);
+    }
+  }
+
+  const recipients = new Set<string>(explicitlyAllowed);
+  // Admin sem matriz salva para esta chave continua recebendo (compatibilidade).
+  for (const id of adminIds) {
+    if (!usersWithSlaPermRow.has(id)) recipients.add(id);
+  }
+  return Array.from(recipients);
+}
+
+/** @deprecated use loadSlaNotificationRecipientIds */
 async function loadAdminUserIds(admin: SupabaseAdmin): Promise<string[]> {
-  const { data, error } = await (admin as any)
-    .from("user_roles")
-    .select("user_id")
-    .eq("role", "admin");
-  if (error) throw new Error(error.message);
-  return (data ?? []).map((r: { user_id: string }) => r.user_id).filter(Boolean);
+  return loadSlaNotificationRecipientIds(admin);
 }
 
 function buildEscalationMessage(ticket: SlaTicket): string {
@@ -527,7 +561,7 @@ export async function runDigisacSlaMonitor(input: {
 
   let adminIds: string[] = [];
   try {
-    adminIds = await loadAdminUserIds(input.adminClient);
+    adminIds = await loadSlaNotificationRecipientIds(input.adminClient);
   } catch (e) {
     result.errors.push(String(e));
   }

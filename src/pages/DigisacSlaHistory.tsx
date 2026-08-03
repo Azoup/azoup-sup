@@ -16,7 +16,6 @@ import {
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { useRole } from '@/hooks/useRole';
 import { usePermissions } from '@/hooks/usePermissions';
 import { DigisacSlaAlertDialog } from '@/components/DigisacSlaAlertDialog';
 import { Button } from '@/components/ui/button';
@@ -75,10 +74,10 @@ function brazilDayBounds(dateYmd: string): { startIso: string; endIso: string } 
 
 export default function DigisacSlaHistory() {
   const { user } = useAuth();
-  const { isAdmin } = useRole();
-  const { canView } = usePermissions();
+  const { canView, isLoading: permsLoading } = usePermissions();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const canAccessSla = !permsLoading && canView('digisac_sla_history');
 
   const today = getTodayDateStringBrazil();
 
@@ -99,14 +98,14 @@ export default function DigisacSlaHistory() {
     queryKey: ['digisac-departments'],
     queryFn: () => digisacApi.getDepartments(),
     staleTime: 10 * 60 * 1000,
-    enabled: !!user && isAdmin,
+    enabled: !!user && canAccessSla,
   });
 
   const { data: analystsList = [] } = useQuery({
     queryKey: ['digisac-analysts-list'],
     queryFn: () => digisacApi.getAnalysts(),
     staleTime: 10 * 60 * 1000,
-    enabled: !!user && isAdmin,
+    enabled: !!user && canAccessSla,
   });
 
   const suporteDepartment = useMemo(
@@ -129,7 +128,7 @@ export default function DigisacSlaHistory() {
       if (error) throw error;
       return (data || []) as DigisacSlaAlert[];
     },
-    enabled: !!user && isAdmin,
+    enabled: !!user && canAccessSla,
     staleTime: 30 * 1000,
   });
 
@@ -176,7 +175,7 @@ export default function DigisacSlaHistory() {
   };
 
   const runSlaSync = async () => {
-    if (!isAdmin) return;
+    if (!canAccessSla) return;
     setSlaSyncing(true);
     try {
       const result = await syncDigisacSlaAlerts();
@@ -226,13 +225,13 @@ export default function DigisacSlaHistory() {
     }
   };
 
-  if (!isAdmin) {
+  if (!canAccessSla) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-heading font-bold">Histórico SLA</h1>
+        <h1 className="text-2xl font-heading font-bold">Histórico / Notificações SLA</h1>
         <Card>
           <CardContent className="py-10 text-center text-muted-foreground">
-            O histórico de alertas SLA Digisac está disponível apenas para administradores.
+            Você não possui permissão para o histórico e as notificações de SLA Digisac.
           </CardContent>
         </Card>
       </div>

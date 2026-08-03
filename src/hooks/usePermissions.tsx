@@ -2,6 +2,17 @@ import { useAuth } from '@/hooks/useAuth';
 import { useUserAccess, useAccessReady } from '@/hooks/useUserAccess';
 import { isPermissionAllowed } from '@/lib/fetchUserAccess';
 
+/**
+ * Chaves que o admin NÃO bypassa automaticamente.
+ * Se houver linha em user_permissions, o valor salvo vale (ex.: desligar SLA).
+ */
+const ADMIN_RESPECTED_PERMISSION_KEYS = new Set([
+  'digisac_sla_history_view',
+  'digisac_sla_history_create',
+  'digisac_sla_history_edit',
+  'digisac_sla_history_delete',
+]);
+
 const DEFAULT_USER_PERMISSIONS: Record<string, boolean> = {
   kanban_view: false,
   kanban_create: false,
@@ -61,8 +72,18 @@ export function usePermissions() {
 
   const hasPermission = (key: string): boolean => {
     if (!accessReady) return false;
-    if (isAdmin) return true;
-    if (permissions) return isPermissionAllowed(permissions[key]);
+
+    const hasExplicit =
+      !!permissions && Object.prototype.hasOwnProperty.call(permissions, key);
+
+    if (isAdmin) {
+      if (ADMIN_RESPECTED_PERMISSION_KEYS.has(key) && hasExplicit) {
+        return isPermissionAllowed(permissions![key]);
+      }
+      return true;
+    }
+
+    if (hasExplicit) return isPermissionAllowed(permissions![key]);
     return DEFAULT_USER_PERMISSIONS[key] === true;
   };
 
@@ -94,3 +115,7 @@ export const ROUTE_SCREEN_MAP: Record<string, string> = {
   '/digisac-sla-history': 'digisac_sla_history',
   '/digisac-nps': 'digisac_nps',
 };
+
+/** Tela/permissão que controla histórico SLA e alertas na tela. */
+export const DIGISAC_SLA_PERMISSION_SCREEN = 'digisac_sla_history';
+export const DIGISAC_SLA_VIEW_PERMISSION = 'digisac_sla_history_view';

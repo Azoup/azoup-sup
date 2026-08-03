@@ -5,7 +5,6 @@ import { BellRing, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { useRole } from '@/hooks/useRole';
 import { usePermissions } from '@/hooks/usePermissions';
 import { DigisacSlaAlertDialog } from '@/components/DigisacSlaAlertDialog';
 import { Button } from '@/components/ui/button';
@@ -23,17 +22,18 @@ import {
 
 /**
  * Pop-up na tela + notificação do sistema (Windows/macOS) para alertas SLA Digisac.
+ * Controlado pela permissão "Histórico / Notificações SLA" (não pelo role admin).
  */
 export function DigisacSlaNotificationHub() {
   const { user } = useAuth();
-  const { isAdmin } = useRole();
-  const { canView } = usePermissions();
+  const { canView, isLoading: permsLoading } = usePermissions();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [queue, setQueue] = useState<DigisacSlaNotification[]>([]);
   const [showPermissionBanner, setShowPermissionBanner] = useState(false);
   const seenIdsRef = useRef<Set<string>>(new Set());
 
+  const canReceiveSla = !permsLoading && canView('digisac_sla_history');
   const current = queue[0] ?? null;
 
   const dequeue = useCallback(() => {
@@ -64,16 +64,16 @@ export function DigisacSlaNotificationHub() {
   }, [canView, navigate]);
 
   useEffect(() => {
-    if (!user || !isAdmin) return;
+    if (!user || !canReceiveSla) return;
 
     const support = getDesktopNotificationSupport();
     if (support === 'default') {
       setShowPermissionBanner(true);
     }
-  }, [user, isAdmin]);
+  }, [user, canReceiveSla]);
 
   useEffect(() => {
-    if (!user || !isAdmin) return;
+    if (!user || !canReceiveSla) return;
 
     const channel = supabase
       .channel(`digisac-sla-popup-${user.id}`)
@@ -94,7 +94,7 @@ export function DigisacSlaNotificationHub() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user, isAdmin, queryClient, handleIncoming]);
+  }, [user, canReceiveSla, queryClient, handleIncoming]);
 
   const enableDesktopNotifications = async () => {
     const result = await requestDesktopNotificationPermission();
@@ -111,7 +111,7 @@ export function DigisacSlaNotificationHub() {
     if (canView('digisac_dashboard')) navigate('/digisac-dashboard');
   };
 
-  if (!user || !isAdmin) return null;
+  if (!user || !canReceiveSla) return null;
 
   return (
     <>

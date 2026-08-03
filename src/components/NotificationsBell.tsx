@@ -7,7 +7,6 @@ import { ptBR } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useRole } from '@/hooks/useRole';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -58,13 +57,13 @@ type UnifiedNotification =
 
 export function NotificationsBell() {
   const { user } = useAuth();
-  const { isAdmin } = useRole();
-  const { canView } = usePermissions();
+  const { canView, isLoading: permsLoading } = usePermissions();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [confirmMode, setConfirmMode] = useState<null | 'read' | 'all'>(null);
   const [selectedSla, setSelectedSla] = useState<DigisacSlaNotification | null>(null);
+  const canReceiveSla = !permsLoading && canView('digisac_sla_history');
 
   const { data: kanbanNotifications = [] } = useQuery({
     queryKey: ['dev-notifications', user?.id],
@@ -94,7 +93,7 @@ export function NotificationsBell() {
         .limit(30);
       return (data || []) as DigisacSlaNotification[];
     },
-    enabled: !!user && isAdmin,
+    enabled: !!user && canReceiveSla,
     staleTime: 30 * 1000,
   });
 
@@ -171,7 +170,7 @@ export function NotificationsBell() {
         .update({ read: true })
         .eq('recipient_id', user.id)
         .eq('read', false),
-      isAdmin
+      canReceiveSla
         ? supabase
           .from('digisac_sla_notifications')
           .update({ read: true })
@@ -214,7 +213,7 @@ export function NotificationsBell() {
 
     const results = await Promise.all([
       kanbanQ,
-      isAdmin ? slaQ : Promise.resolve({ error: null }),
+      canReceiveSla ? slaQ : Promise.resolve({ error: null }),
     ]);
     if (results.some((r) => r.error)) {
       toast.error('Erro ao limpar notificações');

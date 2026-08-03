@@ -259,8 +259,25 @@ async function runSync(tickets, now) {
   }
 
   const adminsRes = await supabaseRest("user_roles?select=user_id&role=eq.admin");
-  const adminIds = (adminsRes.json || []).map((r) => r.user_id).filter(Boolean);
-  console.log(`\nAdmins para notificar: ${adminIds.length}`);
+  const adminIdsAll = (adminsRes.json || []).map((r) => r.user_id).filter(Boolean);
+  const permsRes = await supabaseRest(
+    "user_permissions?select=user_id,allowed&permission_key=eq.digisac_sla_history_view",
+  );
+  const permRows = Array.isArray(permsRes.json) ? permsRes.json : [];
+  const usersWithSlaPermRow = new Set(permRows.map((r) => r.user_id).filter(Boolean));
+  const explicitlyAllowed = new Set(
+    permRows
+      .filter((r) => r.allowed === true || r.allowed === "true" || r.allowed === 1)
+      .map((r) => r.user_id)
+      .filter(Boolean),
+  );
+  const adminIds = [
+    ...new Set([
+      ...explicitlyAllowed,
+      ...adminIdsAll.filter((id) => !usersWithSlaPermRow.has(id)),
+    ]),
+  ];
+  console.log(`\nDestinatários SLA (permissão/histórico): ${adminIds.length}`);
 
   const openIds = new Set(tickets.map((t) => t.id));
   const activeRes = await supabaseRest("digisac_sla_alerts?select=id,digisac_ticket_id,admin_notified_at&resolved_at=is.null");
