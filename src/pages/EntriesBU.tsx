@@ -4,14 +4,16 @@ import { supabase } from '@/integrations/supabase/client';
 import { useSupabaseReady } from '@/hooks/useSupabaseReady';
 import { assertSupabaseData } from '@/lib/supabaseQuery';
 import { logActivity } from '@/hooks/useActivityLog';
+import { digisacApi } from '@/integrations/digisac/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { toast } from 'sonner';
-import { Loader2, PenLine, Trash2, Pencil, Building2, Calendar } from 'lucide-react';
+import { Loader2, PenLine, Trash2, Pencil, Building2, Calendar, Headset } from 'lucide-react';
 import { format, startOfWeek, addWeeks, parseISO, getWeek, setDay, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -90,6 +92,12 @@ const EntriesBU = () => {
     enabled: supabaseReady,
   });
 
+  const { data: digisacBu, isLoading: isLoadingDigisac } = useQuery({
+    queryKey: ['bu-digisac-dashboard', queryRange.start, queryRange.end],
+    queryFn: () => digisacApi.getBuDashboard({ startDate: queryRange.start, endDate: queryRange.end }),
+    staleTime: 60 * 1000,
+  });
+
   const consolidated = useMemo(() => {
     return records.reduce((acc: Record<string, { buName: string; atendimentos: number; contatos: number }>, r: any) => {
       const buName = (r.business_units as any)?.name || 'Sem unidade';
@@ -164,6 +172,35 @@ const EntriesBU = () => {
   return (
     <div className="space-y-6 animate-fade-in">
       <h1 className="text-2xl font-heading font-bold">Lançamentos B.U</h1>
+
+      <Alert>
+        <Headset className="h-4 w-4" />
+        <AlertTitle>Dashboard B.U. integrado ao Digisac</AlertTitle>
+        <AlertDescription>
+          Atendimentos e contatos de B1/B2 no dashboard vêm automaticamente da estatística Digisac (segunda a sábado, departamento Suporte, tags de contato B1 e B2). Os lançamentos manuais abaixo ficam só como ajuste interno e não entram mais no dashboard.
+        </AlertDescription>
+      </Alert>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {(['B1', 'B2'] as const).map((key) => {
+          const unit = digisacBu?.units?.find((u) => u.key === key);
+          return (
+            <Card key={key} className="border shadow-sm">
+              <CardContent className="py-4 flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <Building2 className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium">{key} · Digisac</p>
+                  <p className="text-sm text-muted-foreground">
+                    {isLoadingDigisac ? 'Carregando…' : `At: ${unit?.atendimentos ?? 0} · Ct: ${unit?.contatos ?? 0}`}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
 
       {/* Filters */}
       <Card className="border shadow-sm">

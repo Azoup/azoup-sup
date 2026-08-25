@@ -11,7 +11,6 @@ export const ROUTE_PRIORITY: ReadonlyArray<{ path: string; screen: string }> = [
   { path: '/digisac-sla-history', screen: 'digisac_sla_history' },
   { path: '/digisac-nps', screen: 'digisac_nps' },
   { path: '/entries', screen: 'entries' },
-  { path: '/entries-bu', screen: 'entries_bu' },
   { path: '/analysts', screen: 'analysts' },
   { path: '/developers', screen: 'developers' },
   { path: '/business-units', screen: 'business_units' },

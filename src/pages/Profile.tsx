@@ -38,7 +38,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 const PERMISSION_SCREENS = [
   { screen: 'kanban', label: 'Kanban Pendências' },
   { screen: 'entries', label: 'Lançamentos Dúvidas' },
-  { screen: 'entries_bu', label: 'Lançamentos B.U' },
   { screen: 'dashboard', label: 'Dashboard Dúvidas' },
   { screen: 'dashboard_bu', label: 'Dashboard B.U' },
   { screen: 'kanban_dashboard', label: 'Dashboard Kanban' },

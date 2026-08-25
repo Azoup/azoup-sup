@@ -27,6 +27,17 @@ import {
 } from "../_shared/digisacNpsFetch.ts";
 import { formatDigisacDateOnly, toDigisacPeriodIso } from "../_shared/digisacPeriod.ts";
 import {
+  DIGISAC_BU_CONTACT_TAG_KEYS,
+  pickExactDigisacBuContactTags,
+  type DigisacBuContactTagKey,
+} from "../_shared/digisacBuContactTags.ts";
+import { listClippedMonSatWeeks, listClippedMonths } from "../_shared/digisacBuPeriods.ts";
+import {
+  fetchTicketsForContactTag,
+  metricsFromTickets,
+  parseTagDisplayName,
+} from "../_shared/digisacBuStats.ts";
+import {
   ADMIN_USER_ACTIONS,
   assertCallerIsAdmin,
   normalizeAdminBody,
@@ -407,6 +418,116 @@ const getDepartmentNameById = async (
   return departments.find((d) => d.id === departmentId)?.name;
 };
 
+const loadCachedDepartments = async (
+  digisacUrl: string,
+  token: string,
+): Promise<Array<{ id: string; name: string }>> => {
+  const cacheKey = "digisac_departments";
+  const cached = cache[cacheKey]?.data;
+  if (cached && Date.now() - cache[cacheKey].timestamp < LIST_CACHE_TTL_MS) return cached;
+  const r = await fetchDigisac(digisacUrl, token, "/api/v1/departments");
+  if (!r.ok) return [];
+  const list = Array.isArray(r.data?.data) ? r.data.data : Array.isArray(r.data) ? r.data : [];
+  const departments = list
+    .filter((d: { id?: string; deletedAt?: unknown }) => d?.id && !d.deletedAt)
+    .map((d: { id: string; name?: string }) => ({ id: String(d.id), name: d.name || "Sem nome" }));
+  cache[cacheKey] = { data: departments, timestamp: Date.now() };
+  return departments;
+};
+
+const unwrapDigisacList = (payload: unknown): unknown[] => {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+  const obj = payload as Record<string, unknown>;
+  if (Array.isArray(obj.data)) return obj.data;
+  if (Array.isArray(obj.items)) return obj.items;
+  if (Array.isArray(obj.rows)) return obj.rows;
+  if (obj.data && typeof obj.data === "object") {
+    const inner = obj.data as Record<string, unknown>;
+    if (Array.isArray(inner.data)) return inner.data;
+    if (Array.isArray(inner.items)) return inner.items;
+  }
+  return [];
+};
+
+const parseDigisacTagRow = (raw: unknown): { id: string; name: string } | null => parseTagDisplayName(raw);
+
+const mergeTagRows = (
+  payload: unknown,
+  merged: Array<{ id: string; name: string }>,
+  seen: Set<string>,
+): number => {
+  let added = 0;
+  for (const raw of unwrapDigisacList(payload)) {
+    const tag = parseDigisacTagRow(raw);
+    if (!tag || seen.has(tag.id)) continue;
+    seen.add(tag.id);
+    merged.push(tag);
+    added++;
+  }
+  return added;
+};
+
+const loadDigisacTags = async (
+  digisacUrl: string,
+  token: string,
+): Promise<{ tags: Array<{ id: string; name: string }>; lastStatus: number | null }> => {
+  const cacheKey = "digisac_tags";
+  const cached = cache[cacheKey]?.data as { tags: Array<{ id: string; name: string }>; lastStatus: number | null } | undefined;
+  if (cached?.tags?.length && Date.now() - cache[cacheKey].timestamp < LIST_CACHE_TTL_MS) {
+    return cached;
+  }
+
+  const merged: Array<{ id: string; name: string }> = [];
+  const seen = new Set<string>();
+  let lastStatus: number | null = null;
+
+  const tryFetch = async (params?: URLSearchParams) => {
+    const r = await fetchDigisac(digisacUrl, token, "/api/v1/tags", params);
+    lastStatus = r.status;
+    if (!r.ok) return 0;
+    return mergeTagRows(r.data, merged, seen);
+  };
+
+  for (const key of DIGISAC_BU_CONTACT_TAG_KEYS) {
+    await tryFetch(new URLSearchParams({ "where[label]": key, perPage: "50" }));
+    await tryFetch(new URLSearchParams({ "where[name]": key, perPage: "50" }));
+  }
+
+  const pageSize = 40;
+  let page = 1;
+  while (page <= 30) {
+    const params = new URLSearchParams({ perPage: String(pageSize), page: String(page) });
+    const r = await fetchDigisac(digisacUrl, token, "/api/v1/tags", params);
+    lastStatus = r.status;
+    if (!r.ok) {
+      if (page === 1) {
+        const r0 = await fetchDigisac(digisacUrl, token, "/api/v1/tags");
+        lastStatus = r0.status;
+        if (r0.ok) mergeTagRows(r0.data, merged, seen);
+      }
+      break;
+    }
+    const added = mergeTagRows(r.data, merged, seen);
+    const list = unwrapDigisacList(r.data);
+    if (list.length < pageSize || added === 0) break;
+    page++;
+  }
+
+  if (merged.length === 0) {
+    const r0 = await fetchDigisac(digisacUrl, token, "/api/v1/tags");
+    lastStatus = r0.status;
+    if (r0.ok) mergeTagRows(r0.data, merged, seen);
+  }
+
+  const result = { tags: merged, lastStatus };
+  if (merged.length > 0) cache[cacheKey] = { data: result, timestamp: Date.now() };
+  return result;
+};
+
+type BuUnitMetrics = { atendimentos: number; contatos: number };
+const emptyBuMetrics = (): BuUnitMetrics => ({ atendimentos: 0, contatos: 0 });
+
 const resolvePeriodType = (payload: Record<string, unknown>) => {
   const p = typeof payload.periodType === "string" ? payload.periodType.trim() : "";
   if (p === "closeDate" || p === "openDate") return p;
@@ -645,6 +766,7 @@ Deno.serve(async (req) => {
       // Permission check — admins always allowed
       const digisacDashboardActions = new Set(["geral", "analistas"]);
       const npsDashboardActions = new Set(["nps_dashboard"]);
+      const buDashboardActions = new Set(["bu_stats"]);
       const sharedListActions = new Set([
         "listar_departments",
         "listar_digisac_users",
@@ -653,6 +775,7 @@ Deno.serve(async (req) => {
       const protectedActions = new Set([
         ...digisacDashboardActions,
         ...npsDashboardActions,
+        ...buDashboardActions,
         ...sharedListActions,
       ]);
       if (protectedActions.has(action ?? "")) {
@@ -660,24 +783,31 @@ Deno.serve(async (req) => {
           Deno.env.get("SUPABASE_URL") ?? "",
           Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
         );
-        const [{ data: roleRow }, { data: dashPerm }, { data: npsPerm }] = await Promise.all([
+        const [{ data: roleRow }, { data: dashPerm }, { data: npsPerm }, { data: buDashPerm }, { data: buEntriesPerm }] = await Promise.all([
           adminClient.from("user_roles").select("role").eq("user_id", userId).eq("role", "admin").maybeSingle(),
           adminClient.from("user_permissions").select("allowed").eq("user_id", userId).eq("permission_key", "digisac_dashboard_view").maybeSingle(),
           adminClient.from("user_permissions").select("allowed").eq("user_id", userId).eq("permission_key", "digisac_nps_view").maybeSingle(),
+          adminClient.from("user_permissions").select("allowed").eq("user_id", userId).eq("permission_key", "dashboard_bu_view").maybeSingle(),
+          adminClient.from("user_permissions").select("allowed").eq("user_id", userId).eq("permission_key", "entries_bu_view").maybeSingle(),
         ]);
         const isAdmin = !!roleRow;
         const hasDigisac = dashPerm?.allowed === true;
         const hasNps = npsPerm?.allowed === true;
+        const hasBuDash = buDashPerm?.allowed === true;
+        const hasBuEntries = buEntriesPerm?.allowed === true;
         let allowed = isAdmin;
         if (!allowed) {
           if (npsDashboardActions.has(action ?? "")) allowed = hasNps;
           else if (digisacDashboardActions.has(action ?? "")) allowed = hasDigisac;
-          else if (sharedListActions.has(action ?? "")) allowed = hasDigisac || hasNps;
+          else if (buDashboardActions.has(action ?? "")) allowed = hasBuDash || hasBuEntries || hasDigisac;
+          else if (sharedListActions.has(action ?? "")) allowed = hasDigisac || hasNps || hasBuDash || hasBuEntries;
         }
         if (!allowed) {
           const msg = npsDashboardActions.has(action ?? "")
             ? "Sem permissão para acessar o Dashboard NPS."
-            : "Sem permissão para acessar o Dashboard Digisac.";
+            : buDashboardActions.has(action ?? "")
+              ? "Sem permissão para acessar o Dashboard B.U."
+              : "Sem permissão para acessar o Dashboard Digisac.";
           return handledErrorResponse(action, msg, { code: "FORBIDDEN" });
         }
       }
@@ -1171,6 +1301,107 @@ Deno.serve(async (req) => {
       cache[cacheKey] = { data: departments, timestamp: Date.now() };
       return jsonResponse(departments);
     }
+
+    if (action === "bu_stats") {
+      const today = getTodayBrazilDate();
+      const startDate = formatDateOnly(typeof payload?.startDate === "string" ? payload.startDate : undefined) ?? today;
+      const endDate = formatDateOnly(typeof payload?.endDate === "string" ? payload.endDate : undefined) ?? startDate;
+      const startTime = typeof payload?.startTime === "string" && payload.startTime.trim()
+        ? payload.startTime.trim()
+        : "00:00";
+      const endTime = typeof payload?.endTime === "string" && payload.endTime.trim()
+        ? payload.endTime.trim()
+        : "23:59";
+
+      const departments = await loadCachedDepartments(digisacUrl, digisacToken);
+      const suporteId = pickSuporteDepartmentId(departments);
+      if (!suporteId) {
+        return handledErrorResponse(action, "Departamento Suporte não encontrado no Digisac.", {
+          code: "BU_DEPT_MISSING",
+        });
+      }
+      const departmentName = departments.find((d) => d.id === suporteId)?.name || "Suporte";
+      const { tags, lastStatus: tagsStatus } = await loadDigisacTags(digisacUrl, digisacToken);
+      const pickedTags = pickExactDigisacBuContactTags(tags);
+      const warnings: string[] = [];
+      for (const key of DIGISAC_BU_CONTACT_TAG_KEYS) {
+        if (!pickedTags[key]) warnings.push(`Etiqueta de contato ${key} não encontrada no Digisac.`);
+      }
+      if (!pickedTags.B1 && !pickedTags.B2) {
+        const sampleNames = tags.slice(0, 20).map((t) => t.name).filter(Boolean);
+        const detail = sampleNames.length
+          ? ` Encontradas ${tags.length} etiqueta(s), nenhuma chamada exatamente B1/B2. Exemplos: ${sampleNames.join(", ")}.`
+          : ` A API de tags não devolveu etiquetas (status ${tagsStatus ?? "n/a"}).`;
+        return handledErrorResponse(action, `Etiquetas de contato B1 e B2 não encontradas no Digisac.${detail}`, {
+          code: "BU_TAGS_MISSING",
+          tag_count: tags.length,
+          tag_status: tagsStatus,
+          sample_names: sampleNames,
+        });
+      }
+
+      const weekBuckets = listClippedMonSatWeeks(startDate, endDate);
+      const monthBuckets = listClippedMonths(startDate, endDate);
+
+      const tagEntries = DIGISAC_BU_CONTACT_TAG_KEYS
+        .map((key) => ({ key, tag: pickedTags[key] }))
+        .filter((row): row is { key: DigisacBuContactTagKey; tag: { id: string; name: string } } => !!row.tag);
+
+      const startPeriod = toDigisacPeriodIso(startDate, "start", startTime)!;
+      const endPeriod = toDigisacPeriodIso(endDate, "end", endTime)!;
+      const digisacFetch = (endpoint: string, params?: URLSearchParams) =>
+        fetchDigisac(digisacUrl, digisacToken, endpoint, params);
+
+      const ticketsByTag = new Map<DigisacBuContactTagKey, Awaited<ReturnType<typeof fetchTicketsForContactTag>>>();
+      await Promise.all(tagEntries.map(async ({ key, tag }) => {
+        const tickets = await fetchTicketsForContactTag(digisacFetch, {
+          startPeriod,
+          endPeriod,
+          departmentId: suporteId,
+          tagId: tag.id,
+        });
+        console.log("[Digisac BU] tickets", key, tag.id, tag.name, tickets.length);
+        ticketsByTag.set(key, tickets);
+      }));
+
+      const metricsFor = (from: string, to: string, key: DigisacBuContactTagKey): BuUnitMetrics =>
+        metricsFromTickets(ticketsByTag.get(key) ?? [], from, to);
+
+      const units = tagEntries.map(({ key, tag }) => ({
+        key,
+        tagId: tag.id,
+        tagName: tag.name,
+        ...metricsFor(startDate, endDate, key),
+      }));
+
+      if (units.every((unit) => unit.atendimentos === 0 && unit.contatos === 0)) {
+        warnings.push(
+          "Tags B1 e B2 encontradas, mas nenhum chamado do departamento Suporte no período com essas tags de contato.",
+        );
+      }
+
+      const toBucket = (bucket: { startDate: string; endDate: string; label: string }) => ({
+        startDate: bucket.startDate,
+        endDate: bucket.endDate,
+        label: bucket.label,
+        units: {
+          B1: metricsFor(bucket.startDate, bucket.endDate, "B1"),
+          B2: metricsFor(bucket.startDate, bucket.endDate, "B2"),
+        },
+      });
+
+      return jsonResponse({
+        departmentId: suporteId,
+        departmentName,
+        startDate,
+        endDate,
+        units,
+        weeks: weekBuckets.map(toBucket),
+        months: monthBuckets.map(toBucket),
+        warnings,
+      });
+    }
+
     return handledErrorResponse(action, "Ação inválida.", { code: "INVALID_ACTION" });
   } catch (error: any) {
     console.error("[Edge Function Error]", error?.message || error);

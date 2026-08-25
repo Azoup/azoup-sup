@@ -11,7 +11,6 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Analysts from "./pages/Analysts";
 import Entries from "./pages/Entries";
-import EntriesBU from "./pages/EntriesBU";
 import BusinessUnits from "./pages/BusinessUnits";
 import Dashboard from "./pages/Dashboard";
 import DashboardBU from "./pages/DashboardBU";
@@ -116,7 +115,7 @@ function AppRoutes() {
       <Route path="/profile" element={<RequireAuth screen="profile_log"><Profile /></RequireAuth>} />
       <Route path="/analysts" element={<RequireAuth screen="analysts"><Analysts /></RequireAuth>} />
       <Route path="/entries" element={<RequireAuth screen="entries"><Entries /></RequireAuth>} />
-      <Route path="/entries-bu" element={<RequireAuth screen="entries_bu"><EntriesBU /></RequireAuth>} />
+      <Route path="/entries-bu" element={<Navigate to="/dashboard-bu" replace />} />
       <Route path="/business-units" element={<RequireAuth screen="business_units"><BusinessUnits /></RequireAuth>} />
       <Route path="/kanban-dev" element={<RequireAuth screen="kanban_dev"><KanbanDev /></RequireAuth>} />
       <Route path="/kanban-confec" element={<RequireAuth screen="kanban_confec"><KanbanConfec /></RequireAuth>} />

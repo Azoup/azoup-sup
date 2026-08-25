@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, FileSpreadsheet, BarChart3, UserCircle, Code2, FolderKanban, ChevronDown, GripVertical, Star, History, Scissors } from 'lucide-react';
+import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, BarChart3, UserCircle, Code2, FolderKanban, ChevronDown, GripVertical, Star, History, Scissors } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/hooks/useAuth';
 import { useSignOut } from '@/hooks/useSignOut';
@@ -53,7 +53,6 @@ const DEFAULT_MENU: MenuItem[] = [
   { id: 'digisac-sla-history', type: 'leaf', title: 'Histórico / Notif. SLA', url: '/digisac-sla-history', icon: History },
   { id: 'digisac-nps', type: 'leaf', title: 'Dashboard NPS', url: '/digisac-nps', icon: Star },
   { id: 'entries', type: 'leaf', title: 'Lançamentos Dúvidas', url: '/entries', icon: PenLine },
-  { id: 'entries-bu', type: 'leaf', title: 'Lançamentos B.U', url: '/entries-bu', icon: FileSpreadsheet },
   {
     id: 'cadastros',
     type: 'group',

@@ -1,24 +1,39 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
-import { useSupabaseReady } from '@/hooks/useSupabaseReady';
-import { assertSupabaseData } from '@/lib/supabaseQuery';
+import { digisacApi } from '@/integrations/digisac/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LineChart, Line } from 'recharts';
-import { Building2, Download, Loader2, Filter, Phone, HelpCircle, FileText } from 'lucide-react';
+import { Building2, Download, Filter, Phone, HelpCircle, FileText, RefreshCw, Headset } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, subMonths, parseISO, startOfWeek, setDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { QueryLoadState } from '@/components/QueryLoadState';
+import type { DigisacBuContactTagKey } from '@/lib/digisacBuContactTags';
+
+const getTodayDateStringBrazil = () => {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+  } catch {
+    return format(new Date(), 'yyyy-MM-dd');
+  }
+};
+
+const emptyUnit = { atendimentos: 0, contatos: 0 };
 
 const DashboardBU = () => {
-  const { ready: supabaseReady } = useSupabaseReady();
-  const today = new Date();
+  const today = parseISO(getTodayDateStringBrazil());
   const [dateFrom, setDateFrom] = useState(format(startOfWeek(today, { weekStartsOn: 1 }), 'yyyy-MM-dd'));
   const [dateTo, setDateTo] = useState(format(setDay(startOfWeek(today, { weekStartsOn: 1 }), 6, { weekStartsOn: 1 }), 'yyyy-MM-dd'));
   const [monthFilter, setMonthFilter] = useState('');
   const [weekFilter, setWeekFilter] = useState('current');
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const applyMonthFilter = (month: string) => {
     setMonthFilter(month);
@@ -41,79 +56,55 @@ const DashboardBU = () => {
     }
   };
 
-  const { data: businessUnits = [] } = useQuery({
-    queryKey: ['business-units'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('business_units').select('*').order('name');
-      return assertSupabaseData(data, error, 'business_units');
-    },
-    enabled: supabaseReady,
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['bu-digisac-dashboard', dateFrom, dateTo, refreshTick],
+    queryFn: () => digisacApi.getBuDashboard({ startDate: dateFrom, endDate: dateTo }),
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: true,
   });
 
-  const { data: records = [], isLoading } = useQuery({
-    queryKey: ['bu-records-dashboard'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('doubt_records')
-        .select('*, business_units(name)')
-        .not('business_unit_id', 'is', null)
-        .order('record_date');
-      return assertSupabaseData(data, error, 'bu-records');
-    },
-    enabled: supabaseReady,
-  });
+  const unitByKey = useMemo(() => {
+    const map = new Map<DigisacBuContactTagKey, { atendimentos: number; contatos: number }>();
+    for (const unit of data?.units ?? []) {
+      map.set(unit.key, { atendimentos: unit.atendimentos, contatos: unit.contatos });
+    }
+    return map;
+  }, [data]);
 
-  const filteredRecords = useMemo(() => {
-    return records.filter((r: any) => r.record_date >= dateFrom && r.record_date <= dateTo);
-  }, [records, dateFrom, dateTo]);
+  const totalAtendimentos = (unitByKey.get('B1')?.atendimentos ?? 0) + (unitByKey.get('B2')?.atendimentos ?? 0);
+  const totalContatos = (unitByKey.get('B1')?.contatos ?? 0) + (unitByKey.get('B2')?.contatos ?? 0);
 
-  const totalAtendimentos = useMemo(() => filteredRecords.reduce((s: number, r: any) => s + r.quantity, 0), [filteredRecords]);
-  const totalContatos = useMemo(() => filteredRecords.reduce((s: number, r: any) => s + (r.contacts || 0), 0), [filteredRecords]);
+  const buCompareData = useMemo(
+    () => ['B1', 'B2'].map((name) => ({
+      name,
+      ...(unitByKey.get(name as DigisacBuContactTagKey) ?? emptyUnit),
+    })),
+    [unitByKey],
+  );
 
-  const buCompareData = useMemo(() => {
-    const map = new Map<string, { atendimentos: number; contatos: number }>();
-    filteredRecords.forEach((r: any) => {
-      const buName = (r.business_units as any)?.name || 'Sem unidade';
-      const existing = map.get(buName) || { atendimentos: 0, contatos: 0 };
-      existing.atendimentos += r.quantity;
-      existing.contatos += r.contacts || 0;
-      map.set(buName, existing);
-    });
-    return Array.from(map.entries()).map(([name, vals]) => ({ name, ...vals }));
-  }, [filteredRecords]);
+  const weeklyData = useMemo(
+    () => (data?.weeks ?? []).map((week) => ({
+      week: week.label,
+      atendimentos: week.units.B1.atendimentos + week.units.B2.atendimentos,
+      contatos: week.units.B1.contatos + week.units.B2.contatos,
+    })),
+    [data],
+  );
 
-  const weeklyData = useMemo(() => {
-    const map = new Map<string, { atendimentos: number; contatos: number }>();
-    filteredRecords.forEach((r: any) => {
-      const key = format(startOfWeek(parseISO(r.record_date), { weekStartsOn: 1 }), 'dd/MM');
-      const existing = map.get(key) || { atendimentos: 0, contatos: 0 };
-      existing.atendimentos += r.quantity;
-      existing.contatos += r.contacts || 0;
-      map.set(key, existing);
-    });
-    return Array.from(map.entries()).map(([week, vals]) => ({ week, ...vals }));
-  }, [filteredRecords]);
-
-  const monthlyData = useMemo(() => {
-    const map = new Map<string, { atendimentos: number; contatos: number }>();
-    filteredRecords.forEach((r: any) => {
-      const key = r.record_date.slice(0, 7);
-      const existing = map.get(key) || { atendimentos: 0, contatos: 0 };
-      existing.atendimentos += r.quantity;
-      existing.contatos += r.contacts || 0;
-      map.set(key, existing);
-    });
-    return Array.from(map.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-6)
-      .map(([month, vals]) => ({ month, ...vals }));
-  }, [filteredRecords]);
+  const monthlyData = useMemo(
+    () => (data?.months ?? []).map((month) => ({
+      month: month.label,
+      atendimentos: month.units.B1.atendimentos + month.units.B2.atendimentos,
+      contatos: month.units.B1.contatos + month.units.B2.contatos,
+    })),
+    [data],
+  );
 
   const exportCSV = () => {
-    const rows = [['Data', 'Unidade', 'Atendimentos', 'Contatos', 'Origem']];
-    filteredRecords.forEach((r: any) => {
-      rows.push([r.record_date, (r.business_units as any)?.name || '', String(r.quantity), String(r.contacts || 0), r.source || 'manual']);
-    });
+    const rows = [['Data inicial', 'Data final', 'Unidade', 'Atendimentos', 'Contatos', 'Origem']];
+    for (const unit of data?.units ?? []) {
+      rows.push([dateFrom, dateTo, unit.key, String(unit.atendimentos), String(unit.contatos), 'digisac']);
+    }
     const csv = rows.map((r) => r.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -130,13 +121,22 @@ const DashboardBU = () => {
       result.push({ value: format(d, 'yyyy-MM'), label: format(d, 'MMMM yyyy', { locale: ptBR }) });
     }
     return result;
-  }, []);
+  }, [today]);
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <h1 className="text-2xl font-heading font-bold">Dashboard — Unidades de Negócio</h1>
+        <div>
+          <h1 className="text-2xl font-heading font-bold">Dashboard — Unidades de Negócio</h1>
+          <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5">
+            <Headset className="h-4 w-4" />
+            Dados em tempo real do Digisac (Suporte + tags de contato B1 e B2).
+          </p>
+        </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => { setRefreshTick((n) => n + 1); void refetch(); }}>
+            <RefreshCw className="mr-2 h-4 w-4" /> Atualizar
+          </Button>
           <Button variant="outline" size="sm" onClick={exportCSV}>
             <Download className="mr-2 h-4 w-4" /> Exportar CSV
           </Button>
@@ -169,8 +169,7 @@ const DashboardBU = () => {
         </div>
       </div>
 
-      <div id="dashboard-bu-content">
-      {/* Filters */}
+      <div id="dashboard-bu-content" className="space-y-6">
       <Card className="border shadow-sm">
         <CardContent className="py-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
@@ -191,7 +190,7 @@ const DashboardBU = () => {
                 <Select value={weekFilter} onValueChange={applyWeekFilter}>
                   <SelectTrigger><SelectValue placeholder="Semana" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="current">Semana atual</SelectItem>
+                    <SelectItem value="current">Semana atual (seg–sáb)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -206,40 +205,50 @@ const DashboardBU = () => {
               </div>
             </div>
           </div>
+          <p className="text-xs text-muted-foreground mt-3 whitespace-pre-line">
+            {`Filtros de estatística integrados com Digisac.
+Departamento Suporte e filtros de tags B1/B2.`}
+          </p>
         </CardContent>
       </Card>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Card className="border shadow-sm">
-          <CardContent className="py-5 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-              <HelpCircle className="h-6 w-6 text-primary" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Atendimentos</p>
-              <p className="text-2xl font-heading font-bold">{totalAtendimentos}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border shadow-sm">
-          <CardContent className="py-5 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center">
-              <Phone className="h-6 w-6 text-accent" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Contatos</p>
-              <p className="text-2xl font-heading font-bold">{totalContatos}</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {isLoading ? (
-        <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
-      ) : (
+      <QueryLoadState
+        isLoading={isLoading}
+        isError={isError}
+        onRetry={() => { void refetch(); }}
+        errorMessage={error instanceof Error ? error.message : 'Não foi possível carregar os dados do Digisac.'}
+        loadingClassName="py-12"
+      >
         <>
-          {/* BU Comparison */}
+          {(data?.warnings?.length ?? 0) > 0 && (
+            <p className="text-sm text-amber-700">{data?.warnings?.join(' ')}</p>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Card className="border shadow-sm">
+              <CardContent className="py-5 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <HelpCircle className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Atendimentos</p>
+                  <p className="text-2xl font-heading font-bold">{totalAtendimentos}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border shadow-sm">
+              <CardContent className="py-5 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center">
+                  <Phone className="h-6 w-6 text-accent" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Contatos</p>
+                  <p className="text-2xl font-heading font-bold">{totalContatos}</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           <Card className="border shadow-sm">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2"><Building2 className="h-5 w-5 text-primary" /> Comparativo por Unidade</CardTitle>
@@ -259,7 +268,6 @@ const DashboardBU = () => {
             </CardContent>
           </Card>
 
-          {/* Weekly & Monthly */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Card className="border shadow-sm">
               <CardHeader><CardTitle className="text-lg">Comparativo Semanal</CardTitle></CardHeader>
@@ -296,7 +304,7 @@ const DashboardBU = () => {
             </Card>
           </div>
         </>
-      )}
+      </QueryLoadState>
       </div>
     </div>
   );
