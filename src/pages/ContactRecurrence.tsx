@@ -262,9 +262,9 @@ Departamento Suporte e filtros de tags B1/B2.`}
                   </SelectContent>
                 </Select>
                 <Select value={classFilter} onValueChange={(v) => setClassFilter(v as 'all' | RecurrenceClass)}>
-                  <SelectTrigger className="sm:w-48"><SelectValue placeholder="Classificação" /></SelectTrigger>
+                  <SelectTrigger className="sm:w-44"><SelectValue placeholder="Classificações" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Todas as classificações</SelectItem>
+                    <SelectItem value="all">Classificações</SelectItem>
                     {(Object.keys(RECURRENCE_CLASS_LABEL) as RecurrenceClass[]).map((key) => (
                       <SelectItem key={key} value={key}>{RECURRENCE_CLASS_LABEL[key]}</SelectItem>
                     ))}
