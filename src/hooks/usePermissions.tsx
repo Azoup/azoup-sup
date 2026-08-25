@@ -101,6 +101,7 @@ export const ROUTE_SCREEN_MAP: Record<string, string> = {
   '/kanban-dashboard': 'kanban_dashboard',
   '/dashboard': 'dashboard',
   '/dashboard-bu': 'dashboard_bu',
+  '/recorrencia-contatos': 'dashboard_bu',
   '/entries': 'entries',
   '/analysts': 'analysts',
   '/business-units': 'business_units',

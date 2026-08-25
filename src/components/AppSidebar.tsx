@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, BarChart3, UserCircle, Code2, FolderKanban, ChevronDown, GripVertical, Star, History, Scissors } from 'lucide-react';
+import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, BarChart3, UserCircle, Code2, FolderKanban, ChevronDown, GripVertical, Star, History, Scissors, Repeat2 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/hooks/useAuth';
 import { useSignOut } from '@/hooks/useSignOut';
@@ -49,6 +49,7 @@ const DEFAULT_MENU: MenuItem[] = [
   { id: 'dashboard-dev', type: 'leaf', title: 'Dashboard DEV', url: '/dashboard-dev', icon: BarChart3 },
   { id: 'dashboard', type: 'leaf', title: 'Dashboard Dúvidas', url: '/dashboard', icon: BarChart3 },
   { id: 'dashboard-bu', type: 'leaf', title: 'Dashboard B.U', url: '/dashboard-bu', icon: Building2 },
+  { id: 'recorrencia-contatos', type: 'leaf', title: 'Recorrências', url: '/recorrencia-contatos', icon: Repeat2 },
   { id: 'digisac-dashboard', type: 'leaf', title: 'Dashboard Digisac', url: '/digisac-dashboard', icon: Headset },
   { id: 'digisac-sla-history', type: 'leaf', title: 'Histórico / Notif. SLA', url: '/digisac-sla-history', icon: History },
   { id: 'digisac-nps', type: 'leaf', title: 'Dashboard NPS', url: '/digisac-nps', icon: Star },
@@ -78,7 +79,17 @@ function loadOrder(userId: string | undefined): MenuItem[] {
     const byId = new Map<string, MenuItem>(DEFAULT_MENU.map(i => [i.id, i]));
     const ordered: MenuItem[] = [];
     saved.topIds.forEach(id => { const it = byId.get(id); if (it) { ordered.push(it); byId.delete(id); } });
-    byId.forEach(it => ordered.push(it));
+    const leftovers: MenuItem[] = [];
+    byId.forEach(it => leftovers.push(it));
+    for (const it of leftovers) {
+      if (it.id === 'recorrencia-contatos') {
+        const idx = ordered.findIndex(i => i.id === 'dashboard-bu');
+        if (idx >= 0) ordered.splice(idx + 1, 0, it);
+        else ordered.push(it);
+      } else {
+        ordered.push(it);
+      }
+    }
     // reorder children of cadastros
     const group = ordered.find(i => i.id === 'cadastros') as GroupItem | undefined;
     if (group) {

@@ -19,6 +19,7 @@ import {
   type DigisacNpsDashboardResponse,
 } from "@/integrations/digisac/npsNormalize";
 import type { DigisacBuDashboardResponse } from "@/integrations/digisac/buStats";
+import type { DigisacBuRecurrenceResponse } from "@/integrations/digisac/buRecurrence";
 
 export type { DigisacDashboardQueryFilters };
 export {
@@ -30,6 +31,7 @@ export type { DigisacAnalystStats, DigisacGeralResponse };
 export type { DigisacNpsQueryFilters, DigisacNpsDashboardResponse };
 export { mergeDigisacNpsFilters } from "@/integrations/digisac/npsFilters";
 export type { DigisacBuDashboardResponse } from "@/integrations/digisac/buStats";
+export type { DigisacBuRecurrenceResponse } from "@/integrations/digisac/buRecurrence";
 
 export interface DigisacDepartment {
   id: string;
@@ -183,6 +185,15 @@ export const digisacApi = {
 
   async getBuDashboard(filters: { startDate: string; endDate: string; startTime?: string; endTime?: string }): Promise<DigisacBuDashboardResponse> {
     return invokeDigisac<DigisacBuDashboardResponse>('bu_stats', {
+      startDate: normalizeDateOnly(filters.startDate),
+      endDate: normalizeDateOnly(filters.endDate),
+      startTime: filters.startTime?.trim() || '00:00',
+      endTime: filters.endTime?.trim() || '23:59',
+    });
+  },
+
+  async getBuRecurrence(filters: { startDate: string; endDate: string; startTime?: string; endTime?: string }): Promise<DigisacBuRecurrenceResponse> {
+    return invokeDigisac<DigisacBuRecurrenceResponse>('bu_recurrence', {
       startDate: normalizeDateOnly(filters.startDate),
       endDate: normalizeDateOnly(filters.endDate),
       startTime: filters.startTime?.trim() || '00:00',

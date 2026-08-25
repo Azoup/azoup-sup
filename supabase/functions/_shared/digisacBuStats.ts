@@ -45,14 +45,14 @@ const brazilDateOnlyFromIso = (iso: string): string => {
   return `${brazil.getUTCFullYear()}-${String(brazil.getUTCMonth() + 1).padStart(2, "0")}-${String(brazil.getUTCDate()).padStart(2, "0")}`;
 };
 
-const ticketDate = (row: Record<string, unknown>): string => {
+export const ticketDate = (row: Record<string, unknown>): string => {
   const raw = firstNonEmpty(row.startedAt, row.createdAt, row.openDate, row.openedAt);
   if (!raw) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
   return brazilDateOnlyFromIso(raw);
 };
 
-const ticketContactId = (row: Record<string, unknown>): string => {
+export const ticketContactId = (row: Record<string, unknown>): string => {
   const nested = row.contact && typeof row.contact === "object"
     ? row.contact as Record<string, unknown>
     : undefined;
@@ -95,12 +95,13 @@ function buildTicketQueryVariants(input: {
   tagId: string;
   page: number;
   perPage: number;
+  rich?: boolean;
 }): URLSearchParams[] {
-  const { startPeriod, endPeriod, departmentId, tagId, page, perPage } = input;
+  const { startPeriod, endPeriod, departmentId, tagId, page, perPage, rich } = input;
   const includeContactTags = {
     model: "contact",
     required: true,
-    attributes: ["id"],
+    attributes: rich ? ["id", "name", "internalName", "alternativeName"] : ["id"],
     include: [{
       model: "tags",
       required: true,
@@ -109,26 +110,34 @@ function buildTicketQueryVariants(input: {
     }],
   };
 
+  const ticketAttributes = rich
+    ? ["id", "contactId", "startedAt", "createdAt", "departmentId", "lastUserId", "userId", "protocol", "protocolNumber", "number"]
+    : ["id", "contactId", "startedAt", "createdAt", "departmentId"];
+
+  const include = rich
+    ? [includeContactTags, { model: "lastUser", required: false, attributes: ["id", "name"] }]
+    : [includeContactTags];
+
   const jsonQueries = [
     {
       distinct: true,
-      attributes: ["id", "contactId", "startedAt", "createdAt", "departmentId"],
+      attributes: ticketAttributes,
       where: {
         departmentId,
         startedAt: { $gte: startPeriod, $lte: endPeriod },
       },
-      include: [includeContactTags],
+      include,
       page,
       perPage,
     },
     {
       distinct: true,
-      attributes: ["id", "contactId", "startedAt", "createdAt", "departmentId"],
+      attributes: ticketAttributes,
       where: {
         departmentId,
         createdAt: { $gte: startPeriod, $lte: endPeriod },
       },
-      include: [includeContactTags],
+      include,
       page,
       perPage,
     },
@@ -146,6 +155,10 @@ function buildTicketQueryVariants(input: {
   simple.set("include[0][model]", "contact");
   simple.set("include[0][required]", "true");
   simple.set("include[0][include][0][model]", "tags");
+  if (rich) {
+    simple.set("include[1][model]", "lastUser");
+    simple.set("include[1][required]", "false");
+  }
 
   return [simple, ...jsonQueries.map((query) => {
     const params = new URLSearchParams({
@@ -161,16 +174,17 @@ function buildTicketQueryVariants(input: {
   })];
 }
 
-export async function fetchTicketsForContactTag(
+export async function fetchTicketRowsForContactTag(
   fetchDigisac: FetchDigisac,
   input: {
     startPeriod: string;
     endPeriod: string;
     departmentId: string;
     tagId: string;
+    rich?: boolean;
   },
-): Promise<BuTicketRef[]> {
-  const collected: BuTicketRef[] = [];
+): Promise<Record<string, unknown>[]> {
+  const collected: Record<string, unknown>[] = [];
   const seen = new Set<string>();
   const perPage = 100;
   let workingVariant = 0;
@@ -201,11 +215,10 @@ export async function fetchTicketsForContactTag(
     for (const row of list) {
       const id = firstNonEmpty(row.id);
       if (!id || seen.has(id)) continue;
-      const contactId = ticketContactId(row);
       const date = ticketDate(row);
       if (!date) continue;
       seen.add(id);
-      collected.push({ id, contactId, date });
+      collected.push(row);
       added++;
     }
 
@@ -213,4 +226,21 @@ export async function fetchTicketsForContactTag(
   }
 
   return collected;
+}
+
+export async function fetchTicketsForContactTag(
+  fetchDigisac: FetchDigisac,
+  input: {
+    startPeriod: string;
+    endPeriod: string;
+    departmentId: string;
+    tagId: string;
+  },
+): Promise<BuTicketRef[]> {
+  const rows = await fetchTicketRowsForContactTag(fetchDigisac, input);
+  return rows.map((row) => ({
+    id: firstNonEmpty(row.id),
+    contactId: ticketContactId(row),
+    date: ticketDate(row),
+  })).filter((ticket) => ticket.id && ticket.date);
 }

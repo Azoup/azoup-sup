@@ -6,9 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LineChart, Line } from 'recharts';
-import { Building2, Download, Filter, Phone, HelpCircle, FileText, RefreshCw, Headset } from 'lucide-react';
+import { Building2, Download, Filter, Phone, HelpCircle, FileText, RefreshCw, Headset, Repeat2 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, subMonths, parseISO, startOfWeek, setDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { Link } from 'react-router-dom';
 import { QueryLoadState } from '@/components/QueryLoadState';
 import type { DigisacBuContactTagKey } from '@/lib/digisacBuContactTags';
 
@@ -134,6 +135,11 @@ const DashboardBU = () => {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/recorrencia-contatos">
+              <Repeat2 className="mr-2 h-4 w-4" /> Recorrências
+            </Link>
+          </Button>
           <Button variant="outline" size="sm" onClick={() => { setRefreshTick((n) => n + 1); void refetch(); }}>
             <RefreshCw className="mr-2 h-4 w-4" /> Atualizar
           </Button>

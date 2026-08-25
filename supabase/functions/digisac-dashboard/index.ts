@@ -18,7 +18,7 @@ import {
   filterNpsAnswerRows,
 } from "../_shared/digisacNpsAggregate.ts";
 import { loadDigisacNpsQuestionIds } from "../_shared/digisacNpsQuestions.ts";
-import { enrichAnswersWithTicketAttendants } from "../_shared/digisacNpsTickets.ts";
+import { enrichAnswersWithTicketAttendants, fetchTicketBatch } from "../_shared/digisacNpsTickets.ts";
 import {
   fetchDigisacAnswersRows,
   fetchDigisacNpsOverviewWithProbe,
@@ -33,10 +33,19 @@ import {
 } from "../_shared/digisacBuContactTags.ts";
 import { listClippedMonSatWeeks, listClippedMonths } from "../_shared/digisacBuPeriods.ts";
 import {
+  fetchTicketRowsForContactTag,
   fetchTicketsForContactTag,
   metricsFromTickets,
   parseTagDisplayName,
+  ticketContactId,
 } from "../_shared/digisacBuStats.ts";
+import {
+  buildRecurrence,
+  fetchTicketDetailsByIds,
+  fetchTicketTopicNames,
+  mapRawTicketToInput,
+} from "../_shared/digisacBuRecurrence.ts";
+import { fetchContactBatch } from "../_shared/digisacTicketContact.ts";
 import {
   ADMIN_USER_ACTIONS,
   assertCallerIsAdmin,
@@ -766,7 +775,7 @@ Deno.serve(async (req) => {
       // Permission check — admins always allowed
       const digisacDashboardActions = new Set(["geral", "analistas"]);
       const npsDashboardActions = new Set(["nps_dashboard"]);
-      const buDashboardActions = new Set(["bu_stats"]);
+      const buDashboardActions = new Set(["bu_stats", "bu_recurrence"]);
       const sharedListActions = new Set([
         "listar_departments",
         "listar_digisac_users",
@@ -1398,6 +1407,141 @@ Deno.serve(async (req) => {
         units,
         weeks: weekBuckets.map(toBucket),
         months: monthBuckets.map(toBucket),
+        warnings,
+      });
+    }
+
+    if (action === "bu_recurrence") {
+      const today = getTodayBrazilDate();
+      const startDate = formatDateOnly(typeof payload?.startDate === "string" ? payload.startDate : undefined) ?? today;
+      const endDate = formatDateOnly(typeof payload?.endDate === "string" ? payload.endDate : undefined) ?? startDate;
+      const startTime = typeof payload?.startTime === "string" && payload.startTime.trim()
+        ? payload.startTime.trim()
+        : "00:00";
+      const endTime = typeof payload?.endTime === "string" && payload.endTime.trim()
+        ? payload.endTime.trim()
+        : "23:59";
+
+      const departments = await loadCachedDepartments(digisacUrl, digisacToken);
+      const suporteId = pickSuporteDepartmentId(departments);
+      if (!suporteId) {
+        return handledErrorResponse(action, "Departamento Suporte não encontrado no Digisac.", {
+          code: "BU_DEPT_MISSING",
+        });
+      }
+      const departmentName = departments.find((d) => d.id === suporteId)?.name || "Suporte";
+      const { tags, lastStatus: tagsStatus } = await loadDigisacTags(digisacUrl, digisacToken);
+      const pickedTags = pickExactDigisacBuContactTags(tags);
+      const warnings: string[] = [];
+      for (const key of DIGISAC_BU_CONTACT_TAG_KEYS) {
+        if (!pickedTags[key]) warnings.push(`Etiqueta de contato ${key} não encontrada no Digisac.`);
+      }
+      if (!pickedTags.B1 && !pickedTags.B2) {
+        const sampleNames = tags.slice(0, 20).map((t) => t.name).filter(Boolean);
+        const detail = sampleNames.length
+          ? ` Encontradas ${tags.length} etiqueta(s), nenhuma chamada exatamente B1/B2. Exemplos: ${sampleNames.join(", ")}.`
+          : ` A API de tags não devolveu etiquetas (status ${tagsStatus ?? "n/a"}).`;
+        return handledErrorResponse(action, `Etiquetas de contato B1 e B2 não encontradas no Digisac.${detail}`, {
+          code: "BU_TAGS_MISSING",
+          tag_count: tags.length,
+          tag_status: tagsStatus,
+          sample_names: sampleNames,
+        });
+      }
+
+      const tagEntries = DIGISAC_BU_CONTACT_TAG_KEYS
+        .map((key) => ({ key, tag: pickedTags[key] }))
+        .filter((row): row is { key: DigisacBuContactTagKey; tag: { id: string; name: string } } => !!row.tag);
+
+      const startPeriod = toDigisacPeriodIso(startDate, "start", startTime)!;
+      const endPeriod = toDigisacPeriodIso(endDate, "end", endTime)!;
+      const digisacFetch = (endpoint: string, params?: URLSearchParams) =>
+        fetchDigisac(digisacUrl, digisacToken, endpoint, params);
+
+      const rowsByTag = new Map<DigisacBuContactTagKey, Record<string, unknown>[]>();
+      await Promise.all(tagEntries.map(async ({ key, tag }) => {
+        const rows = await fetchTicketRowsForContactTag(digisacFetch, {
+          startPeriod,
+          endPeriod,
+          departmentId: suporteId,
+          tagId: tag.id,
+        });
+        console.log("[Digisac BU recurrence] tickets", key, tag.id, tag.name, rows.length);
+        rowsByTag.set(key, rows);
+      }));
+
+      const contactIds: string[] = [];
+      for (const rows of rowsByTag.values()) {
+        for (const row of rows) {
+          const id = ticketContactId(row);
+          if (id) contactIds.push(id);
+        }
+      }
+      const contactsMap = await fetchContactBatch(digisacFetch, contactIds);
+
+      const ticketIds: string[] = [];
+      for (const rows of rowsByTag.values()) {
+        for (const row of rows) {
+          const id = String(row.id ?? "").trim();
+          if (id) ticketIds.push(id);
+        }
+      }
+      const [ticketDetails, topicNames] = await Promise.all([
+        fetchTicketDetailsByIds(digisacFetch, ticketIds),
+        fetchTicketTopicNames(digisacFetch),
+      ]);
+      const missingDetailIds = ticketIds.filter((id) => !ticketDetails.has(id));
+      const attendantsByTicket = await fetchTicketBatch(digisacFetch, missingDetailIds);
+
+      const analystNames = new Map<string, string>();
+      try {
+        const mappingClient = createClient(
+          Deno.env.get("SUPABASE_URL") ?? "",
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+        );
+        const [{ data: mappings }, { data: analysts }] = await Promise.all([
+          mappingClient.from("digisac_analyst_mapping").select("digisac_user_id, digisac_user_name, analyst_id"),
+          mappingClient.from("analysts").select("id, name"),
+        ]);
+        const analystById = new Map((analysts ?? []).map((row: { id: string; name: string }) => [row.id, row.name]));
+        for (const row of mappings ?? []) {
+          const userId = String(row.digisac_user_id ?? "").trim();
+          if (!userId) continue;
+          const mapped = analystById.get(String(row.analyst_id ?? "")) || String(row.digisac_user_name ?? "").trim();
+          if (mapped) analystNames.set(userId, mapped);
+        }
+      } catch (err) {
+        console.warn("[Digisac BU recurrence] mapping lookup failed", err);
+      }
+
+      const inputs = [];
+      const seenTicketIds = new Set<string>();
+      for (const { key } of tagEntries) {
+        for (const row of rowsByTag.get(key) ?? []) {
+          const id = String(row.id ?? "").trim();
+          const details = id ? ticketDetails.get(id) : undefined;
+          const merged = details ? { ...row, ...details } : row;
+          const mapped = mapRawTicketToInput(merged, key, contactsMap, analystNames, attendantsByTicket, topicNames);
+          if (!mapped || seenTicketIds.has(mapped.id)) continue;
+          seenTicketIds.add(mapped.id);
+          inputs.push(mapped);
+        }
+      }
+
+      const { summary, contacts } = buildRecurrence(inputs);
+      if (summary.totalAtendimentos === 0) {
+        warnings.push(
+          "Tags B1 e B2 encontradas, mas nenhum chamado do departamento Suporte no período com essas tags de contato.",
+        );
+      }
+
+      return jsonResponse({
+        departmentId: suporteId,
+        departmentName,
+        startDate,
+        endDate,
+        summary,
+        contacts,
         warnings,
       });
     }
