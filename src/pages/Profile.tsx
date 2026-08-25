@@ -40,6 +40,7 @@ const PERMISSION_SCREENS = [
   { screen: 'entries', label: 'Lançamentos Dúvidas' },
   { screen: 'dashboard', label: 'Dashboard Dúvidas' },
   { screen: 'dashboard_bu', label: 'Dashboard B.U' },
+  { screen: 'recorrencia_contatos', label: 'Recorrências' },
   { screen: 'kanban_dashboard', label: 'Dashboard Kanban' },
   { screen: 'analysts', label: 'Cadastro de Analistas' },
   { screen: 'business_units', label: 'Unidades de Negócio' },
@@ -375,6 +376,14 @@ const Profile = () => {
       // Override with saved values from DB
       if (Array.isArray(userPermissions)) {
         userPermissions.forEach((p: any) => { draft[p.permission_key] = p.allowed; });
+      }
+      const savedKeys = new Set(
+        (Array.isArray(userPermissions) ? userPermissions : []).map((p: { permission_key?: string }) => p.permission_key),
+      );
+      if (!savedKeys.has('recorrencia_contatos_view')) {
+        for (const a of PERMISSION_ACTIONS) {
+          draft[`recorrencia_contatos_${a.action}`] = draft[`dashboard_bu_${a.action}`] === true;
+        }
       }
       setPermsDraft(draft);
       setPermsLoaded(true);

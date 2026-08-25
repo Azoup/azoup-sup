@@ -33,6 +33,7 @@ const DEFAULT_USER_PERMISSIONS: Record<string, boolean> = {
   digisac_sla_history_view: false,
   digisac_nps_view: false,
   dashboard_bu_view: false,
+  recorrencia_contatos_view: false,
   entries_view: false,
   business_units_view: false,
   kanban_dev_view: false,
@@ -86,7 +87,15 @@ export function usePermissions() {
     return DEFAULT_USER_PERMISSIONS[key] === true;
   };
 
-  const canView = (screen: string): boolean => hasPermission(`${screen}_view`);
+  const canView = (screen: string): boolean => {
+    if (hasPermission(`${screen}_view`)) return true;
+    if (screen === 'recorrencia_contatos') {
+      const hasExplicit =
+        !!permissions && Object.prototype.hasOwnProperty.call(permissions, 'recorrencia_contatos_view');
+      if (!hasExplicit) return hasPermission('dashboard_bu_view');
+    }
+    return false;
+  };
 
   return {
     permissions: permissions || {},
@@ -101,7 +110,7 @@ export const ROUTE_SCREEN_MAP: Record<string, string> = {
   '/kanban-dashboard': 'kanban_dashboard',
   '/dashboard': 'dashboard',
   '/dashboard-bu': 'dashboard_bu',
-  '/recorrencia-contatos': 'dashboard_bu',
+  '/recorrencia-contatos': 'recorrencia_contatos',
   '/entries': 'entries',
   '/analysts': 'analysts',
   '/business-units': 'business_units',

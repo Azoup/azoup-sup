@@ -792,31 +792,36 @@ Deno.serve(async (req) => {
           Deno.env.get("SUPABASE_URL") ?? "",
           Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
         );
-        const [{ data: roleRow }, { data: dashPerm }, { data: npsPerm }, { data: buDashPerm }, { data: buEntriesPerm }] = await Promise.all([
+        const [{ data: roleRow }, { data: dashPerm }, { data: npsPerm }, { data: buDashPerm }, { data: buEntriesPerm }, { data: recurrencePerm }] = await Promise.all([
           adminClient.from("user_roles").select("role").eq("user_id", userId).eq("role", "admin").maybeSingle(),
           adminClient.from("user_permissions").select("allowed").eq("user_id", userId).eq("permission_key", "digisac_dashboard_view").maybeSingle(),
           adminClient.from("user_permissions").select("allowed").eq("user_id", userId).eq("permission_key", "digisac_nps_view").maybeSingle(),
           adminClient.from("user_permissions").select("allowed").eq("user_id", userId).eq("permission_key", "dashboard_bu_view").maybeSingle(),
           adminClient.from("user_permissions").select("allowed").eq("user_id", userId).eq("permission_key", "entries_bu_view").maybeSingle(),
+          adminClient.from("user_permissions").select("allowed").eq("user_id", userId).eq("permission_key", "recorrencia_contatos_view").maybeSingle(),
         ]);
         const isAdmin = !!roleRow;
         const hasDigisac = dashPerm?.allowed === true;
         const hasNps = npsPerm?.allowed === true;
         const hasBuDash = buDashPerm?.allowed === true;
         const hasBuEntries = buEntriesPerm?.allowed === true;
+        const hasRecurrence = recurrencePerm?.allowed === true;
         let allowed = isAdmin;
         if (!allowed) {
           if (npsDashboardActions.has(action ?? "")) allowed = hasNps;
           else if (digisacDashboardActions.has(action ?? "")) allowed = hasDigisac;
+          else if (action === "bu_recurrence") allowed = hasRecurrence || hasBuDash || hasBuEntries || hasDigisac;
           else if (buDashboardActions.has(action ?? "")) allowed = hasBuDash || hasBuEntries || hasDigisac;
-          else if (sharedListActions.has(action ?? "")) allowed = hasDigisac || hasNps || hasBuDash || hasBuEntries;
+          else if (sharedListActions.has(action ?? "")) allowed = hasDigisac || hasNps || hasBuDash || hasBuEntries || hasRecurrence;
         }
         if (!allowed) {
           const msg = npsDashboardActions.has(action ?? "")
             ? "Sem permissão para acessar o Dashboard NPS."
-            : buDashboardActions.has(action ?? "")
-              ? "Sem permissão para acessar o Dashboard B.U."
-              : "Sem permissão para acessar o Dashboard Digisac.";
+            : action === "bu_recurrence"
+              ? "Sem permissão para acessar Recorrências."
+              : buDashboardActions.has(action ?? "")
+                ? "Sem permissão para acessar o Dashboard B.U."
+                : "Sem permissão para acessar o Dashboard Digisac.";
           return handledErrorResponse(action, msg, { code: "FORBIDDEN" });
         }
       }

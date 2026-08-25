@@ -11,6 +11,7 @@ import { format, startOfMonth, endOfMonth, subMonths, parseISO, startOfWeek, set
 import { ptBR } from 'date-fns/locale';
 import { Link } from 'react-router-dom';
 import { QueryLoadState } from '@/components/QueryLoadState';
+import { usePermissions } from '@/hooks/usePermissions';
 import type { DigisacBuContactTagKey } from '@/lib/digisacBuContactTags';
 
 const getTodayDateStringBrazil = () => {
@@ -29,6 +30,7 @@ const getTodayDateStringBrazil = () => {
 const emptyUnit = { atendimentos: 0, contatos: 0 };
 
 const DashboardBU = () => {
+  const { canView } = usePermissions();
   const today = parseISO(getTodayDateStringBrazil());
   const [dateFrom, setDateFrom] = useState(format(startOfWeek(today, { weekStartsOn: 1 }), 'yyyy-MM-dd'));
   const [dateTo, setDateTo] = useState(format(setDay(startOfWeek(today, { weekStartsOn: 1 }), 6, { weekStartsOn: 1 }), 'yyyy-MM-dd'));
@@ -135,11 +137,13 @@ const DashboardBU = () => {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/recorrencia-contatos">
-              <Repeat2 className="mr-2 h-4 w-4" /> Recorrências
-            </Link>
-          </Button>
+          {canView('recorrencia_contatos') && (
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/recorrencia-contatos">
+                <Repeat2 className="mr-2 h-4 w-4" /> Recorrências
+              </Link>
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => { setRefreshTick((n) => n + 1); void refetch(); }}>
             <RefreshCw className="mr-2 h-4 w-4" /> Atualizar
           </Button>

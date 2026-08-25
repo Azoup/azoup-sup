@@ -7,7 +7,7 @@ export const ROUTE_PRIORITY: ReadonlyArray<{ path: string; screen: string }> = [
   { path: '/dashboard-dev', screen: 'dashboard_dev' },
   { path: '/dashboard', screen: 'dashboard' },
   { path: '/dashboard-bu', screen: 'dashboard_bu' },
-  { path: '/recorrencia-contatos', screen: 'dashboard_bu' },
+  { path: '/recorrencia-contatos', screen: 'recorrencia_contatos' },
   { path: '/digisac-dashboard', screen: 'digisac_dashboard' },
   { path: '/digisac-sla-history', screen: 'digisac_sla_history' },
   { path: '/digisac-nps', screen: 'digisac_nps' },
