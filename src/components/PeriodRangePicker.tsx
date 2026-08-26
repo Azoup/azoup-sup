@@ -92,14 +92,14 @@ export function PeriodRangePicker({ from, to, today, onChange, className }: Peri
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto max-w-[calc(100vw-1.5rem)] p-0" align="start">
-          <div className="flex flex-col sm:flex-row">
-            <div className="grid grid-cols-2 gap-0.5 border-b p-2 sm:grid-cols-1 sm:w-44 sm:border-b-0 sm:border-r">
+          <div className="flex flex-col sm:flex-row sm:items-start">
+            <div className="grid grid-cols-2 content-start gap-0.5 border-b p-1.5 sm:grid-cols-1 sm:w-36 sm:border-b-0 sm:border-r">
               {presets.map((preset) => (
                 <button
                   key={preset.id}
                   type="button"
                   className={cn(
-                    "rounded-md px-2.5 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground",
+                    "rounded-md px-2 py-1 text-left text-xs leading-tight text-muted-foreground hover:bg-muted hover:text-foreground",
                     activePresetId === preset.id && "bg-muted font-medium text-foreground",
                   )}
                   onClick={() => applyRange(preset.from, preset.to)}
