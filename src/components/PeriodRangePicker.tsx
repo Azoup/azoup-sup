@@ -91,16 +91,16 @@ export function PeriodRangePicker({ from, to, today, onChange, className }: Peri
             <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto max-w-[calc(100vw-1.5rem)] p-0" align="start">
-          <div className="flex flex-col sm:flex-row sm:items-start">
-            <div className="grid grid-cols-2 content-start gap-0.5 border-b p-1.5 sm:grid-cols-1 sm:w-36 sm:border-b-0 sm:border-r">
+        <PopoverContent className="w-auto max-w-[calc(100vw-1.5rem)] overflow-hidden p-0" align="start">
+          <div className="flex flex-col sm:flex-row">
+            <div className="flex flex-col gap-1 border-b p-3 sm:w-48 sm:border-b-0 sm:border-r">
               {presets.map((preset) => (
                 <button
                   key={preset.id}
                   type="button"
                   className={cn(
-                    "rounded-md px-2 py-1 text-left text-xs leading-tight text-muted-foreground hover:bg-muted hover:text-foreground",
-                    activePresetId === preset.id && "bg-muted font-medium text-foreground",
+                    "h-9 rounded-md px-3 text-left text-sm text-foreground/70 transition-colors hover:bg-muted hover:text-foreground",
+                    activePresetId === preset.id && "bg-primary/10 font-medium text-foreground",
                   )}
                   onClick={() => applyRange(preset.from, preset.to)}
                 >
@@ -108,7 +108,7 @@ export function PeriodRangePicker({ from, to, today, onChange, className }: Peri
                 </button>
               ))}
             </div>
-            <div className="p-2">
+            <div className="p-3">
               <Calendar
                 mode="range"
                 locale={ptBR}
@@ -127,8 +127,9 @@ export function PeriodRangePicker({ from, to, today, onChange, className }: Peri
                 }}
                 numberOfMonths={1}
                 defaultMonth={parseISO(from)}
+                className="p-0"
               />
-              <p className="px-3 pb-2 text-center text-xs text-muted-foreground">
+              <p className="mt-2 text-center text-xs text-muted-foreground">
                 {draft?.from && draft.to && isSameDay(draft.from, draft.to)
                   ? format(draft.from, "dd/MM/yyyy")
                   : formatRangeLabel(displayFrom, displayTo)}
