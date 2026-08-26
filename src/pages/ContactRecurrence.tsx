@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { format, startOfMonth, endOfMonth, subMonths, parseISO, startOfWeek, setDay } from 'date-fns';
+import { format, startOfMonth, endOfMonth, subMonths, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
   Building2,
@@ -78,7 +78,6 @@ const ContactRecurrence = () => {
   const [dateFrom, setDateFrom] = useState(todayStr);
   const [dateTo, setDateTo] = useState(todayStr);
   const [monthFilter, setMonthFilter] = useState('');
-  const [weekFilter, setWeekFilter] = useState('today');
   const [refreshTick, setRefreshTick] = useState(0);
   const [search, setSearch] = useState('');
   const [unitFilter, setUnitFilter] = useState<'all' | 'B1' | 'B2'>('all');
@@ -88,26 +87,10 @@ const ContactRecurrence = () => {
 
   const applyMonthFilter = (month: string) => {
     setMonthFilter(month);
-    setWeekFilter('');
     if (month) {
       const d = parseISO(month + '-01');
       setDateFrom(format(startOfMonth(d), 'yyyy-MM-dd'));
       setDateTo(format(endOfMonth(d), 'yyyy-MM-dd'));
-    }
-  };
-
-  const applyWeekFilter = (val: string) => {
-    setWeekFilter(val);
-    setMonthFilter('');
-    if (val === 'today') {
-      setDateFrom(todayStr);
-      setDateTo(todayStr);
-    }
-    if (val === 'current') {
-      const monday = startOfWeek(today, { weekStartsOn: 1 });
-      const saturday = setDay(monday, 6, { weekStartsOn: 1 });
-      setDateFrom(format(monday, 'yyyy-MM-dd'));
-      setDateTo(format(saturday, 'yyyy-MM-dd'));
     }
   };
 
@@ -168,27 +151,20 @@ const ContactRecurrence = () => {
       <Card className="border shadow-sm">
         <CardContent className="py-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
-            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <Filter className="h-4 w-4" /> Filtros
+            <div className="flex flex-col shrink-0">
+              <span className="text-xs mb-1 block invisible select-none" aria-hidden="true">&nbsp;</span>
+              <div className="flex h-10 items-center gap-2 text-sm font-medium text-muted-foreground">
+                <Filter className="h-4 w-4" /> Filtros
+              </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 flex-1 w-full">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 flex-1 w-full">
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">De</label>
-                <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setMonthFilter(''); setWeekFilter(''); }} />
+                <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setMonthFilter(''); }} />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Até</label>
-                <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setMonthFilter(''); setWeekFilter(''); }} />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Período</label>
-                <Select value={weekFilter || undefined} onValueChange={applyWeekFilter}>
-                  <SelectTrigger><SelectValue placeholder="Período" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="today">Hoje</SelectItem>
-                    <SelectItem value="current">Semana atual (seg–sáb)</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setMonthFilter(''); }} />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Mês</label>
