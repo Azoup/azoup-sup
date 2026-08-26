@@ -38,6 +38,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { QueryLoadState } from '@/components/QueryLoadState';
+import { PeriodRangePicker } from '@/components/PeriodRangePicker';
 import { matchesContactSearch, filterContactsByAnalyst, listAnalystNames, summarizeContacts, RECURRENCE_CLASS_LABEL, type RecurrenceClass, type RecurrenceContactRow } from '@/lib/digisacBuRecurrence';
 import { cn } from '@/lib/utils';
 
@@ -157,16 +158,19 @@ const ContactRecurrence = () => {
                 <Filter className="h-4 w-4" /> Filtros
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 flex-1 w-full">
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">De</label>
-                <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setMonthFilter(''); }} />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Até</label>
-                <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setMonthFilter(''); }} />
-              </div>
-              <div>
+            <div className="flex flex-col sm:flex-row gap-3 flex-1 w-full min-w-0">
+              <PeriodRangePicker
+                className="sm:w-[15.75rem] shrink-0"
+                from={dateFrom}
+                to={dateTo}
+                today={todayStr}
+                onChange={(nextFrom, nextTo) => {
+                  setDateFrom(nextFrom);
+                  setDateTo(nextTo);
+                  setMonthFilter('');
+                }}
+              />
+              <div className="sm:w-44 shrink-0">
                 <label className="text-xs text-muted-foreground mb-1 block">Mês</label>
                 <Select value={monthFilter || undefined} onValueChange={applyMonthFilter}>
                   <SelectTrigger><SelectValue placeholder="Selecionar mês" /></SelectTrigger>
@@ -175,7 +179,7 @@ const ContactRecurrence = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <div>
+              <div className="sm:w-64 shrink-0">
                 <label className="text-xs text-muted-foreground mb-1 block">Analista responsável</label>
                 <Select value={analystFilter} onValueChange={setAnalystFilter}>
                   <SelectTrigger><SelectValue placeholder="Todos os analistas" /></SelectTrigger>
