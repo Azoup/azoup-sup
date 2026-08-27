@@ -25,8 +25,11 @@ export function useUserAccess() {
     initialDataUpdatedAt: cached?.cachedAt,
     staleTime: ACCESS_STALE_MS,
     gcTime: 30 * 60 * 1000,
-    refetchOnMount: true,
+    refetchOnMount: false,
     refetchOnWindowFocus: false,
+    retry: 1,
+    retryDelay: 1_000,
+    refetchInterval: (query) => (query.state.status === 'error' ? 5_000 : false),
   });
 }
 

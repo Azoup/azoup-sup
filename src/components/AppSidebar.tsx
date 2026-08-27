@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { LayoutDashboard, PenLine, Users, LogOut, Headset, Building2, BarChart3, UserCircle, Code2, FolderKanban, ChevronDown, GripVertical, Star, History, Scissors, Repeat2 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/hooks/useAuth';
@@ -199,9 +199,10 @@ export function AppSidebar() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
+  const lastVisibleRef = useRef<MenuItem[]>([]);
   const visibleItems = useMemo(() => {
-    if (permsLoading) return [];
-    return items
+    if (permsLoading) return lastVisibleRef.current;
+    const next = items
       .map(item => {
         if (item.type === 'group') {
           const children = item.children.filter(c => {
@@ -216,6 +217,8 @@ export function AppSidebar() {
         return item;
       })
       .filter(Boolean) as MenuItem[];
+    lastVisibleRef.current = next;
+    return next;
   }, [items, canView, permsLoading]);
 
   const handleDragEnd = (e: DragEndEvent) => {

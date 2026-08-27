@@ -1,7 +1,8 @@
 import { supabase } from '@/integrations/supabase/client';
 import { runTimedQuery } from '@/lib/supabaseTimedQuery';
+import { resolveUserAccessResult } from '@/lib/userAccessResolve';
 
-const API_TIMEOUT_MS = 3_000;
+const API_TIMEOUT_MS = 10_000;
 
 export type UserAccessResult = {
   role: string;
@@ -79,13 +80,18 @@ export async function fetchUserAccess(
   accessToken: string,
   userId: string,
 ): Promise<UserAccessResult> {
+  let api: UserAccessResult | null = null;
+  let supabaseAccess: UserAccessResult | null = null;
+
   try {
-    return await fetchUserAccessViaApi(accessToken);
+    api = await fetchUserAccessViaApi(accessToken);
   } catch {
     try {
-      return await fetchUserAccessFromSupabase(userId);
+      supabaseAccess = await fetchUserAccessFromSupabase(userId);
     } catch {
-      return DEFAULT_USER_ACCESS;
+      /* resolveUserAccessResult lança abaixo */
     }
   }
+
+  return resolveUserAccessResult(api, supabaseAccess);
 }

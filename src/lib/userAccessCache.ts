@@ -1,6 +1,6 @@
 import type { UserAccessResult } from '@/lib/fetchUserAccess';
 
-const CACHE_PREFIX = 'user-access-cache:v1:';
+const CACHE_PREFIX = 'user-access-cache:v2:';
 
 export type CachedUserAccess = UserAccessResult & {
   userId: string;

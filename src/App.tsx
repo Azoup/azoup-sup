@@ -1,11 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
+import { BrowserRouter, Route, Routes, Navigate, Outlet, useLocation } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { AuthSessionSync } from "@/components/AuthSessionSync";
-import { useRole } from "@/hooks/useRole";
-import { usePermissions } from "@/hooks/usePermissions";
+import { usePermissions, ROUTE_SCREEN_MAP } from "@/hooks/usePermissions";
 import { AppLayout } from "@/components/AppLayout";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -42,48 +41,38 @@ const queryClient = new QueryClient({
   },
 });
 
-function RequireAuth({ children, screen }: { children: React.ReactNode; screen?: string }) {
+function FullPageSpinner() {
+  return (
+    <div className="flex min-h-[50vh] items-center justify-center">
+      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+    </div>
+  );
+}
+
+/** Layout persistente: o menu não desmonta a cada clique de rota. */
+function ProtectedLayout() {
   const { user, loading: authLoading } = useAuth();
   const { canView, isLoading: permsLoading } = usePermissions();
+  const location = useLocation();
 
   if (authLoading || permsLoading) {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
+    return <FullPageSpinner />;
   }
 
   if (!user) {
     return <Navigate to={buildAuthPath()} replace />;
   }
 
+  const screen = ROUTE_SCREEN_MAP[location.pathname];
   if (screen && !canView(screen)) {
     return <Navigate to={getFirstAllowedPath(canView)} replace />;
   }
 
-  return <AppLayout>{children}</AppLayout>;
-}
-
-function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
-  const { isAdmin, isLoading } = useRole();
-  const { canView, isLoading: permsLoading } = usePermissions();
-
-  if (loading || isLoading || permsLoading) {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <Navigate to={buildAuthPath()} replace />;
-  }
-
-  if (!isAdmin) return <Navigate to={getFirstAllowedPath(canView)} replace />;
-  return <AppLayout>{children}</AppLayout>;
+  return (
+    <AppLayout>
+      <Outlet />
+    </AppLayout>
+  );
 }
 
 function AuthRoute() {
@@ -91,11 +80,7 @@ function AuthRoute() {
   const { canView, isLoading: permsLoading } = usePermissions();
 
   if (loading || permsLoading) {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
+    return <FullPageSpinner />;
   }
 
   if (user) {
@@ -109,23 +94,25 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/auth" element={<AuthRoute />} />
-      <Route path="/" element={<RequireAuth screen="kanban"><Index /></RequireAuth>} />
-      <Route path="/dashboard" element={<RequireAuth screen="dashboard"><Dashboard /></RequireAuth>} />
-      <Route path="/dashboard-bu" element={<RequireAuth screen="dashboard_bu"><DashboardBU /></RequireAuth>} />
-      <Route path="/recorrencia-contatos" element={<RequireAuth screen="recorrencia_contatos"><ContactRecurrence /></RequireAuth>} />
-      <Route path="/kanban-dashboard" element={<RequireAuth screen="kanban_dashboard"><KanbanDashboard /></RequireAuth>} />
-      <Route path="/profile" element={<RequireAuth screen="profile_log"><Profile /></RequireAuth>} />
-      <Route path="/analysts" element={<RequireAuth screen="analysts"><Analysts /></RequireAuth>} />
-      <Route path="/entries" element={<RequireAuth screen="entries"><Entries /></RequireAuth>} />
-      <Route path="/entries-bu" element={<Navigate to="/dashboard-bu" replace />} />
-      <Route path="/business-units" element={<RequireAuth screen="business_units"><BusinessUnits /></RequireAuth>} />
-      <Route path="/kanban-dev" element={<RequireAuth screen="kanban_dev"><KanbanDev /></RequireAuth>} />
-      <Route path="/kanban-confec" element={<RequireAuth screen="kanban_confec"><KanbanConfec /></RequireAuth>} />
-      <Route path="/dashboard-dev" element={<RequireAuth screen="dashboard_dev"><DashboardDev /></RequireAuth>} />
-      <Route path="/developers" element={<RequireAuth screen="developers"><Developers /></RequireAuth>} />
-      <Route path="/digisac-dashboard" element={<RequireAuth screen="digisac_dashboard"><DigisacDashboard /></RequireAuth>} />
-      <Route path="/digisac-nps" element={<RequireAuth screen="digisac_nps"><DigisacNpsDashboard /></RequireAuth>} />
-      <Route path="/digisac-sla-history" element={<RequireAuth screen="digisac_sla_history"><DigisacSlaHistory /></RequireAuth>} />
+      <Route element={<ProtectedLayout />}>
+        <Route path="/" element={<Index />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/dashboard-bu" element={<DashboardBU />} />
+        <Route path="/recorrencia-contatos" element={<ContactRecurrence />} />
+        <Route path="/kanban-dashboard" element={<KanbanDashboard />} />
+        <Route path="/profile" element={<Profile />} />
+        <Route path="/analysts" element={<Analysts />} />
+        <Route path="/entries" element={<Entries />} />
+        <Route path="/entries-bu" element={<Navigate to="/dashboard-bu" replace />} />
+        <Route path="/business-units" element={<BusinessUnits />} />
+        <Route path="/kanban-dev" element={<KanbanDev />} />
+        <Route path="/kanban-confec" element={<KanbanConfec />} />
+        <Route path="/dashboard-dev" element={<DashboardDev />} />
+        <Route path="/developers" element={<Developers />} />
+        <Route path="/digisac-dashboard" element={<DigisacDashboard />} />
+        <Route path="/digisac-nps" element={<DigisacNpsDashboard />} />
+        <Route path="/digisac-sla-history" element={<DigisacSlaHistory />} />
+      </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
