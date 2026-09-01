@@ -79,6 +79,17 @@ export function CardChecklist({ cardId, cardType, description }: Props) {
       void qc.invalidateQueries({ queryKey });
       refreshProgressMap();
     },
+    onError: (error: unknown) => {
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object" && error && "message" in error
+            ? String((error as { message?: unknown }).message)
+            : "Erro ao salvar checklist.";
+      toast.error(message.includes("card_type") || message.includes("23514")
+        ? "Não foi possível salvar o checklist deste card. Atualize a página e tente de novo."
+        : message);
+    },
   });
 
   const toggleDone = useMutation({

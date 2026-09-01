@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
+import {
+  isKanbanCompletionDestination,
+  isKanbanCompletionSlug,
+  resolveCompletionColumnSlug,
+} from '@/lib/kanbanCompletionColumn';
 
 describe('kanbanCompletionColumn', () => {
   const devColumns = [
@@ -36,5 +40,24 @@ describe('kanbanCompletionColumn', () => {
       { slug: 'done', title: 'Concluídos' },
     ];
     expect(resolveCompletionColumnSlug(cols, 'support')).toBe('done');
+  });
+
+  it('prefere Concluídos quando Finalizados também existe', () => {
+    const cols = [
+      { slug: 'finalizados', title: 'Finalizados' },
+      { slug: 'concluidos', title: 'Concluídos' },
+    ];
+    expect(resolveCompletionColumnSlug(cols, 'dev')).toBe('concluidos');
+  });
+
+  it('reconhece Concluídos como destino mesmo com Finalizados no board', () => {
+    const cols = [
+      { slug: 'em_andamento', title: 'Em andamento' },
+      { slug: 'finalizados', title: 'Finalizados' },
+      { slug: 'concluidos', title: 'Concluídos' },
+    ];
+    expect(isKanbanCompletionDestination('concluidos', cols, 'dev')).toBe(true);
+    expect(isKanbanCompletionDestination('finalizados', cols, 'dev')).toBe(true);
+    expect(isKanbanCompletionDestination('em_andamento', cols, 'dev')).toBe(false);
   });
 });

@@ -30,8 +30,42 @@ function matchesDoneTitle(title: string | undefined, allowed: Set<string>): bool
   return allowed.has(normalizeKey(title));
 }
 
+function doneColumnScore(column: KanbanColumnRef, doneSlugs: Set<string>, doneTitles: Set<string>): number {
+  const slug = normalizeKey(column.slug);
+  const title = column.title ? normalizeKey(column.title) : '';
+  if (slug === 'concluidos' || title === 'concluidos') return 3;
+  if (slug === 'concluido' || title === 'concluido') return 2;
+  if (slug === 'finalizados' || title === 'finalizados' || slug === 'done' || title === 'done') return 1;
+  if (matchesDoneSlug(column.slug, doneSlugs) || matchesDoneTitle(column.title, doneTitles)) return 0;
+  return -1;
+}
+
+export function isKanbanCompletionColumn(
+  column: KanbanColumnRef | undefined | null,
+  board: 'dev' | 'support' = 'dev',
+): boolean {
+  if (!column) return false;
+  const doneSlugs = board === 'dev' ? DEV_DONE_SLUGS : SUPPORT_DONE_SLUGS;
+  const doneTitles = board === 'dev' ? DEV_DONE_TITLES : SUPPORT_DONE_TITLES;
+  return matchesDoneSlug(column.slug, doneSlugs) || matchesDoneTitle(column.title, doneTitles);
+}
+
+/** True se o slug aponta para qualquer lista de conclusão do board (Concluídos / Finalizados). */
+export function isKanbanCompletionDestination(
+  slug: string | null | undefined,
+  columns: KanbanColumnRef[],
+  board: 'dev' | 'support' = 'dev',
+): boolean {
+  if (!slug) return false;
+  const column = columns.find((c) => normalizeKey(c.slug) === normalizeKey(slug));
+  if (column) return isKanbanCompletionColumn(column, board);
+  const doneSlugs = board === 'dev' ? DEV_DONE_SLUGS : SUPPORT_DONE_SLUGS;
+  return matchesDoneSlug(slug, doneSlugs);
+}
+
 /**
  * Identifica a coluna de conclusão real do board (ex.: "Finalizados", não "Para atualizar").
+ * Prefere "Concluídos" quando as duas listas existem.
  * @param board 'dev' | 'support'
  */
 export function resolveCompletionColumnSlug(
@@ -43,10 +77,13 @@ export function resolveCompletionColumnSlug(
   const doneSlugs = board === 'dev' ? DEV_DONE_SLUGS : SUPPORT_DONE_SLUGS;
   const doneTitles = board === 'dev' ? DEV_DONE_TITLES : SUPPORT_DONE_TITLES;
 
-  const explicit = columns.find(
-    (c) => matchesDoneSlug(c.slug, doneSlugs) || matchesDoneTitle(c.title, doneTitles),
-  );
-  if (explicit) return explicit.slug;
+  let best: { slug: string; score: number } | null = null;
+  for (const column of columns) {
+    const score = doneColumnScore(column, doneSlugs, doneTitles);
+    if (score < 0) continue;
+    if (!best || score > best.score) best = { slug: column.slug, score };
+  }
+  if (best) return best.slug;
 
   return board === 'dev' ? 'finalizados' : 'done';
 }

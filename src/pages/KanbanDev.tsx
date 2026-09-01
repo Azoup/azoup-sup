@@ -13,6 +13,7 @@ import {
   patchDevKanbanBoardCardLabels,
   patchDevKanbanBoardCardImages,
   patchDevKanbanBoardColumns,
+  updateDevKanbanBoardCache,
   DEV_KANBAN_BOARD_QUERY_KEY,
 } from '@/lib/devKanbanBoardPatch';
 import { uploadKanbanImagesParallel } from '@/lib/uploadKanbanCardAssets';
@@ -43,7 +44,14 @@ import { KanbanCardImage } from '@/components/KanbanCardImage';
 import { filesFromClipboardData } from '@/lib/clipboardImage';
 import { loadDevKanbanDevNotes, saveDevKanbanDevNotes } from '@/lib/devKanbanDevNotes';
 import { devTicketLabel, devTicketMatchesSearch, isDevTicketNumberQuery } from '@/lib/devKanbanTicketNumber';
-import { isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
+import { isKanbanCompletionDestination, isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
+import {
+  KANBAN_DONE_LABEL_COLOR,
+  KANBAN_DONE_LABEL_NAME,
+  needsKanbanDoneLabelRename,
+  pickKanbanDoneLabel,
+  type KanbanDoneLabelOption,
+} from '@/lib/kanbanDoneLabel';
 import { normalizeKanbanCardTitle } from '@/lib/normalizeKanbanCardTitle';
 import { computeKanbanDragPositionUpdates, computeKanbanDragPositionUpdatesWithVisible, sortKanbanCardsByPosition } from '@/lib/kanbanCardReorder';
 import { persistDevKanbanCardPositions } from '@/lib/persistDevKanbanCardPositions';
@@ -251,8 +259,8 @@ const KanbanDev = () => {
   );
 
   const isDoneSlug = useCallback(
-    (slug: string) => isKanbanCompletionSlug(slug, completionColumnSlug),
-    [completionColumnSlug],
+    (slug: string) => isKanbanCompletionDestination(slug, sortedColumns, 'dev'),
+    [sortedColumns],
   );
 
   const cardsByColumn = useMemo(() => {
@@ -551,18 +559,24 @@ const KanbanDev = () => {
       }
       if (error) throw error;
 
-      if (statusChanged) {
-        await withSupabaseRetry(() =>
-          applyDoneLabelRule(editingCard.id, editingCard.status, moveToColumnSlug),
-        );
-      }
       await saveDevKanbanDevNotes(
         editingCard.id,
         devNotes.trim() || null,
         user!.id,
         user!.email || '',
       );
-      await syncCardLabels('dev_kanban_card_labels', editingCard.id, selectedLabels);
+
+      let nextLabelIds = uniqueLabelIds(selectedLabels);
+      if (willBeDone) {
+        const doneLabelId = await ensureDoneLabel();
+        if (doneLabelId) nextLabelIds = [doneLabelId];
+      } else if (statusChanged && wasDone && !willBeDone) {
+        const doneLabelId = await ensureDoneLabel();
+        if (doneLabelId) nextLabelIds = uniqueLabelIds(selectedLabels.filter((id) => id !== doneLabelId));
+      }
+      await withSupabaseRetry(() =>
+        syncCardLabels('dev_kanban_card_labels', editingCard.id, nextLabelIds),
+      );
 
       let notify: { actionType: 'assignee' | 'edit'; message: string } | undefined;
       if (devChanged) {
@@ -593,7 +607,7 @@ const KanbanDev = () => {
         statusFrom: editingCard.status,
         statusTo: statusChanged ? moveToColumnSlug : editingCard.status,
         labelNamesFrom: labelNamesByIds(labels, labelIdsFromCard(editingCard)),
-        labelNamesTo: labelNamesByIds(labels, selectedLabels),
+        labelNamesTo: labelNamesByIds(labels, nextLabelIds),
         analysts,
         developers,
         columns: sortedColumns,
@@ -607,6 +621,7 @@ const KanbanDev = () => {
         notify,
         logLabel: 'Editou card no Kanban DEV',
         logDetails,
+        nextLabelIds,
         statusMove: statusChanged
           ? {
               fromSlug: editingCard.status,
@@ -646,12 +661,13 @@ const KanbanDev = () => {
       );
       patchDevKanbanBoardCardLabels(queryClient, (rows) => {
         const rest = rows.filter((r: any) => r.card_id !== cardId);
-        const next = selectedLabels.map((label_id) => {
+        const labelIds = result?.nextLabelIds ?? selectedLabels;
+        const next = labelIds.map((label_id) => {
           const label = labels.find((l: any) => l.id === label_id);
           return {
             card_id: cardId,
             label_id,
-            dev_kanban_labels: label ?? { id: label_id },
+            dev_kanban_labels: label ?? { id: label_id, name: KANBAN_DONE_LABEL_NAME, color: KANBAN_DONE_LABEL_COLOR },
           };
         });
         return [...rest, ...next];
@@ -817,26 +833,55 @@ const KanbanDev = () => {
     return card.completed_at || null;
   }, [completionColumnSlug]);
 
-  // Helper: garante existência da etiqueta "Concluído" e retorna seu id
+  // Helper: garante a etiqueta "Concluídos" e retorna seu id
   const ensureDoneLabel = useCallback(async (): Promise<string | null> => {
-    const existing = (labels as any[]).find((l: any) => (l.name || '').toLowerCase().includes('conclu'));
-    if (existing) return existing.id;
-    const { data, error } = await supabase.from('dev_kanban_labels')
-      .insert({ name: 'Concluído', color: '#10b981' })
-      .select().single();
-    if (error || !data) {
-      const fallback = await supabase
+    const fromMemory = pickKanbanDoneLabel(labels as KanbanDoneLabelOption[]);
+    const persistCanonicalName = async (row: KanbanDoneLabelOption): Promise<string> => {
+      if (!needsKanbanDoneLabelRename(row.name)) return row.id;
+      const { error } = await supabase
         .from('dev_kanban_labels')
-        .select('id,name')
-        .ilike('name', '%conclu%')
-        .limit(1)
-        .maybeSingle();
-      if (fallback.data?.id) return fallback.data.id;
-      console.error("Erro ao criar etiqueta Concluído:", error);
-      toast.error("Erro ao criar etiqueta 'Concluído' automaticamente.");
+        .update({ name: KANBAN_DONE_LABEL_NAME })
+        .eq('id', row.id);
+      if (!error) {
+        updateDevKanbanBoardCache(queryClient, (board) => ({
+          ...board,
+          labels: (board.labels as KanbanDoneLabelOption[]).map((label) =>
+            label.id === row.id ? { ...label, name: KANBAN_DONE_LABEL_NAME } : label,
+          ),
+        }));
+      }
+      return row.id;
+    };
+
+    if (fromMemory) return persistCanonicalName(fromMemory);
+
+    const { data: existingRows } = await supabase
+      .from('dev_kanban_labels')
+      .select('id,name,color');
+    const fromDb = pickKanbanDoneLabel((existingRows ?? []) as KanbanDoneLabelOption[]);
+    if (fromDb) {
+      updateDevKanbanBoardCache(queryClient, (board) => {
+        const current = board.labels as KanbanDoneLabelOption[];
+        if (current.some((label) => label.id === fromDb.id)) return board;
+        return { ...board, labels: [...current, fromDb] };
+      });
+      return persistCanonicalName(fromDb);
+    }
+
+    const { data, error } = await supabase
+      .from('dev_kanban_labels')
+      .insert({ name: KANBAN_DONE_LABEL_NAME, color: KANBAN_DONE_LABEL_COLOR })
+      .select()
+      .single();
+    if (error || !data) {
+      console.error('Erro ao criar etiqueta Concluídos:', error);
+      toast.error("Erro ao criar etiqueta 'Concluídos' automaticamente.");
       return null;
     }
-    refreshDevKanbanBoard(queryClient);
+    updateDevKanbanBoardCache(queryClient, (board) => ({
+      ...board,
+      labels: [...(board.labels as unknown[]), data],
+    }));
     return data.id;
   }, [labels, queryClient]);
 
@@ -851,7 +896,10 @@ const KanbanDev = () => {
       if (!doneLabelId) return;
       await syncCardLabels('dev_kanban_card_labels', cardId, [doneLabelId]);
       patchDevKanbanBoardCardLabels(queryClient, (old) => {
-        const targetLabel = (labels as any[]).find((l) => l.id === doneLabelId);
+        const targetLabel =
+          (labels as KanbanDoneLabelOption[]).find((l) => l.id === doneLabelId) ??
+          pickKanbanDoneLabel(labels as KanbanDoneLabelOption[]) ??
+          { id: doneLabelId, name: KANBAN_DONE_LABEL_NAME, color: KANBAN_DONE_LABEL_COLOR };
         return [
           ...old.filter((cl: any) => cl.card_id !== cardId),
           { card_id: cardId, label_id: doneLabelId, dev_kanban_labels: targetLabel },
@@ -906,6 +954,9 @@ const KanbanDev = () => {
     const wasDone = isDoneSlug(source.droppableId);
     const willBeDone = isDoneSlug(destination.droppableId);
     const previousCards = boardCards;
+    const previousCardLabels =
+      (queryClient.getQueryData<{ cardLabels?: unknown[] }>(DEV_KANBAN_BOARD_QUERY_KEY)?.cardLabels as unknown[]) ??
+      cardLabels;
 
     dragBusyRef.current = true;
     markBoardLocalWrite(statusChanged ? 2 : 1);
@@ -935,6 +986,23 @@ const KanbanDev = () => {
       }),
     );
 
+    if (statusChanged && willBeDone) {
+      const doneLabel = pickKanbanDoneLabel(labels as KanbanDoneLabelOption[]);
+      if (doneLabel) {
+        patchDevKanbanBoardCardLabels(queryClient, (old) => [
+          ...old.filter((cl: any) => cl.card_id !== draggableId),
+          { card_id: draggableId, label_id: doneLabel.id, dev_kanban_labels: doneLabel },
+        ]);
+      }
+    } else if (statusChanged && wasDone && !willBeDone) {
+      const doneLabel = pickKanbanDoneLabel(labels as KanbanDoneLabelOption[]);
+      if (doneLabel) {
+        patchDevKanbanBoardCardLabels(queryClient, (old) =>
+          old.filter((cl: any) => !(cl.card_id === draggableId && cl.label_id === doneLabel.id)),
+        );
+      }
+    }
+
     dragBusyRef.current = false;
 
     void (async () => {
@@ -953,6 +1021,7 @@ const KanbanDev = () => {
       } catch (error: unknown) {
         if (previousCards) {
           patchDevKanbanBoardCards(queryClient, () => previousCards);
+          patchDevKanbanBoardCardLabels(queryClient, () => previousCardLabels);
         } else {
           flushDevKanbanBoardRefresh(queryClient);
         }
@@ -984,7 +1053,7 @@ const KanbanDev = () => {
         });
       }
     })();
-  }, [queryClient, cards, cardsByColumn, sortedColumns, user, actorName, applyDoneLabelRule, isDoneSlug, hasActiveCardFilters]);
+  }, [queryClient, cards, cardLabels, cardsByColumn, sortedColumns, user, actorName, applyDoneLabelRule, isDoneSlug, hasActiveCardFilters, labels]);
 
   const resetForm = () => {
     setTitle('');
@@ -1071,6 +1140,13 @@ const KanbanDev = () => {
     void loadDevKanbanDevNotes(card.id, card.dev_notes).then(setViewingDevNotes).catch(() => {});
   };
   const openCreate = (colSlug: string) => { resetForm(); setTargetColumn(colSlug); setCreateOpen(true); };
+
+  const handleMoveToColumn = useCallback((slug: string) => {
+    setMoveToColumnSlug(slug);
+    if (!isDoneSlug(slug)) return;
+    const doneLabel = pickKanbanDoneLabel(labels as KanbanDoneLabelOption[]);
+    if (doneLabel) setSelectedLabels([doneLabel.id]);
+  }, [isDoneSlug, labels]);
 
   const toggleLabel = useCallback((labelId: string) => {
     setSelectedLabels((prev) => {
@@ -1503,7 +1579,7 @@ const KanbanDev = () => {
             existingImages={editingCardImages} onDeleteImage={(id) => deleteImage.mutate(id)}
             columns={sortedColumns}
             moveToColumn={moveToColumnSlug}
-            setMoveToColumn={setMoveToColumnSlug}
+            setMoveToColumn={handleMoveToColumn}
             showMoveTo
             onSubmit={() => updateCard.mutate()} loading={updateCard.isPending}
           />
