@@ -10,6 +10,11 @@ import {
   pickSuporteDepartmentId,
 } from "../_shared/digisacAnswersOverview.ts";
 import {
+  parseRecurrenceDepartmentKey,
+  pickRecurrenceDepartment,
+  RECURRENCE_DEPARTMENT_LABEL,
+} from "../_shared/digisacRecurrenceDepartments.ts";
+import {
   aggregateAnswerRows,
   aggregateAnswersByMappedAnalysts,
   countScoredAnswerRows,
@@ -1428,13 +1433,17 @@ Deno.serve(async (req) => {
         : "23:59";
 
       const departments = await loadCachedDepartments(digisacUrl, digisacToken);
-      const suporteId = pickSuporteDepartmentId(departments);
-      if (!suporteId) {
-        return handledErrorResponse(action, "Departamento Suporte não encontrado no Digisac.", {
-          code: "BU_DEPT_MISSING",
-        });
+      const departmentKey = parseRecurrenceDepartmentKey(payload?.departmentKey);
+      const selectedDepartment = pickRecurrenceDepartment(departments, departmentKey);
+      const departmentId = selectedDepartment?.id;
+      if (!departmentId) {
+        return handledErrorResponse(
+          action,
+          `Departamento ${RECURRENCE_DEPARTMENT_LABEL[departmentKey]} não encontrado no Digisac.`,
+          { code: "BU_DEPT_MISSING" },
+        );
       }
-      const departmentName = departments.find((d) => d.id === suporteId)?.name || "Suporte";
+      const departmentName = selectedDepartment?.name || RECURRENCE_DEPARTMENT_LABEL[departmentKey];
       const { tags, lastStatus: tagsStatus } = await loadDigisacTags(digisacUrl, digisacToken);
       const pickedTags = pickExactDigisacBuContactTags(tags);
       const warnings: string[] = [];
@@ -1468,10 +1477,10 @@ Deno.serve(async (req) => {
         const rows = await fetchTicketRowsForContactTag(digisacFetch, {
           startPeriod,
           endPeriod,
-          departmentId: suporteId,
+          departmentId,
           tagId: tag.id,
         });
-        console.log("[Digisac BU recurrence] tickets", key, tag.id, tag.name, rows.length);
+        console.log("[Digisac BU recurrence] tickets", departmentKey, key, tag.id, tag.name, rows.length);
         rowsByTag.set(key, rows);
       }));
 
@@ -1536,12 +1545,12 @@ Deno.serve(async (req) => {
       const { summary, contacts } = buildRecurrence(inputs);
       if (summary.totalAtendimentos === 0) {
         warnings.push(
-          "Tags B1 e B2 encontradas, mas nenhum chamado do departamento Suporte no período com essas tags de contato.",
+          `Tags B1 e B2 encontradas, mas nenhum chamado do departamento ${departmentName} no período com essas tags de contato.`,
         );
       }
 
       return jsonResponse({
-        departmentId: suporteId,
+        departmentId,
         departmentName,
         startDate,
         endDate,

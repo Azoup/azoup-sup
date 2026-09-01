@@ -20,6 +20,7 @@ import {
 } from "@/integrations/digisac/npsNormalize";
 import type { DigisacBuDashboardResponse } from "@/integrations/digisac/buStats";
 import type { DigisacBuRecurrenceResponse } from "@/integrations/digisac/buRecurrence";
+import type { RecurrenceDepartmentKey } from "@/lib/digisacRecurrenceDepartments";
 
 export type { DigisacDashboardQueryFilters };
 export {
@@ -192,12 +193,19 @@ export const digisacApi = {
     });
   },
 
-  async getBuRecurrence(filters: { startDate: string; endDate: string; startTime?: string; endTime?: string }): Promise<DigisacBuRecurrenceResponse> {
+  async getBuRecurrence(filters: {
+    startDate: string;
+    endDate: string;
+    startTime?: string;
+    endTime?: string;
+    departmentKey?: RecurrenceDepartmentKey;
+  }): Promise<DigisacBuRecurrenceResponse> {
     return invokeDigisac<DigisacBuRecurrenceResponse>('bu_recurrence', {
       startDate: normalizeDateOnly(filters.startDate),
       endDate: normalizeDateOnly(filters.endDate),
       startTime: filters.startTime?.trim() || '00:00',
       endTime: filters.endTime?.trim() || '23:59',
+      departmentKey: filters.departmentKey === 'confec' ? 'confec' : 'suporte',
     });
   },
 

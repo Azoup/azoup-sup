@@ -40,6 +40,11 @@ import {
 import { QueryLoadState } from '@/components/QueryLoadState';
 import { PeriodRangePicker } from '@/components/PeriodRangePicker';
 import { matchesContactSearch, filterContactsByAnalyst, listAnalystNames, summarizeContacts, RECURRENCE_CLASS_LABEL, type RecurrenceClass, type RecurrenceContactRow } from '@/lib/digisacBuRecurrence';
+import {
+  parseRecurrenceDepartmentKey,
+  RECURRENCE_DEPARTMENT_LABEL,
+  type RecurrenceDepartmentKey,
+} from '@/lib/digisacRecurrenceDepartments';
 import { cn } from '@/lib/utils';
 
 const getTodayDateStringBrazil = () => {
@@ -83,6 +88,7 @@ const ContactRecurrence = () => {
   const [search, setSearch] = useState('');
   const [unitFilter, setUnitFilter] = useState<'all' | 'B1' | 'B2'>('all');
   const [analystFilter, setAnalystFilter] = useState('all');
+  const [departmentKey, setDepartmentKey] = useState<RecurrenceDepartmentKey>('suporte');
   const [classFilter, setClassFilter] = useState<'all' | RecurrenceClass>('all');
   const [selected, setSelected] = useState<RecurrenceContactRow | null>(null);
 
@@ -96,11 +102,22 @@ const ContactRecurrence = () => {
   };
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['bu-digisac-recurrence', dateFrom, dateTo, refreshTick],
-    queryFn: () => digisacApi.getBuRecurrence({ startDate: dateFrom, endDate: dateTo }),
+    queryKey: ['bu-digisac-recurrence', dateFrom, dateTo, departmentKey, refreshTick],
+    queryFn: () => digisacApi.getBuRecurrence({
+      startDate: dateFrom,
+      endDate: dateTo,
+      departmentKey,
+    }),
     staleTime: 60 * 1000,
     refetchOnWindowFocus: true,
   });
+
+  const applyDepartmentFilter = (value: string) => {
+    const next = parseRecurrenceDepartmentKey(value);
+    setDepartmentKey(next);
+    setAnalystFilter('all');
+    setSelected(null);
+  };
 
   const months = useMemo(() => {
     const result = [];
@@ -134,7 +151,7 @@ const ContactRecurrence = () => {
           <h1 className="text-2xl font-heading font-bold">Recorrências</h1>
           <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5">
             <Headset className="h-4 w-4" />
-            Mesmos filtros do Dashboard B.U. — identificador por telefone.
+            Recorrência por telefone — {RECURRENCE_DEPARTMENT_LABEL[departmentKey]}.
           </p>
         </div>
         <div className="flex gap-2">
@@ -158,7 +175,7 @@ const ContactRecurrence = () => {
                 <Filter className="h-4 w-4" /> Filtros
               </div>
             </div>
-            <div className="flex flex-col sm:flex-row gap-3 flex-1 w-full min-w-0">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3 flex-1 w-full min-w-0">
               <PeriodRangePicker
                 className="sm:w-[15.75rem] shrink-0"
                 from={dateFrom}
@@ -170,6 +187,16 @@ const ContactRecurrence = () => {
                   setMonthFilter('');
                 }}
               />
+              <div className="sm:w-48 shrink-0">
+                <label className="text-xs text-muted-foreground mb-1 block">Departamento</label>
+                <Select value={departmentKey} onValueChange={applyDepartmentFilter}>
+                  <SelectTrigger><SelectValue placeholder="Departamento" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="suporte">{RECURRENCE_DEPARTMENT_LABEL.suporte}</SelectItem>
+                    <SelectItem value="confec">{RECURRENCE_DEPARTMENT_LABEL.confec}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="sm:w-44 shrink-0">
                 <label className="text-xs text-muted-foreground mb-1 block">Mês</label>
                 <Select value={monthFilter || undefined} onValueChange={applyMonthFilter}>
@@ -195,7 +222,7 @@ const ContactRecurrence = () => {
           </div>
           <p className="text-xs text-muted-foreground mt-3 whitespace-pre-line">
             {`Filtros de estatística integrados com Digisac.
-Departamento Suporte e filtros de tags B1/B2.`}
+Departamentos Suporte e Azoup Confec, com tags de contato B1/B2.`}
           </p>
         </CardContent>
       </Card>
