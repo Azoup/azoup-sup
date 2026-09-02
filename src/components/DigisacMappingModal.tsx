@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { digisacApi } from "@/integrations/digisac/api";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Link2, Trash2 } from "lucide-react";
+import { isEligibleDigisacAnalystUser } from "@/lib/digisacActiveUsers";
 
 export function DigisacMappingModal() {
   const [isOpen, setIsOpen] = useState(false);
@@ -25,7 +26,7 @@ export function DigisacMappingModal() {
 
   // Fetch Digisac users
   const { data: digisacUsers, isLoading: isLoadingUsers, isError: isUsersError, error: usersError } = useQuery({
-    queryKey: ['digisac-users'],
+    queryKey: ['digisac-users', 'active-only'],
     queryFn: digisacApi.getDigisacUsers,
     enabled: isOpen
   });
@@ -66,6 +67,11 @@ export function DigisacMappingModal() {
     }
   });
 
+  const visibleDigisacUsers = useMemo(
+    () => (digisacUsers ?? []).filter(isEligibleDigisacAnalystUser),
+    [digisacUsers],
+  );
+
   const getMappingForDigisacUser = (digisacUserId: string) => {
     return mappings?.find(m => m.digisac_user_id === digisacUserId);
   };
@@ -90,7 +96,7 @@ export function DigisacMappingModal() {
         <DialogHeader>
           <DialogTitle>Mapeamento de Analistas - Digisac</DialogTitle>
           <DialogDescription>
-            Vincule os usuários retornados pela API do Digisac com os analistas cadastrados no sistema interno para que as métricas sejam agrupadas corretamente.
+            Vincule os usuários ativos do Digisac com os analistas cadastrados no sistema interno para que as métricas sejam agrupadas corretamente. Usuários arquivados não aparecem nesta lista nem nas métricas.
           </DialogDescription>
         </DialogHeader>
 
@@ -112,7 +118,7 @@ export function DigisacMappingModal() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {digisacUsers?.map((user) => {
+                {visibleDigisacUsers.map((user) => {
                   const mapping = getMappingForDigisacUser(user.id);
                   
                   return (
@@ -155,7 +161,7 @@ export function DigisacMappingModal() {
                     </TableRow>
                   );
                 })}
-                {digisacUsers?.length === 0 && (
+                {visibleDigisacUsers.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={3} className="text-center py-6 text-muted-foreground">
                       Nenhum usuário encontrado na API do Digisac.

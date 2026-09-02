@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.3.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 import { corsHeaders } from "../_shared/cors.ts";
+import { isEligibleDigisacAnalystUser } from "../_shared/digisacActiveUsers.ts";
 import {
   filterDigisacUsersForDepartment,
   findDigisacDepartmentAnalystRule,
@@ -198,6 +199,12 @@ const isInvalidDigisacUserName = (value?: string) => {
   return INVALID_DIGISAC_USER_NAMES.has(normalized);
 };
 
+const shouldKeepDigisacAnalystUser = (user: unknown) => {
+  if (!isEligibleDigisacAnalystUser(user as { id?: unknown })) return false;
+  const row = user as { name?: string; email?: string };
+  return !isInvalidDigisacUserName(row.name || row.email);
+};
+
 const pickByKeys = (source: Record<string, any> | undefined, keys: string[]) => {
   if (!source) return 0;
   for (const key of keys) {
@@ -280,8 +287,24 @@ const mapGeneralPayload = (payload: any) => {
   };
 };
 
+const collectEligibleDigisacUsers = (list: unknown[], seen: Set<string>) => {
+  const collected: Array<{ id: string; name: string }> = [];
+  let newOnPage = 0;
+  for (const raw of list) {
+    const user = raw as { id?: unknown; name?: string; email?: string };
+    if (!user?.id) continue;
+    const id = String(user.id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    newOnPage++;
+    if (!shouldKeepDigisacAnalystUser(raw)) continue;
+    collected.push({ id, name: user.name || user.email || "Sem nome" });
+  }
+  return { collected, newOnPage };
+};
+
 const loadDigisacUsers = async (baseUrl: string, token: string) => {
-  const usersCacheKey = "digisac_users_raw";
+  const usersCacheKey = "digisac_users_raw_v2";
   let users: Array<{ id: string; name: string }> = cache[usersCacheKey]?.data;
 
   if (!users || Date.now() - cache[usersCacheKey].timestamp >= LIST_CACHE_TTL_MS) {
@@ -298,28 +321,13 @@ const loadDigisacUsers = async (baseUrl: string, token: string) => {
         if (page === 1) {
           const fallback = await fetchDigisac(baseUrl, token, "/api/v1/users");
           const list = Array.isArray(fallback.data?.data) ? fallback.data.data : Array.isArray(fallback.data) ? fallback.data : [];
-          for (const user of list) {
-            if (!user?.id || user.deletedAt || user.isClientUser === true) continue;
-            if (isInvalidDigisacUserName(user.name || user.email)) continue;
-            const id = String(user.id);
-            if (seen.has(id)) continue;
-            seen.add(id);
-            collected.push({ id, name: user.name || user.email || "Sem nome" });
-          }
+          collected.push(...collectEligibleDigisacUsers(list, seen).collected);
         }
         break;
       }
       const list = Array.isArray(response.data?.data) ? response.data.data : Array.isArray(response.data) ? response.data : [];
-      let newOnPage = 0;
-      for (const user of list) {
-        if (!user?.id || user.deletedAt || user.isClientUser === true) continue;
-        if (isInvalidDigisacUserName(user.name || user.email)) continue;
-        const id = String(user.id);
-        if (seen.has(id)) continue;
-        seen.add(id);
-        collected.push({ id, name: user.name || user.email || "Sem nome" });
-        newOnPage++;
-      }
+      const { collected: pageUsers, newOnPage } = collectEligibleDigisacUsers(list, seen);
+      collected.push(...pageUsers);
       if (list.length < pageSize || newOnPage === 0) hasMore = false;
       else page++;
     }
@@ -389,7 +397,8 @@ const loadValidMappedAnalystUsers = async (
     if (!activeAnalyst) continue;
 
     const digisacUser = digisacUsersById.get(String(mapping.digisac_user_id));
-    const displayName = digisacUser?.name || (mapping.digisac_user_name as string) || activeAnalyst.name;
+    if (!digisacUser) continue;
+    const displayName = digisacUser.name || (mapping.digisac_user_name as string) || activeAnalyst.name;
     if (isInvalidDigisacUserName(activeAnalyst.name) || isInvalidDigisacUserName(displayName)) continue;
 
     validUsers.set(String(mapping.digisac_user_id), {
@@ -1258,47 +1267,13 @@ Deno.serve(async (req) => {
     }
 
     if (action === "listar_digisac_users") {
-      const cacheKey = "digisac_users_full_list";
+      const cacheKey = "digisac_users_full_list_v2";
       if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < LIST_CACHE_TTL_MS) {
         return jsonResponse(cache[cacheKey].data);
       }
-      const pageSize = 200;
-      const merged: unknown[] = [];
-      const seen = new Set<string>();
-      let page = 1;
-      let hasMore = true;
-      while (hasMore && page < 80) {
-        const params = new URLSearchParams({ limit: String(pageSize), page: String(page) });
-        const r = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/users", params);
-        if (!r.ok) {
-          if (page === 1) {
-            const r0 = await fetchDigisac(digisacUrl, digisacToken, "/api/v1/users");
-            if (!r0.ok) {
-              return handledErrorResponse(action, `Erro API Digisac: ${r0.status}`, {
-                code: "DIGISAC_API_ERROR",
-                digisac_status: r0.status,
-              });
-            }
-            const users = Array.isArray(r0.data?.data) ? r0.data.data : Array.isArray(r0.data) ? r0.data : [];
-            cache[cacheKey] = { data: users, timestamp: Date.now() };
-            return jsonResponse(users);
-          }
-          break;
-        }
-        const list = Array.isArray(r.data?.data) ? r.data.data : Array.isArray(r.data) ? r.data : [];
-        let newOnPage = 0;
-        for (const u of list) {
-          const id = String((u as any)?.id ?? "");
-          if (!id || seen.has(id)) continue;
-          seen.add(id);
-          merged.push(u);
-          newOnPage++;
-        }
-        if (list.length < pageSize || newOnPage === 0) hasMore = false;
-        else page++;
-      }
-      cache[cacheKey] = { data: merged, timestamp: Date.now() };
-      return jsonResponse(merged);
+      const users = await loadDigisacUsers(digisacUrl, digisacToken);
+      cache[cacheKey] = { data: users, timestamp: Date.now() };
+      return jsonResponse(users);
     }
 
     if (action === "listar_departments") {

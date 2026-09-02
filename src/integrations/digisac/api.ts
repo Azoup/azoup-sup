@@ -21,6 +21,7 @@ import {
 import type { DigisacBuDashboardResponse } from "@/integrations/digisac/buStats";
 import type { DigisacBuRecurrenceResponse } from "@/integrations/digisac/buRecurrence";
 import type { RecurrenceDepartmentKey } from "@/lib/digisacRecurrenceDepartments";
+import { isEligibleDigisacAnalystUser } from "@/lib/digisacActiveUsers";
 
 export type { DigisacDashboardQueryFilters };
 export {
@@ -43,6 +44,10 @@ export interface DigisacUser {
   id: string;
   name: string;
   email?: string;
+  archivedAt?: string | null;
+  deletedAt?: string | null;
+  active?: boolean;
+  isClientUser?: boolean;
 }
 
 interface DigisacErrorPayload {
@@ -210,7 +215,9 @@ export const digisacApi = {
   },
 
   async getDigisacUsers(): Promise<DigisacUser[]> {
-    return invokeDigisac<DigisacUser[]>('listar_digisac_users');
+    const users = await invokeDigisac<DigisacUser[]>('listar_digisac_users');
+    const list = Array.isArray(users) ? users : [];
+    return list.filter(isEligibleDigisacAnalystUser);
   },
 
   async testConnection(): Promise<{ ok: boolean; digisac_status: number | null; sample: DigisacUser | null }> {
