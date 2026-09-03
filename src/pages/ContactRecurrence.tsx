@@ -1,12 +1,15 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { format, startOfMonth, endOfMonth, subMonths, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { toast } from 'sonner';
 import {
   Building2,
+  FileText,
   Filter,
   Headset,
+  Loader2,
   Percent,
   Phone,
   RefreshCw,
@@ -17,6 +20,7 @@ import {
   ArrowLeft,
 } from 'lucide-react';
 import { digisacApi } from '@/integrations/digisac/api';
+import { downloadRecurrenceContactsPdf } from '@/lib/recurrenceContactsPdf';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -91,6 +95,7 @@ const ContactRecurrence = () => {
   const [departmentKey, setDepartmentKey] = useState<RecurrenceDepartmentKey>('suporte');
   const [classFilter, setClassFilter] = useState<'all' | RecurrenceClass>('all');
   const [selected, setSelected] = useState<RecurrenceContactRow | null>(null);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
 
   const applyMonthFilter = (month: string) => {
     setMonthFilter(month);
@@ -144,6 +149,45 @@ const ContactRecurrence = () => {
   const summary = useMemo(() => summarizeContacts(scopedContacts), [scopedContacts]);
   const analystNames = useMemo(() => listAnalystNames(data?.contacts ?? []), [data]);
 
+  const handleGeneratePdf = useCallback(() => {
+    if (isLoading) return;
+    setPdfGenerating(true);
+    try {
+      downloadRecurrenceContactsPdf({
+        contacts: filteredContacts,
+        filters: {
+          dateFrom,
+          dateTo,
+          departmentKey,
+          departmentLabel: RECURRENCE_DEPARTMENT_LABEL[departmentKey],
+          unitFilter,
+          classFilter,
+          analystFilter,
+          search,
+        },
+      });
+      if (filteredContacts.length === 0) {
+        toast.message('PDF gerado sem contatos no resultado filtrado.');
+      } else {
+        toast.success(`PDF gerado com ${filteredContacts.length} contato(s).`);
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? `Erro ao gerar PDF: ${e.message}` : 'Erro ao gerar PDF.');
+    } finally {
+      setPdfGenerating(false);
+    }
+  }, [
+    analystFilter,
+    classFilter,
+    dateFrom,
+    dateTo,
+    departmentKey,
+    filteredContacts,
+    isLoading,
+    search,
+    unitFilter,
+  ]);
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -162,6 +206,15 @@ const ContactRecurrence = () => {
           </Button>
           <Button variant="outline" size="sm" onClick={() => { setRefreshTick((n) => n + 1); void refetch(); }}>
             <RefreshCw className="mr-2 h-4 w-4" /> Atualizar
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isLoading || pdfGenerating}
+            onClick={handleGeneratePdf}
+          >
+            {pdfGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
+            Gerar PDF
           </Button>
         </div>
       </div>
@@ -277,6 +330,15 @@ Departamentos Suporte e Azoup Confec, com tags de contato B1/B2.`}
                     ))}
                   </SelectContent>
                 </Select>
+                <Button
+                  variant="default"
+                  className="sm:w-auto"
+                  disabled={isLoading || pdfGenerating}
+                  onClick={handleGeneratePdf}
+                >
+                  {pdfGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
+                  Gerar PDF
+                </Button>
               </div>
 
               <div className="rounded-md border">
@@ -327,6 +389,7 @@ Departamentos Suporte e Azoup Confec, com tags de contato B1/B2.`}
               </div>
               <p className="text-xs text-muted-foreground">
                 Clique em um contato para ver o histórico no período. Assunto e protocolo vêm da finalização do ticket no Digisac.
+                O PDF usa o período, a unidade, a classificação, o analista e a pesquisa atuais.
               </p>
             </CardContent>
           </Card>
