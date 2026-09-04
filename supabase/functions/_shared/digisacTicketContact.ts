@@ -74,20 +74,29 @@ export function unwrapDigisacRecord(payload: unknown): Record<string, unknown> |
 }
 
 export function formatPhoneDisplay(raw: string): string {
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length === 13 && digits.startsWith("55")) {
-    const ddd = digits.slice(2, 4);
-    const rest = digits.slice(4);
-    if (rest.length === 9) return `+55 (${ddd}) ${rest.slice(0, 5)}-${rest.slice(5)}`;
-    if (rest.length === 8) return `+55 (${ddd}) ${rest.slice(0, 4)}-${rest.slice(4)}`;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === "—") return trimmed || "—";
+
+  const digits = trimmed.replace(/\D/g, "");
+  if (!digits) return trimmed;
+
+  let national = digits;
+  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+    national = digits.slice(2);
   }
-  if (digits.length === 11) {
-    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+
+  if (national.length === 11) {
+    const ddd = national.slice(0, 2);
+    const rest = national.slice(2);
+    return `+55 (${ddd}) ${rest.slice(0, 5)}-${rest.slice(5)}`;
   }
-  if (digits.length === 10) {
-    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  if (national.length === 10) {
+    const ddd = national.slice(0, 2);
+    const rest = national.slice(2);
+    return `+55 (${ddd}) ${rest.slice(0, 4)}-${rest.slice(4)}`;
   }
-  return raw.trim();
+
+  return trimmed;
 }
 
 export function parseDigisacContactRecord(record: Record<string, unknown>): TicketContactRef | null {

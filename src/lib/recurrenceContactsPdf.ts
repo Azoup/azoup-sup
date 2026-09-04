@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import {
   RECURRENCE_CLASS_LABEL,
+  formatPhoneDisplay,
   summarizeContacts,
   type RecurrenceClass,
   type RecurrenceContactRow,
@@ -252,7 +253,7 @@ function drawRow(doc: jsPDF, y: number, row: RecurrenceContactRow, striped: bool
 
   const values = [
     fitText(doc, row.name, COLS[0].w - 5),
-    fitText(doc, row.phone, COLS[1].w - 5),
+    fitText(doc, formatPhoneDisplay(row.phone), COLS[1].w - 5),
     String(row.atendimentos),
     String(row.retornos),
     '',

@@ -23,6 +23,33 @@ export function normalizePhoneKey(phone: string): string {
   return digits;
 }
 
+/** Interpreta números crus do Digisac (`551936049825`) no padrão `+55 (19) 3604-9825`. */
+export function formatPhoneDisplay(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === "—") return trimmed || "—";
+
+  const digits = trimmed.replace(/\D/g, "");
+  if (!digits) return trimmed;
+
+  let national = digits;
+  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+    national = digits.slice(2);
+  }
+
+  if (national.length === 11) {
+    const ddd = national.slice(0, 2);
+    const rest = national.slice(2);
+    return `+55 (${ddd}) ${rest.slice(0, 5)}-${rest.slice(5)}`;
+  }
+  if (national.length === 10) {
+    const ddd = national.slice(0, 2);
+    const rest = national.slice(2);
+    return `+55 (${ddd}) ${rest.slice(0, 4)}-${rest.slice(4)}`;
+  }
+
+  return trimmed;
+}
+
 export function contactGroupKey(phone: string, contactId: string): string {
   const key = normalizePhoneKey(phone);
   if (key) return `phone:${key}`;
@@ -131,7 +158,7 @@ export function buildRecurrence(tickets: RecurrenceTicketInput[]): {
     contacts.push({
       key,
       name: name || "Cliente",
-      phone: phone || "—",
+      phone: formatPhoneDisplay(phone) || "—",
       units,
       atendimentos,
       retornos,

@@ -6,6 +6,7 @@ import {
   filterContactsByAnalyst,
   listAnalystNames,
   matchesContactSearch,
+  formatPhoneDisplay,
   normalizePhoneKey,
   summarizeContacts,
   type RecurrenceTicketInput,
@@ -38,6 +39,21 @@ describe("digisacBuRecurrence", () => {
     expect(normalizePhoneKey("+55 (19) 99609-0140")).toBe("19996090140");
     expect(normalizePhoneKey("19996090140")).toBe("19996090140");
     expect(contactGroupKey("+55 (19) 99609-0140", "a")).toBe(contactGroupKey("19996090140", "b"));
+  });
+
+  it("formata números crus do Digisac no padrão da tela", () => {
+    expect(formatPhoneDisplay("551936049825")).toBe("+55 (19) 3604-9825");
+    expect(formatPhoneDisplay("554498068598")).toBe("+55 (44) 9806-8598");
+    expect(formatPhoneDisplay("5511999999999")).toBe("+55 (11) 99999-9999");
+    expect(formatPhoneDisplay("+55 (19) 98168-9022")).toBe("+55 (19) 98168-9022");
+    expect(formatPhoneDisplay("11988887777")).toBe("+55 (11) 98888-7777");
+  });
+
+  it("exibe o telefone formatado na linha de recorrência", () => {
+    const { contacts } = buildRecurrence([
+      ticket({ id: "t1", phone: "551936049825", name: "Jakeline" }),
+    ]);
+    expect(contacts[0].phone).toBe("+55 (19) 3604-9825");
   });
 
   it("junta dois contactId do mesmo telefone em uma linha", () => {

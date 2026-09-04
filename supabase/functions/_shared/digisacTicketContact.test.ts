@@ -61,3 +61,8 @@ Deno.test("extractTicketContact lê contato aninhado", () => {
 Deno.test("formatPhoneDisplay formata celular BR", () => {
   assertEquals(formatPhoneDisplay("5511999999999"), "+55 (11) 99999-9999");
 });
+
+Deno.test("formatPhoneDisplay formata fixo BR vindo concatenado do Digisac", () => {
+  assertEquals(formatPhoneDisplay("551936049825"), "+55 (19) 3604-9825");
+  assertEquals(formatPhoneDisplay("554498068598"), "+55 (44) 9806-8598");
+});

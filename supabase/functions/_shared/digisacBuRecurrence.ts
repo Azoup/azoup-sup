@@ -2,6 +2,7 @@ import { extractTicketAttendant, type FetchDigisacFn, type TicketAttendantRef } 
 import {
   extractTicketContact,
   extractTicketContactId,
+  formatPhoneDisplay,
   unwrapDigisacRecord,
   type TicketContactRef,
 } from "./digisacTicketContact.ts";
@@ -312,7 +313,7 @@ export function mapRawTicketToInput(
     contactId,
     date,
     sortAt: ticketSortAt(row, date),
-    phone: rawPhone,
+    phone: rawPhone ? formatPhoneDisplay(rawPhone) : "",
     name,
     attendantName,
     attendantUserId: attendant?.userId || "",
@@ -359,7 +360,7 @@ export function buildRecurrence(tickets: RecurrenceTicketInput[]): {
     contacts.push({
       key,
       name: name || "Cliente",
-      phone: phone || "—",
+      phone: formatPhoneDisplay(phone) || "—",
       units,
       atendimentos,
       retornos,

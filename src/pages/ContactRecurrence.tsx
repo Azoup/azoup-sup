@@ -43,7 +43,7 @@ import {
 } from '@/components/ui/sheet';
 import { QueryLoadState } from '@/components/QueryLoadState';
 import { PeriodRangePicker } from '@/components/PeriodRangePicker';
-import { matchesContactSearch, filterContactsByAnalyst, listAnalystNames, summarizeContacts, RECURRENCE_CLASS_LABEL, type RecurrenceClass, type RecurrenceContactRow } from '@/lib/digisacBuRecurrence';
+import { matchesContactSearch, filterContactsByAnalyst, formatPhoneDisplay, listAnalystNames, summarizeContacts, RECURRENCE_CLASS_LABEL, type RecurrenceClass, type RecurrenceContactRow } from '@/lib/digisacBuRecurrence';
 import {
   parseRecurrenceDepartmentKey,
   RECURRENCE_DEPARTMENT_LABEL,
@@ -133,21 +133,26 @@ const ContactRecurrence = () => {
     return result;
   }, [today]);
 
+  const contacts = useMemo(
+    () => (data?.contacts ?? []).map((row) => ({ ...row, phone: formatPhoneDisplay(row.phone) })),
+    [data],
+  );
+
   const scopedContacts = useMemo(() => {
-    const byAnalyst = filterContactsByAnalyst(data?.contacts ?? [], analystFilter);
+    const byAnalyst = filterContactsByAnalyst(contacts, analystFilter);
     return byAnalyst.filter((row) => {
       if (unitFilter !== 'all' && !row.units.includes(unitFilter)) return false;
       if (classFilter !== 'all' && row.classification !== classFilter) return false;
       return true;
     });
-  }, [data, analystFilter, unitFilter, classFilter]);
+  }, [contacts, analystFilter, unitFilter, classFilter]);
 
   const filteredContacts = useMemo(() => {
     return scopedContacts.filter((row) => matchesContactSearch(row, search));
   }, [scopedContacts, search]);
 
   const summary = useMemo(() => summarizeContacts(scopedContacts), [scopedContacts]);
-  const analystNames = useMemo(() => listAnalystNames(data?.contacts ?? []), [data]);
+  const analystNames = useMemo(() => listAnalystNames(contacts), [contacts]);
 
   const handleGeneratePdf = useCallback(() => {
     if (isLoading) return;
