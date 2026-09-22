@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
+  isEnteringColumn,
   isKanbanCompletionDestination,
   isKanbanCompletionSlug,
+  isLeavingColumn,
   resolveCompletionColumnSlug,
+  resolveParaAtualizarColumnSlug,
 } from '@/lib/kanbanCompletionColumn';
 
 describe('kanbanCompletionColumn', () => {
@@ -59,5 +62,25 @@ describe('kanbanCompletionColumn', () => {
     expect(isKanbanCompletionDestination('concluidos', cols, 'dev')).toBe(true);
     expect(isKanbanCompletionDestination('finalizados', cols, 'dev')).toBe(true);
     expect(isKanbanCompletionDestination('em_andamento', cols, 'dev')).toBe(false);
+  });
+
+  it('resolve a coluna Para atualizar pelo título', () => {
+    expect(resolveParaAtualizarColumnSlug(devColumns)).toBe('para_atualizar_123');
+  });
+
+  it('não confunde Para atualizar com outras listas', () => {
+    expect(
+      resolveParaAtualizarColumnSlug([
+        { slug: 'aguardando_atualizacao', title: 'Aguardando atualização' },
+        { slug: 'finalizados', title: 'Finalizados' },
+      ]),
+    ).toBe(null);
+  });
+
+  it('detecta entrada e saída de Para atualizar', () => {
+    expect(isEnteringColumn('postar', 'para_atualizar_123', 'para_atualizar_123')).toBe(true);
+    expect(isEnteringColumn('para_atualizar_123', 'finalizados', 'para_atualizar_123')).toBe(false);
+    expect(isLeavingColumn('para_atualizar_123', 'finalizados', 'para_atualizar_123')).toBe(true);
+    expect(isLeavingColumn('postar', 'para_atualizar_123', 'para_atualizar_123')).toBe(false);
   });
 });

@@ -43,8 +43,13 @@ import { notifyDevAndAnalyst } from '@/hooks/useDevNotifications';
 import { KanbanCardImage } from '@/components/KanbanCardImage';
 import { filesFromClipboardData } from '@/lib/clipboardImage';
 import { loadDevKanbanDevNotes, saveDevKanbanDevNotes } from '@/lib/devKanbanDevNotes';
+import {
+  DEV_RELEASE_PDF_BRAND,
+  downloadConfecCompletedDemandsPdf,
+  filterConfecCompletedCardsByPeriod,
+} from '@/lib/confecCompletedDemandsPdf';
 import { devTicketLabel, devTicketMatchesSearch, isDevTicketNumberQuery } from '@/lib/devKanbanTicketNumber';
-import { isKanbanCompletionDestination, isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
+import { isEnteringColumn, isKanbanCompletionDestination, isKanbanCompletionSlug, isLeavingColumn, resolveCompletionColumnSlug, resolveParaAtualizarColumnSlug } from '@/lib/kanbanCompletionColumn';
 import {
   KANBAN_DONE_LABEL_COLOR,
   KANBAN_DONE_LABEL_NAME,
@@ -66,7 +71,7 @@ import { Badge } from '@/components/ui/badge';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
-import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar, Search } from 'lucide-react';
+import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar, Search, FileText } from 'lucide-react';
 import { DevCardComments } from '@/components/DevCardComments';
 import { DevTicketNumberBadge } from '@/components/DevTicketNumberBadge';
 import { DevCardFiles } from '@/components/DevCardFiles';
@@ -75,7 +80,7 @@ import { ChecklistBadge } from '@/components/ChecklistBadge';
 import { KanbanSkeleton } from '@/components/KanbanSkeleton';
 import { ImageLightbox } from '@/components/ImageLightbox';
 
-import { format } from 'date-fns';
+import { format, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
   columnColorToPickerValue,
@@ -225,6 +230,10 @@ const KanbanDev = () => {
   const [editColumnTitle, setEditColumnTitle] = useState('');
   const [editColumnColor, setEditColumnColor] = useState('');
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
+  const [releasePdfOpen, setReleasePdfOpen] = useState(false);
+  const [pdfDateFrom, setPdfDateFrom] = useState(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+  const [pdfDateTo, setPdfDateTo] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [pdfGenerating, setPdfGenerating] = useState(false);
   const dragBusyRef = useRef(false);
   const ticketNumberRefetchDone = useRef(false);
 
@@ -255,6 +264,11 @@ const KanbanDev = () => {
 
   const completionColumnSlug = useMemo(
     () => resolveCompletionColumnSlug(sortedColumns, 'dev'),
+    [sortedColumns],
+  );
+
+  const paraAtualizarColumnSlug = useMemo(
+    () => resolveParaAtualizarColumnSlug(sortedColumns),
     [sortedColumns],
   );
 
@@ -518,6 +532,8 @@ const KanbanDev = () => {
         !!moveToColumnSlug && moveToColumnSlug !== editingCard.status;
       const wasDone = isDoneSlug(editingCard.status);
       const willBeDone = statusChanged && isDoneSlug(moveToColumnSlug);
+      const enteringRelease = statusChanged && isEnteringColumn(editingCard.status, moveToColumnSlug, paraAtualizarColumnSlug);
+      const leavingRelease = statusChanged && isLeavingColumn(editingCard.status, moveToColumnSlug, paraAtualizarColumnSlug);
 
       let newPosition = editingCard.position ?? 0;
       if (statusChanged) {
@@ -541,6 +557,8 @@ const KanbanDev = () => {
         updatePayload.position = newPosition;
         if (willBeDone) updatePayload.completed_at = new Date().toISOString();
         else if (wasDone && !willBeDone) updatePayload.completed_at = null;
+        if (enteringRelease) updatePayload.released_at = new Date().toISOString();
+        else if (leavingRelease) updatePayload.released_at = null;
       }
 
       let { error } = await supabase
@@ -548,9 +566,10 @@ const KanbanDev = () => {
         .update(updatePayload)
         .eq('id', editingCard.id);
 
-      if (error && statusChanged && `${error.message}`.toLowerCase().includes('completed_at')) {
+      if (error && statusChanged && /completed_at|released_at/i.test(`${error.message}`)) {
         const retryPayload = { ...updatePayload };
-        delete retryPayload.completed_at;
+        if (`${error.message}`.toLowerCase().includes('completed_at')) delete retryPayload.completed_at;
+        if (`${error.message}`.toLowerCase().includes('released_at')) delete retryPayload.released_at;
         const retry = await supabase
           .from('dev_kanban_cards')
           .update(retryPayload)
@@ -622,13 +641,15 @@ const KanbanDev = () => {
         logLabel: 'Editou card no Kanban DEV',
         logDetails,
         nextLabelIds,
-        statusMove: statusChanged
+            statusMove: statusChanged
           ? {
               fromSlug: editingCard.status,
               toSlug: moveToColumnSlug,
               newPosition,
               wasDone,
               willBeDone: !!willBeDone,
+              enteringRelease,
+              leavingRelease,
             }
           : undefined,
       };
@@ -650,11 +671,13 @@ const KanbanDev = () => {
             developer_id: developerId || null,
           };
           if (result?.statusMove) {
-            const { toSlug, newPosition, wasDone, willBeDone } = result.statusMove;
+            const { toSlug, newPosition, wasDone, willBeDone, enteringRelease, leavingRelease } = result.statusMove;
             next.status = toSlug;
             next.position = newPosition;
             if (willBeDone) next.completed_at = new Date().toISOString();
             else if (wasDone && !willBeDone) next.completed_at = null;
+            if (enteringRelease) next.released_at = new Date().toISOString();
+            else if (leavingRelease) next.released_at = null;
           }
           return next;
         }),
@@ -953,6 +976,8 @@ const KanbanDev = () => {
     const statusChanged = source.droppableId !== destination.droppableId;
     const wasDone = isDoneSlug(source.droppableId);
     const willBeDone = isDoneSlug(destination.droppableId);
+    const enteringRelease = isEnteringColumn(source.droppableId, destination.droppableId, paraAtualizarColumnSlug);
+    const leavingRelease = isLeavingColumn(source.droppableId, destination.droppableId, paraAtualizarColumnSlug);
     const previousCards = boardCards;
     const previousCardLabels =
       (queryClient.getQueryData<{ cardLabels?: unknown[] }>(DEV_KANBAN_BOARD_QUERY_KEY)?.cardLabels as unknown[]) ??
@@ -965,6 +990,12 @@ const KanbanDev = () => {
       statusChanged && willBeDone
         ? new Date().toISOString()
         : statusChanged && wasDone && !willBeDone
+          ? null
+          : undefined;
+    const releasedAtOnMove =
+      statusChanged && enteringRelease
+        ? new Date().toISOString()
+        : statusChanged && leavingRelease
           ? null
           : undefined;
 
@@ -982,6 +1013,10 @@ const KanbanDev = () => {
             card.id === draggableId && completedAtOnMove !== undefined
               ? completedAtOnMove
               : card.completed_at,
+          released_at:
+            card.id === draggableId && releasedAtOnMove !== undefined
+              ? releasedAtOnMove
+              : card.released_at,
         };
       }),
     );
@@ -1012,6 +1047,7 @@ const KanbanDev = () => {
             persistDevKanbanCardPositions(boardCards, positionUpdates, {
               draggableId,
               completedAtOnMove,
+              releasedAtOnMove,
             }),
             statusChanged
               ? applyDoneLabelRule(draggableId, source.droppableId, destination.droppableId)
@@ -1053,7 +1089,7 @@ const KanbanDev = () => {
         });
       }
     })();
-  }, [queryClient, cards, cardLabels, cardsByColumn, sortedColumns, user, actorName, applyDoneLabelRule, isDoneSlug, hasActiveCardFilters, labels]);
+  }, [queryClient, cards, cardLabels, cardsByColumn, sortedColumns, user, actorName, applyDoneLabelRule, isDoneSlug, hasActiveCardFilters, labels, paraAtualizarColumnSlug]);
 
   const resetForm = () => {
     setTitle('');
@@ -1222,11 +1258,89 @@ const KanbanDev = () => {
     setFilterDevIds(prev => prev.includes(dId) ? prev.filter(id => id !== dId) : [...prev, dId]);
   }, []);
 
+  const releasePdfPreviewCount = useMemo(
+    () =>
+      filterConfecCompletedCardsByPeriod(
+        cards,
+        paraAtualizarColumnSlug,
+        pdfDateFrom,
+        pdfDateTo,
+        { preferReleasedAt: true },
+      ).length,
+    [cards, paraAtualizarColumnSlug, pdfDateFrom, pdfDateTo],
+  );
+
+  const handleGenerateReleasePdf = useCallback(async () => {
+    if (!pdfDateFrom || !pdfDateTo) {
+      toast.error('Informe o período (data inicial e final).');
+      return;
+    }
+    if (pdfDateFrom > pdfDateTo) {
+      toast.error('A data inicial não pode ser maior que a data final.');
+      return;
+    }
+    if (!paraAtualizarColumnSlug) {
+      toast.error('Coluna "Para atualizar" não encontrada.');
+      return;
+    }
+
+    setPdfGenerating(true);
+    try {
+      const filtered = filterConfecCompletedCardsByPeriod(
+        cards,
+        paraAtualizarColumnSlug,
+        pdfDateFrom,
+        pdfDateTo,
+        { preferReleasedAt: true },
+      );
+      const withNotes = await Promise.all(
+        filtered.map(async (card) => {
+          const analyst = analysts.find((a: { id: string }) => a.id === card.analyst_id) ?? null;
+          const developer = developers.find((d: { id: string }) => d.id === card.developer_id) ?? null;
+          const people = {
+            analyst: analyst
+              ? { name: analyst.name ?? null, photo_url: analyst.photo_url ?? null }
+              : null,
+            developer: developer
+              ? { name: developer.name ?? null, photo_url: developer.photo_url ?? null }
+              : null,
+          };
+          if (!card.id) return { ...card, ...people };
+          try {
+            const notes = await loadDevKanbanDevNotes(card.id, card.dev_notes);
+            return { ...card, ...people, dev_notes: notes || card.dev_notes || null };
+          } catch {
+            return { ...card, ...people };
+          }
+        }),
+      );
+      await downloadConfecCompletedDemandsPdf({
+        cards: withNotes,
+        dateFrom: pdfDateFrom,
+        dateTo: pdfDateTo,
+        brand: DEV_RELEASE_PDF_BRAND,
+      });
+      if (withNotes.length === 0) {
+        toast.message('PDF gerado sem demandas no período.');
+      } else {
+        toast.success(`PDF gerado com ${withNotes.length} demanda(s).`);
+      }
+      setReleasePdfOpen(false);
+    } catch (e: any) {
+      toast.error(e?.message ? `Erro ao gerar PDF: ${e.message}` : 'Erro ao gerar PDF.');
+    } finally {
+      setPdfGenerating(false);
+    }
+  }, [cards, analysts, developers, paraAtualizarColumnSlug, pdfDateFrom, pdfDateTo]);
+
   return (
     <div className="flex h-[calc(100dvh-5.5rem)] max-h-[calc(100dvh-5.5rem)] min-h-0 flex-col gap-3 overflow-hidden animate-fade-in md:h-[calc(100dvh-6.5rem)] md:max-h-[calc(100dvh-6.5rem)]">
       <div className="flex shrink-0 items-center justify-between">
         <h1 className="text-2xl font-heading font-bold">Kanban DEV</h1>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setReleasePdfOpen(true)}>
+            <FileText className="h-4 w-4 mr-1" /> PDF para atualizar
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setLabelOpen(true)}>
             <Tag className="h-4 w-4 mr-1" /> Etiquetas
           </Button>
@@ -1655,6 +1769,49 @@ const KanbanDev = () => {
             </div>
             <Button onClick={() => addColumn.mutate()} disabled={!newColumnTitle.trim() || addColumn.isPending} className="w-full">
               {addColumn.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Criar Lista
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* PDF demandas para atualizar */}
+      <Dialog open={releasePdfOpen} onOpenChange={setReleasePdfOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>PDF — Demandas para atualizar</DialogTitle>
+            <DialogDescription>
+              Filtre pelo período em que o ticket entrou na coluna Para atualizar (saída de Postar).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">Data inicial</label>
+                <Input
+                  type="date"
+                  value={pdfDateFrom}
+                  onChange={(e) => setPdfDateFrom(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">Data final</label>
+                <Input
+                  type="date"
+                  value={pdfDateTo}
+                  onChange={(e) => setPdfDateTo(e.target.value)}
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {releasePdfPreviewCount} demanda(s) no período
+            </p>
+            <Button
+              className="w-full"
+              onClick={() => void handleGenerateReleasePdf()}
+              disabled={pdfGenerating || !pdfDateFrom || !pdfDateTo}
+            >
+              {pdfGenerating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Gerar PDF
             </Button>
           </div>
         </DialogContent>

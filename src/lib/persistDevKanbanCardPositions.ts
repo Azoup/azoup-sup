@@ -5,6 +5,7 @@ import { filterChangedPositionUpdates } from '@/lib/kanbanCardReorder';
 type PersistOptions = {
   draggableId: string;
   completedAtOnMove?: string | null;
+  releasedAtOnMove?: string | null;
 };
 
 async function updateCardPosition(
@@ -12,14 +13,29 @@ async function updateCardPosition(
   status: string,
   position: number,
   completedAt?: string | null,
+  releasedAt?: string | null,
 ): Promise<void> {
   const payload: Record<string, unknown> = { status, position };
   if (completedAt !== undefined) payload.completed_at = completedAt;
+  if (releasedAt !== undefined) payload.released_at = releasedAt;
 
   let { error } = await supabase.from('dev_kanban_cards').update(payload).eq('id', id);
-  if (error && `${error.message}`.toLowerCase().includes('completed_at')) {
-    const retry = await supabase.from('dev_kanban_cards').update({ status, position }).eq('id', id);
-    error = retry.error;
+  if (error) {
+    const message = `${error.message}`.toLowerCase();
+    const retryPayload = { ...payload };
+    let shouldRetry = false;
+    if (message.includes('completed_at')) {
+      delete retryPayload.completed_at;
+      shouldRetry = true;
+    }
+    if (message.includes('released_at')) {
+      delete retryPayload.released_at;
+      shouldRetry = true;
+    }
+    if (shouldRetry) {
+      const retry = await supabase.from('dev_kanban_cards').update(retryPayload).eq('id', id);
+      error = retry.error;
+    }
   }
   if (error) throw error;
 }
@@ -40,6 +56,7 @@ export async function persistDevKanbanCardPositions(
         status,
         position,
         id === options.draggableId ? options.completedAtOnMove : undefined,
+        id === options.draggableId ? options.releasedAtOnMove : undefined,
       ),
     ),
   );

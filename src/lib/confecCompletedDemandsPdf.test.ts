@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildConfecCompletedDemandsPdf,
   confecDemandDisplayTitle,
+  DEV_RELEASE_PDF_BRAND,
   filterConfecCompletedCardsByPeriod,
   formatConfecCompletedDemandLine,
   personDisplayName,
@@ -114,6 +115,54 @@ describe('filterConfecCompletedCardsByPeriod', () => {
     const filtered = filterConfecCompletedCardsByPeriod(cards, 'finalizados', '2026-08-01', '2026-08-05');
     expect(filtered.map((c) => c.ticket_number)).toEqual([1]);
   });
+
+  it('usa updated_at quando preferUpdatedAt', () => {
+    const releaseCards = [
+      {
+        status: 'para_atualizar',
+        ticket_number: 9,
+        title: 'A',
+        completed_at: '2026-07-01T12:00:00.000Z',
+        updated_at: '2026-09-10T12:00:00.000Z',
+      },
+    ];
+    const byCompleted = filterConfecCompletedCardsByPeriod(
+      releaseCards,
+      'para_atualizar',
+      '2026-09-01',
+      '2026-09-30',
+    );
+    const byUpdated = filterConfecCompletedCardsByPeriod(
+      releaseCards,
+      'para_atualizar',
+      '2026-09-01',
+      '2026-09-30',
+      { preferUpdatedAt: true },
+    );
+    expect(byCompleted.map((c) => c.ticket_number)).toEqual([]);
+    expect(byUpdated.map((c) => c.ticket_number)).toEqual([9]);
+  });
+
+  it('filtra Para atualizar pela data de released_at', () => {
+    const releaseCards = [
+      {
+        status: 'para_atualizar',
+        ticket_number: 9,
+        title: 'A',
+        completed_at: '2026-07-01T12:00:00.000Z',
+        updated_at: '2026-07-02T12:00:00.000Z',
+        released_at: '2026-09-10T12:00:00.000Z',
+      },
+    ];
+    const filtered = filterConfecCompletedCardsByPeriod(
+      releaseCards,
+      'para_atualizar',
+      '2026-09-01',
+      '2026-09-30',
+      { preferReleasedAt: true },
+    );
+    expect(filtered.map((c) => c.ticket_number)).toEqual([9]);
+  });
 });
 
 describe('buildConfecCompletedDemandsPdf', () => {
@@ -159,5 +208,15 @@ describe('buildConfecCompletedDemandsPdf', () => {
       ],
     });
     expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(1);
+  });
+
+  it('gera PDF do Kanban DEV para atualizar', () => {
+    const doc = buildConfecCompletedDemandsPdf({
+      dateFrom: '2026-09-01',
+      dateTo: '2026-09-22',
+      brand: DEV_RELEASE_PDF_BRAND,
+      cards: [{ ticket_number: 9, title: 'MAKE DA MISS - SUGESTÃO DE MELHORIA' }],
+    });
+    expect(doc.getNumberOfPages()).toBe(1);
   });
 });

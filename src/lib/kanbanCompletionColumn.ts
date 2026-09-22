@@ -88,6 +88,57 @@ export function resolveCompletionColumnSlug(
   return board === 'dev' ? 'finalizados' : 'done';
 }
 
+function isParaAtualizarKey(value: string): boolean {
+  const key = normalizeKey(value).replace(/[_-]+/g, ' ').replace(/\s+\d+$/, '').trim();
+  return key === 'para atualizar';
+}
+
+/**
+ * Coluna "Para atualizar" do Kanban DEV (tickets liberados na versão nova).
+ */
+export function resolveParaAtualizarColumnSlug(columns: KanbanColumnRef[]): string | null {
+  if (!columns?.length) return null;
+
+  let best: { slug: string; score: number } | null = null;
+  for (const column of columns) {
+    const slugKey = normalizeKey(column.slug).replace(/[_-]+/g, ' ').trim();
+    const titleKey = column.title ? normalizeKey(column.title).replace(/[_-]+/g, ' ').trim() : '';
+    let score = -1;
+    if (titleKey === 'para atualizar') score = 3;
+    else if (isParaAtualizarKey(column.slug) || slugKey === 'para atualizar') score = 2;
+    else if (titleKey.startsWith('para atualizar') || slugKey.startsWith('para atualizar')) score = 1;
+    if (score < 0) continue;
+    if (!best || score > best.score) best = { slug: column.slug, score };
+  }
+  return best?.slug ?? null;
+}
+
+export function kanbanColumnSlugsMatch(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): boolean {
+  if (!left || !right) return false;
+  return normalizeKey(left) === normalizeKey(right);
+}
+
+export function isEnteringColumn(
+  fromSlug: string | null | undefined,
+  toSlug: string | null | undefined,
+  targetSlug: string | null | undefined,
+): boolean {
+  if (!targetSlug) return false;
+  return !kanbanColumnSlugsMatch(fromSlug, targetSlug) && kanbanColumnSlugsMatch(toSlug, targetSlug);
+}
+
+export function isLeavingColumn(
+  fromSlug: string | null | undefined,
+  toSlug: string | null | undefined,
+  targetSlug: string | null | undefined,
+): boolean {
+  if (!targetSlug) return false;
+  return kanbanColumnSlugsMatch(fromSlug, targetSlug) && !kanbanColumnSlugsMatch(toSlug, targetSlug);
+}
+
 export function isKanbanCompletionSlug(
   slug: string | null | undefined,
   completionSlug: string | null | undefined,

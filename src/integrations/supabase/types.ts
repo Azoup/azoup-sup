@@ -254,6 +254,7 @@ export type Database = {
           id: string
           image_url: string | null
           position: number
+          released_at: string | null
           status: string
           ticket_number: number
           title: string
@@ -270,6 +271,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           position?: number
+          released_at?: string | null
           status?: string
           ticket_number?: number
           title: string
@@ -286,6 +288,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           position?: number
+          released_at?: string | null
           status?: string
           ticket_number?: number
           title?: string

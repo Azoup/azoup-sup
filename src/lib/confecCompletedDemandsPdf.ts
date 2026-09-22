@@ -16,11 +16,36 @@ export type ConfecCompletedDemandCard = {
   dev_notes?: string | null;
   completed_at?: string | null;
   updated_at?: string | null;
+  released_at?: string | null;
   status?: string | null;
   analyst_id?: string | null;
   developer_id?: string | null;
   analyst?: ConfecPdfPerson | null;
   developer?: ConfecPdfPerson | null;
+};
+
+export type KanbanDemandsPdfBrand = {
+  boardName: string;
+  boardNameLine2: string;
+  titleAccent: string;
+  emptyMessage: string;
+  filenamePrefix: string;
+};
+
+export const CONFEC_COMPLETED_PDF_BRAND: KanbanDemandsPdfBrand = {
+  boardName: 'Kanban Confec',
+  boardNameLine2: 'Confec',
+  titleAccent: 'concluídas',
+  emptyMessage: 'Nenhuma demanda concluída no período selecionado.',
+  filenamePrefix: 'kanban-confec-concluidos',
+};
+
+export const DEV_RELEASE_PDF_BRAND: KanbanDemandsPdfBrand = {
+  boardName: 'Kanban DEV',
+  boardNameLine2: 'DEV',
+  titleAccent: 'para atualizar',
+  emptyMessage: 'Nenhuma demanda para atualizar no período selecionado.',
+  filenamePrefix: 'kanban-dev-para-atualizar',
 };
 
 export type ConfecDemandIcon =
@@ -119,8 +144,15 @@ export function pickConfecDemandIcon(heading: string, description: string): Conf
   return 'clipboard';
 }
 
-function cardCompletionDate(card: ConfecCompletedDemandCard): Date | null {
-  const raw = card.completed_at || card.updated_at;
+function cardPeriodDate(
+  card: ConfecCompletedDemandCard,
+  options?: { preferUpdatedAt?: boolean; preferReleasedAt?: boolean },
+): Date | null {
+  const raw = options?.preferReleasedAt
+    ? card.released_at || card.updated_at || card.completed_at
+    : options?.preferUpdatedAt
+      ? card.updated_at || card.completed_at
+      : card.completed_at || card.updated_at;
   if (!raw) return null;
   const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? null : d;
@@ -139,6 +171,7 @@ export function filterConfecCompletedCardsByPeriod(
   completionSlug: string | null,
   dateFrom: string,
   dateTo: string,
+  options?: { preferUpdatedAt?: boolean; preferReleasedAt?: boolean },
 ): ConfecCompletedDemandCard[] {
   if (!completionSlug) return [];
   const from = dateFrom.trim();
@@ -148,7 +181,7 @@ export function filterConfecCompletedCardsByPeriod(
   return cards
     .filter((card) => card.status === completionSlug)
     .filter((card) => {
-      const completed = cardCompletionDate(card);
+      const completed = cardPeriodDate(card, options);
       if (!completed) return false;
       const key = toLocalDateKey(completed);
       return key >= from && key <= to;
@@ -300,13 +333,13 @@ function drawPageChrome(doc: jsPDF) {
   drawCornerAccents(doc);
 }
 
-function drawHeader(doc: jsPDF) {
+function drawHeader(doc: jsPDF, brand: KanbanDemandsPdfBrand) {
   const pageW = doc.internal.pageSize.getWidth();
   drawBrandMark(doc, MARGIN_X, 9.4, 9.2);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
   setText(doc, COLOR.primary);
-  doc.text('Kanban Confec', MARGIN_X + 11.4, 15.6);
+  doc.text(brand.boardName, MARGIN_X + 11.4, 15.6);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
@@ -315,7 +348,7 @@ function drawHeader(doc: jsPDF) {
   doc.text('melhores resultados.', pageW - 20, 16.6, { align: 'right' });
 }
 
-function drawFooter(doc: jsPDF, page: number, total: number) {
+function drawFooter(doc: jsPDF, page: number, total: number, brand: KanbanDemandsPdfBrand) {
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const y = pageH - 12;
@@ -332,7 +365,7 @@ function drawFooter(doc: jsPDF, page: number, total: number) {
   setText(doc, COLOR.primary);
   doc.text('Kanban', logoX + 9.4, y - 1.6);
   doc.setFontSize(7.5);
-  doc.text('Confec', logoX + 9.4, y + 1.8);
+  doc.text(brand.boardNameLine2, logoX + 9.4, y + 1.8);
 
   if (total > 1) {
     doc.setFont('helvetica', 'normal');
@@ -353,7 +386,7 @@ function drawCheckBadge(doc: jsPDF, x: number, y: number) {
   doc.line(x - 0.45, y + 1.55, x + 2.05, y - 1.45);
 }
 
-function drawTitleBlock(doc: jsPDF): number {
+function drawTitleBlock(doc: jsPDF, brand: KanbanDemandsPdfBrand): number {
   const y = HEADER_H + 10;
   drawCheckBadge(doc, MARGIN_X + 4.2, y - 1.2);
 
@@ -363,12 +396,12 @@ function drawTitleBlock(doc: jsPDF): number {
   doc.text('Demandas ', MARGIN_X + 11.2, y);
   const demandasW = doc.getTextWidth('Demandas ');
   setText(doc, COLOR.primary);
-  doc.text('concluídas', MARGIN_X + 11.2 + demandasW, y);
+  doc.text(brand.titleAccent, MARGIN_X + 11.2 + demandasW, y);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   setText(doc, COLOR.muted);
-  doc.text('Kanban Confec', MARGIN_X + 11.2, y + 5.4);
+  doc.text(brand.boardName, MARGIN_X + 11.2, y + 5.4);
   return y + 11;
 }
 
@@ -661,18 +694,25 @@ function drawDemandCard(
   return layout.height;
 }
 
-function addPreparedPage(doc: jsPDF, first: boolean, dateFrom: string, dateTo: string, total: number): number {
+function addPreparedPage(
+  doc: jsPDF,
+  first: boolean,
+  dateFrom: string,
+  dateTo: string,
+  total: number,
+  brand: KanbanDemandsPdfBrand,
+): number {
   if (!first) doc.addPage();
   drawPageChrome(doc);
-  drawHeader(doc);
+  drawHeader(doc, brand);
   if (first) {
-    const afterTitle = drawTitleBlock(doc);
+    const afterTitle = drawTitleBlock(doc, brand);
     return drawKpiRow(doc, afterTitle, dateFrom, dateTo, total);
   }
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   setText(doc, COLOR.ink);
-  doc.text('Demandas concluídas — continuação', MARGIN_X, HEADER_H + 8);
+  doc.text(`Demandas ${brand.titleAccent} — continuação`, MARGIN_X, HEADER_H + 8);
   return HEADER_H + 13;
 }
 
@@ -680,14 +720,16 @@ export function buildConfecCompletedDemandsPdf(params: {
   cards: ConfecCompletedDemandCard[];
   dateFrom: string;
   dateTo: string;
+  brand?: KanbanDemandsPdfBrand;
 }): jsPDF {
   const { cards, dateFrom, dateTo } = params;
+  const brand = params.brand ?? CONFEC_COMPLETED_PDF_BRAND;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const contentBottom = pageH - FOOTER_RESERVE;
 
-  let y = addPreparedPage(doc, true, dateFrom, dateTo, cards.length);
+  let y = addPreparedPage(doc, true, dateFrom, dateTo, cards.length, brand);
 
   if (cards.length === 0) {
     setFill(doc, COLOR.white);
@@ -697,14 +739,14 @@ export function buildConfecCompletedDemandsPdf(params: {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     setText(doc, COLOR.muted);
-    doc.text('Nenhuma demanda concluída no período selecionado.', pageW / 2, y + 10.4, {
+    doc.text(brand.emptyMessage, pageW / 2, y + 10.4, {
       align: 'center',
     });
   } else {
     for (const card of cards) {
       const height = measureDemandCard(doc, card, pageW).height;
       if (y + height > contentBottom) {
-        y = addPreparedPage(doc, false, dateFrom, dateTo, cards.length);
+        y = addPreparedPage(doc, false, dateFrom, dateTo, cards.length, brand);
       }
       const drawn = drawDemandCard(doc, card, y, pageW);
       y += drawn + CARD_GAP;
@@ -714,7 +756,7 @@ export function buildConfecCompletedDemandsPdf(params: {
   const totalPages = doc.getNumberOfPages();
   for (let page = 1; page <= totalPages; page += 1) {
     doc.setPage(page);
-    drawFooter(doc, page, totalPages);
+    drawFooter(doc, page, totalPages, brand);
   }
 
   return doc;
@@ -724,12 +766,15 @@ export async function downloadConfecCompletedDemandsPdf(params: {
   cards: ConfecCompletedDemandCard[];
   dateFrom: string;
   dateTo: string;
+  brand?: KanbanDemandsPdfBrand;
 }): Promise<void> {
+  const brand = params.brand ?? CONFEC_COMPLETED_PDF_BRAND;
   const cards = await attachConfecPdfPersonPhotos(params.cards);
   const doc = buildConfecCompletedDemandsPdf({
     cards,
     dateFrom: params.dateFrom,
     dateTo: params.dateTo,
+    brand,
   });
-  doc.save(`kanban-confec-concluidos_${params.dateFrom}_${params.dateTo}.pdf`);
+  doc.save(`${brand.filenamePrefix}_${params.dateFrom}_${params.dateTo}.pdf`);
 }
