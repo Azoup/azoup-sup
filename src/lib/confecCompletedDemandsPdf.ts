@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import { formatDevTicketNumber } from '@/lib/confecKanbanTicketNumber';
 import { normalizeProfilePhotoUrl } from '@/lib/profilePhotoUrl';
+import azoupLogoPng from '@/assets/azoup-logo.png?inline';
 
 export type ConfecPdfPerson = {
   name?: string | null;
@@ -273,13 +274,12 @@ export async function attachConfecPdfPersonPhotos(
 }
 
 function drawBrandMark(doc: jsPDF, x: number, y: number, size: number) {
-  const radius = Math.max(1.6, size * 0.22);
-  setFill(doc, COLOR.primary);
-  doc.roundedRect(x, y, size, size, radius, radius, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(size * 0.72);
-  setText(doc, COLOR.white);
-  doc.text('K', x + size / 2, y + size * 0.72, { align: 'center' });
+  try {
+    doc.addImage(azoupLogoPng, 'PNG', x, y, size, size);
+  } catch {
+    setFill(doc, COLOR.primary);
+    doc.circle(x + size / 2, y + size / 2, size / 2, 'F');
+  }
 }
 
 function drawCornerAccents(doc: jsPDF) {
@@ -300,11 +300,11 @@ function drawPageChrome(doc: jsPDF) {
 
 function drawHeader(doc: jsPDF) {
   const pageW = doc.internal.pageSize.getWidth();
-  drawBrandMark(doc, MARGIN_X, 10, 8.4);
+  drawBrandMark(doc, MARGIN_X, 9.4, 9.2);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
   setText(doc, COLOR.primary);
-  doc.text('Kanban Confec', MARGIN_X + 10.6, 15.6);
+  doc.text('Kanban Confec', MARGIN_X + 11.4, 15.6);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
@@ -323,14 +323,14 @@ function drawFooter(doc: jsPDF, page: number, total: number) {
   setText(doc, COLOR.muted);
   doc.text('Juntos por um sistema cada vez melhor!', MARGIN_X + 22, y);
 
-  const logoX = pageW - MARGIN_X - 32;
-  drawBrandMark(doc, logoX, y - 5.4, 7.2);
+  const logoX = pageW - MARGIN_X - 33;
+  drawBrandMark(doc, logoX, y - 5.8, 8);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   setText(doc, COLOR.primary);
-  doc.text('Kanban', logoX + 8.6, y - 1.6);
+  doc.text('Kanban', logoX + 9.4, y - 1.6);
   doc.setFontSize(7.5);
-  doc.text('Confec', logoX + 8.6, y + 1.8);
+  doc.text('Confec', logoX + 9.4, y + 1.8);
 
   if (total > 1) {
     doc.setFont('helvetica', 'normal');
