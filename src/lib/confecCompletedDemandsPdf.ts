@@ -56,8 +56,10 @@ const ICON_BOX = 9;
 const NUMBER_H = 3.5;
 const NUMBER_GAP = 1.2;
 const AVATAR_SIZE = 5.6;
-const PEOPLE_H = 8;
-const OBS_COL_W = 24;
+const PERSON_CHIP_H = 7.6;
+const PERSON_GAP = 1.8;
+const PEOPLE_COL_W = 36;
+const PEOPLE_STACK_H = PERSON_CHIP_H * 2 + PERSON_GAP;
 
 /** Linha do PDF: TICKET 0001 - TÍTULO - OBS: ... */
 export function formatConfecCompletedDemandLine(card: ConfecCompletedDemandCard): string {
@@ -536,18 +538,18 @@ function measureDemandCard(
   const ticket = formatDevTicketNumber(card.ticket_number) || '—';
   const obs = (card.dev_notes || '').trim() || '—';
   const textX = CARD_PAD_X + ICON_BOX + 3.4;
-  const textW = pageW - MARGIN_X * 2 - textX - OBS_COL_W - CARD_PAD_X;
+  const textW = pageW - MARGIN_X * 2 - textX - PEOPLE_COL_W - CARD_PAD_X - 2;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.6);
-  const titleLines = wrapLines(doc, title, textW, 5);
+  const titleLines = wrapLines(doc, title, textW, 4);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.2);
-  const obsLines = wrapLines(doc, obs, OBS_COL_W - 2, 5);
+  doc.setFontSize(7.4);
+  const obsLines = wrapLines(doc, obs, textW, 8);
   const titleH = titleLines.length * 3.6;
-  const textH = titleH + 1.6 + PEOPLE_H;
-  const obsH = 3.2 + obsLines.length * 3.2;
+  const obsBlockH = 3.4 + obsLines.length * 3.4;
+  const textH = titleH + 1.8 + obsBlockH;
   const leftH = NUMBER_H + NUMBER_GAP + ICON_BOX;
-  const height = CARD_PAD_Y + Math.max(leftH, textH, obsH) + CARD_PAD_Y;
+  const height = CARD_PAD_Y + Math.max(leftH, textH, PEOPLE_STACK_H) + CARD_PAD_Y;
   return {
     height,
     ticket,
@@ -637,22 +639,24 @@ function drawDemandCard(
     textY += 3.6;
   }
 
-  const peopleY = textY + 1.2;
-  const chipW = (layout.textW - 3) / 2;
-  drawPersonChip(doc, textX, peopleY, 'ANALISTA', card.analyst, chipW);
-  drawPersonChip(doc, textX + chipW + 3, peopleY, 'DEV', card.developer, chipW);
-
-  const obsX = x + width - CARD_PAD_X;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.4);
+  textY += 1.6;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.2);
   setText(doc, COLOR.muted);
-  doc.text('OBS:', obsX, y + CARD_PAD_Y + 3.1, { align: 'right' });
-  doc.setFontSize(7.2);
-  let obsY = y + CARD_PAD_Y + 6.6;
+  doc.text('OBS', textX, textY);
+  textY += 3.6;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.4);
+  setText(doc, COLOR.ink);
   for (const line of layout.obsLines) {
-    doc.text(line, obsX, obsY, { align: 'right' });
-    obsY += 3.2;
+    doc.text(line, textX, textY);
+    textY += 3.4;
   }
+
+  const peopleX = x + width - CARD_PAD_X - PEOPLE_COL_W;
+  const peopleY = y + CARD_PAD_Y;
+  drawPersonChip(doc, peopleX, peopleY, 'ANALISTA', card.analyst, PEOPLE_COL_W);
+  drawPersonChip(doc, peopleX, peopleY + PERSON_CHIP_H + PERSON_GAP, 'DEV', card.developer, PEOPLE_COL_W);
 
   return layout.height;
 }

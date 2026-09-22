@@ -142,4 +142,22 @@ describe('buildConfecCompletedDemandsPdf', () => {
     });
     expect(doc.getNumberOfPages()).toBe(1);
   });
+
+  it('gera PDF com obs longa e responsáveis na lateral', () => {
+    const doc = buildConfecCompletedDemandsPdf({
+      dateFrom: '2026-09-01',
+      dateTo: '2026-09-22',
+      cards: [
+        {
+          ticket_number: 9,
+          title: 'MAKE DA MISS - SUGESTÃO DE MELHORIA',
+          dev_notes:
+            'Relatório de vendas (listagem) reestruturado com alterações solicitadas, filtros e ajustes de layout.',
+          analyst: { name: 'Beatriz' },
+          developer: { name: 'Vinicius' },
+        },
+      ],
+    });
+    expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(1);
+  });
 });
