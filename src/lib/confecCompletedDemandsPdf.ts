@@ -11,6 +11,40 @@ export type ConfecCompletedDemandCard = {
   status?: string | null;
 };
 
+export type ConfecDemandIcon =
+  | 'pdf'
+  | 'calendar'
+  | 'money'
+  | 'clipboard'
+  | 'gear'
+  | 'lightbulb'
+  | 'wrench';
+
+type Rgb = [number, number, number];
+
+const COLOR = {
+  primary: [242, 92, 27] as Rgb,
+  peach: [255, 243, 232] as Rgb,
+  peachDeep: [255, 236, 219] as Rgb,
+  cream: [252, 250, 247] as Rgb,
+  white: [255, 255, 255] as Rgb,
+  ink: [32, 28, 26] as Rgb,
+  muted: [132, 122, 114] as Rgb,
+  line: [236, 226, 216] as Rgb,
+  desc: [110, 102, 96] as Rgb,
+};
+
+const MARGIN_X = 14;
+const HEADER_H = 22;
+const CORNER = 26;
+const FOOTER_RESERVE = 24;
+const CARD_GAP = 2.8;
+const CARD_PAD_X = 4.2;
+const CARD_PAD_Y = 3.2;
+const ICON_BOX = 9;
+const NUMBER_H = 3.5;
+const NUMBER_GAP = 1.2;
+
 /** Linha do PDF: TICKET 0001 - TÍTULO - OBS: ... */
 export function formatConfecCompletedDemandLine(card: ConfecCompletedDemandCard): string {
   const ticket = formatDevTicketNumber(card.ticket_number);
@@ -18,6 +52,42 @@ export function formatConfecCompletedDemandLine(card: ConfecCompletedDemandCard)
   const title = (card.title || '').trim() || 'SEM TÍTULO';
   const obs = (card.dev_notes || '').trim() || '—';
   return `${ticketPart} - ${title} - OBS: ${obs}`;
+}
+
+export function splitConfecDemandTitle(title: string | null | undefined): {
+  heading: string;
+  description: string;
+} {
+  const raw = (title || '').trim() || 'SEM TÍTULO';
+  const emParts = raw.split(/\s+[—–]\s+/);
+  if (emParts.length > 1) {
+    return { heading: emParts[0].trim(), description: emParts.slice(1).join(' — ').trim() };
+  }
+  const hyphenParts = raw.split(/\s+-\s+/);
+  if (hyphenParts.length > 1) {
+    return {
+      heading: hyphenParts[0].trim(),
+      description: hyphenParts.slice(1).join(' - ').trim(),
+    };
+  }
+  return { heading: raw, description: '' };
+}
+
+export function pickConfecDemandIcon(heading: string, description: string): ConfecDemandIcon {
+  const headingText = heading.toLocaleUpperCase('pt-BR');
+  const fullText = `${heading} ${description}`.toLocaleUpperCase('pt-BR');
+
+  if (/\bPDF\b/.test(fullText)) return 'pdf';
+  if (/PRAZO|OR[CÇ]AMENTO|CALEND[AÁ]RIO|ENTREGA/.test(fullText)) return 'calendar';
+  if (/FINANCEIRO|CONTAS A PAGAR|A RECEBER/.test(fullText) && !/\bPEDIDO\b/.test(headingText)) {
+    return 'money';
+  }
+  if (/\bPEDIDO\b/.test(headingText)) return 'clipboard';
+  if (/PRODU[CÇ][AÃ]O/.test(fullText)) return 'gear';
+  if (/SUGEST[AÃ]O/.test(headingText)) return 'lightbulb';
+  if (/UNIFORMES|MANUTEN[CÇ][AÃ]O|AJUSTE/.test(fullText)) return 'wrench';
+  if (/SUGEST[AÃ]O|MELHORIA/.test(fullText)) return 'lightbulb';
+  return 'clipboard';
 }
 
 function cardCompletionDate(card: ConfecCompletedDemandCard): Date | null {
@@ -62,46 +132,442 @@ export function filterConfecCompletedCardsByPeriod(
     });
 }
 
+function setFill(doc: jsPDF, color: Rgb) {
+  doc.setFillColor(color[0], color[1], color[2]);
+}
+
+function setStroke(doc: jsPDF, color: Rgb) {
+  doc.setDrawColor(color[0], color[1], color[2]);
+}
+
+function setText(doc: jsPDF, color: Rgb) {
+  doc.setTextColor(color[0], color[1], color[2]);
+}
+
+function wrapLines(doc: jsPDF, text: string, maxWidth: number, maxLines: number): string[] {
+  const source = text.trim() || '';
+  if (!source) return [];
+  const lines = doc.splitTextToSize(source, maxWidth) as string[];
+  if (lines.length <= maxLines) return lines;
+  const clipped = lines.slice(0, maxLines);
+  const last = clipped[maxLines - 1] ?? '';
+  clipped[maxLines - 1] = `${last.replace(/[.…\s]+$/, '')}…`;
+  return clipped;
+}
+
+function drawBrandMark(doc: jsPDF, x: number, y: number, size: number) {
+  const radius = Math.max(1.6, size * 0.22);
+  setFill(doc, COLOR.primary);
+  doc.roundedRect(x, y, size, size, radius, radius, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(size * 0.72);
+  setText(doc, COLOR.white);
+  doc.text('K', x + size / 2, y + size * 0.72, { align: 'center' });
+}
+
+function drawCornerAccents(doc: jsPDF) {
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  setFill(doc, COLOR.primary);
+  doc.triangle(pageW - CORNER, 0, pageW, 0, pageW, CORNER, 'F');
+  doc.triangle(0, pageH - CORNER, 0, pageH, CORNER, pageH, 'F');
+}
+
+function drawPageChrome(doc: jsPDF) {
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  setFill(doc, COLOR.cream);
+  doc.rect(0, 0, pageW, pageH, 'F');
+  drawCornerAccents(doc);
+}
+
+function drawHeader(doc: jsPDF) {
+  const pageW = doc.internal.pageSize.getWidth();
+  drawBrandMark(doc, MARGIN_X, 10, 8.4);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  setText(doc, COLOR.primary);
+  doc.text('Kanban Confec', MARGIN_X + 10.6, 15.6);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  setText(doc, COLOR.muted);
+  doc.text('Mais organização,', pageW - 20, 13.2, { align: 'right' });
+  doc.text('melhores resultados.', pageW - 20, 16.6, { align: 'right' });
+}
+
+function drawFooter(doc: jsPDF, page: number, total: number) {
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const y = pageH - 12;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  setText(doc, COLOR.muted);
+  doc.text('Juntos por um sistema cada vez melhor!', MARGIN_X + 22, y);
+
+  const logoX = pageW - MARGIN_X - 32;
+  drawBrandMark(doc, logoX, y - 5.4, 7.2);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  setText(doc, COLOR.primary);
+  doc.text('Kanban', logoX + 8.6, y - 1.6);
+  doc.setFontSize(7.5);
+  doc.text('Confec', logoX + 8.6, y + 1.8);
+
+  if (total > 1) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    setText(doc, COLOR.muted);
+    doc.text(`${page} / ${total}`, pageW / 2, pageH - 5, { align: 'center' });
+  }
+}
+
+function drawCheckBadge(doc: jsPDF, x: number, y: number) {
+  setFill(doc, COLOR.primary);
+  doc.circle(x, y, 4.1, 'F');
+  doc.setDrawColor(255, 255, 255);
+  doc.setLineWidth(0.75);
+  doc.setLineCap('round');
+  doc.setLineJoin('round');
+  doc.line(x - 1.7, y + 0.15, x - 0.45, y + 1.55);
+  doc.line(x - 0.45, y + 1.55, x + 2.05, y - 1.45);
+}
+
+function drawTitleBlock(doc: jsPDF): number {
+  const y = HEADER_H + 10;
+  drawCheckBadge(doc, MARGIN_X + 4.2, y - 1.2);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  setText(doc, COLOR.ink);
+  doc.text('Demandas ', MARGIN_X + 11.2, y);
+  const demandasW = doc.getTextWidth('Demandas ');
+  setText(doc, COLOR.primary);
+  doc.text('concluídas', MARGIN_X + 11.2 + demandasW, y);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  setText(doc, COLOR.muted);
+  doc.text('Kanban Confec', MARGIN_X + 11.2, y + 5.4);
+  return y + 11;
+}
+
+function drawCalendarGlyph(doc: jsPDF, x: number, y: number) {
+  setStroke(doc, COLOR.primary);
+  setFill(doc, COLOR.primary);
+  doc.setLineWidth(0.45);
+  doc.setLineCap('round');
+  doc.roundedRect(x, y + 1.1, 6.2, 5.4, 0.7, 0.7, 'S');
+  doc.line(x, y + 2.7, x + 6.2, y + 2.7);
+  doc.rect(x + 1.4, y, 0.7, 1.6, 'F');
+  doc.rect(x + 4.1, y, 0.7, 1.6, 'F');
+  doc.rect(x + 1.3, y + 3.5, 1.1, 1.1, 'F');
+  doc.rect(x + 2.8, y + 3.5, 1.1, 1.1, 'F');
+}
+
+function drawListGlyph(doc: jsPDF, x: number, y: number) {
+  setFill(doc, COLOR.primary);
+  setStroke(doc, COLOR.primary);
+  doc.setLineWidth(0.55);
+  doc.setLineCap('round');
+  for (let i = 0; i < 3; i += 1) {
+    const iy = y + 1.1 + i * 2.05;
+    doc.circle(x + 0.7, iy, 0.55, 'F');
+    doc.line(x + 2.1, iy, x + 6.1, iy);
+  }
+}
+
+function drawKpiRow(doc: jsPDF, y: number, dateFrom: string, dateTo: string, total: number): number {
+  const pageW = doc.internal.pageSize.getWidth();
+  const gap = 4;
+  const width = (pageW - MARGIN_X * 2 - gap) / 2;
+  const height = 16;
+
+  const drawCard = (x: number) => {
+    setFill(doc, COLOR.peach);
+    doc.roundedRect(x, y, width, height, 2.6, 2.6, 'F');
+  };
+
+  drawCard(MARGIN_X);
+  drawCalendarGlyph(doc, MARGIN_X + 4.2, y + 4.6);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.5);
+  setText(doc, COLOR.muted);
+  doc.text('PERÍODO', MARGIN_X + 13.6, y + 6.2);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  setText(doc, COLOR.ink);
+  doc.text(`${dateFrom} a ${dateTo}`, MARGIN_X + 13.6, y + 11.4);
+
+  const rightX = MARGIN_X + width + gap;
+  drawCard(rightX);
+  drawListGlyph(doc, rightX + 4.2, y + 4.6);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.5);
+  setText(doc, COLOR.muted);
+  doc.text('TOTAL', rightX + 13.6, y + 6.2);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  setText(doc, COLOR.primary);
+  const totalLabel = String(total);
+  doc.text(totalLabel, rightX + 13.6, y + 12.4);
+  const numberW = doc.getTextWidth(totalLabel);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  setText(doc, COLOR.muted);
+  doc.text('demanda(s)', rightX + 13.6 + numberW + 1.6, y + 12);
+  return y + height + 5;
+}
+
+function drawIcon(doc: jsPDF, kind: ConfecDemandIcon, cx: number, cy: number) {
+  setStroke(doc, COLOR.primary);
+  setFill(doc, COLOR.primary);
+  doc.setLineWidth(0.55);
+  doc.setLineCap('round');
+  doc.setLineJoin('round');
+
+  if (kind === 'lightbulb') {
+    doc.circle(cx, cy - 0.7, 1.65, 'S');
+    doc.setLineWidth(0.7);
+    doc.line(cx - 0.9, cy + 1.05, cx + 0.9, cy + 1.05);
+    doc.setLineWidth(0.5);
+    doc.line(cx - 0.7, cy + 1.65, cx + 0.7, cy + 1.65);
+    doc.line(cx - 0.45, cy + 2.2, cx + 0.45, cy + 2.2);
+    doc.line(cx, cy - 2.7, cx, cy - 3.3);
+    doc.line(cx - 2.2, cy - 1.85, cx - 2.75, cy - 2.35);
+    doc.line(cx + 2.2, cy - 1.85, cx + 2.75, cy - 2.35);
+    return;
+  }
+
+  if (kind === 'wrench') {
+    doc.setLineWidth(0.95);
+    doc.line(cx - 1.7, cy + 1.8, cx + 1.5, cy - 1.4);
+    doc.setLineWidth(0.6);
+    doc.circle(cx + 2.05, cy - 1.95, 1.05, 'S');
+    doc.circle(cx - 2.15, cy + 2.15, 0.72, 'S');
+    return;
+  }
+
+  if (kind === 'gear') {
+    doc.circle(cx, cy, 1.85, 'S');
+    doc.circle(cx, cy, 0.75, 'S');
+    for (let i = 0; i < 6; i += 1) {
+      const angle = (Math.PI / 3) * i;
+      const x1 = cx + Math.cos(angle) * 2.15;
+      const y1 = cy + Math.sin(angle) * 2.15;
+      const x2 = cx + Math.cos(angle) * 2.85;
+      const y2 = cy + Math.sin(angle) * 2.85;
+      doc.setLineWidth(0.85);
+      doc.line(x1, y1, x2, y2);
+    }
+    return;
+  }
+
+  if (kind === 'clipboard') {
+    doc.roundedRect(cx - 2.15, cy - 1.35, 4.3, 4.4, 0.55, 0.55, 'S');
+    doc.roundedRect(cx - 1.15, cy - 2.35, 2.3, 1.5, 0.35, 0.35, 'S');
+    doc.setLineWidth(0.45);
+    doc.line(cx - 1.15, cy + 0.15, cx + 1.15, cy + 0.15);
+    doc.line(cx - 1.15, cy + 1.2, cx + 1.15, cy + 1.2);
+    doc.line(cx - 1.15, cy + 2.2, cx + 0.55, cy + 2.2);
+    return;
+  }
+
+  if (kind === 'calendar') {
+    doc.roundedRect(cx - 2.35, cy - 1.05, 4.7, 4.15, 0.55, 0.55, 'S');
+    doc.line(cx - 2.35, cy + 0.2, cx + 2.35, cy + 0.2);
+    doc.rect(cx - 1.35, cy - 2.15, 0.55, 1.35, 'F');
+    doc.rect(cx + 0.8, cy - 2.15, 0.55, 1.35, 'F');
+    doc.rect(cx - 1.2, cy + 1.05, 0.9, 0.9, 'F');
+    return;
+  }
+
+  if (kind === 'money') {
+    doc.circle(cx, cy, 2.45, 'S');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.2);
+    setText(doc, COLOR.primary);
+    doc.text('$', cx, cy + 1.2, { align: 'center' });
+    return;
+  }
+
+  doc.roundedRect(cx - 2.15, cy - 2.2, 4.1, 4.7, 0.4, 0.4, 'S');
+  setFill(doc, COLOR.peachDeep);
+  setStroke(doc, COLOR.primary);
+  doc.triangle(cx + 0.35, cy - 2.2, cx + 1.95, cy - 2.2, cx + 1.95, cy - 0.55, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(4.2);
+  setText(doc, COLOR.primary);
+  doc.text('PDF', cx - 0.1, cy + 1.9, { align: 'center' });
+}
+
+function measureDemandCard(
+  doc: jsPDF,
+  card: ConfecCompletedDemandCard,
+  pageW: number,
+): {
+  height: number;
+  ticket: string;
+  headingLines: string[];
+  descriptionLines: string[];
+  obsLines: string[];
+  icon: ConfecDemandIcon;
+} {
+  const { heading, description } = splitConfecDemandTitle(card.title);
+  const ticket = formatDevTicketNumber(card.ticket_number) || '—';
+  const obs = (card.dev_notes || '').trim() || '—';
+  const obsColW = 22;
+  const textX = CARD_PAD_X + ICON_BOX + 3.4;
+  const textW = pageW - MARGIN_X * 2 - textX - obsColW - CARD_PAD_X;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.6);
+  const headingLines = wrapLines(doc, heading, textW, 2);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.4);
+  const descriptionLines = wrapLines(doc, description, textW, 4);
+  doc.setFontSize(7.2);
+  const obsLines = wrapLines(doc, obs, obsColW - 2, 4);
+  const textH = headingLines.length * 3.6 + (descriptionLines.length ? 1.1 + descriptionLines.length * 3.3 : 0);
+  const obsH = 3.2 + obsLines.length * 3.2;
+  const leftH = NUMBER_H + NUMBER_GAP + ICON_BOX;
+  const height = CARD_PAD_Y + Math.max(leftH, textH, obsH) + CARD_PAD_Y;
+  return {
+    height,
+    ticket,
+    headingLines,
+    descriptionLines,
+    obsLines,
+    icon: pickConfecDemandIcon(heading, description),
+  };
+}
+
+function drawDemandCard(
+  doc: jsPDF,
+  card: ConfecCompletedDemandCard,
+  y: number,
+  pageW: number,
+): number {
+  const layout = measureDemandCard(doc, card, pageW);
+  const x = MARGIN_X;
+  const width = pageW - MARGIN_X * 2;
+
+  setFill(doc, COLOR.white);
+  setStroke(doc, COLOR.line);
+  doc.setLineWidth(0.28);
+  doc.roundedRect(x, y, width, layout.height, 2.4, 2.4, 'FD');
+
+  const iconX = x + CARD_PAD_X;
+  const numberY = y + CARD_PAD_Y + NUMBER_H;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.6);
+  setText(doc, COLOR.primary);
+  doc.text(layout.ticket, iconX + ICON_BOX / 2, numberY, { align: 'center' });
+
+  const boxY = y + CARD_PAD_Y + NUMBER_H + NUMBER_GAP;
+  setFill(doc, COLOR.peach);
+  doc.roundedRect(iconX, boxY, ICON_BOX, ICON_BOX, 2.2, 2.2, 'F');
+  drawIcon(doc, layout.icon, iconX + ICON_BOX / 2, boxY + ICON_BOX / 2);
+
+  const textX = iconX + ICON_BOX + 3.4;
+  let textY = y + CARD_PAD_Y + NUMBER_H;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.6);
+  setText(doc, COLOR.ink);
+  for (const line of layout.headingLines) {
+    doc.text(line, textX, textY);
+    textY += 3.6;
+  }
+  if (layout.descriptionLines.length) {
+    textY += 0.4;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.4);
+    setText(doc, COLOR.desc);
+    for (const line of layout.descriptionLines) {
+      doc.text(line, textX, textY);
+      textY += 3.3;
+    }
+  }
+
+  const obsX = x + width - CARD_PAD_X;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.4);
+  setText(doc, COLOR.muted);
+  doc.text('OBS:', obsX, y + CARD_PAD_Y + 3.1, { align: 'right' });
+  doc.setFontSize(7.2);
+  let obsY = y + CARD_PAD_Y + 6.6;
+  for (const line of layout.obsLines) {
+    doc.text(line, obsX, obsY, { align: 'right' });
+    obsY += 3.2;
+  }
+
+  return layout.height;
+}
+
+function addPreparedPage(doc: jsPDF, first: boolean, dateFrom: string, dateTo: string, total: number): number {
+  if (!first) doc.addPage();
+  drawPageChrome(doc);
+  drawHeader(doc);
+  if (first) {
+    const afterTitle = drawTitleBlock(doc);
+    return drawKpiRow(doc, afterTitle, dateFrom, dateTo, total);
+  }
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  setText(doc, COLOR.ink);
+  doc.text('Demandas concluídas — continuação', MARGIN_X, HEADER_H + 8);
+  return HEADER_H + 13;
+}
+
+export function buildConfecCompletedDemandsPdf(params: {
+  cards: ConfecCompletedDemandCard[];
+  dateFrom: string;
+  dateTo: string;
+}): jsPDF {
+  const { cards, dateFrom, dateTo } = params;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const contentBottom = pageH - FOOTER_RESERVE;
+
+  let y = addPreparedPage(doc, true, dateFrom, dateTo, cards.length);
+
+  if (cards.length === 0) {
+    setFill(doc, COLOR.white);
+    setStroke(doc, COLOR.line);
+    doc.setLineWidth(0.28);
+    doc.roundedRect(MARGIN_X, y, pageW - MARGIN_X * 2, 18, 2.4, 2.4, 'FD');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    setText(doc, COLOR.muted);
+    doc.text('Nenhuma demanda concluída no período selecionado.', pageW / 2, y + 10.4, {
+      align: 'center',
+    });
+  } else {
+    for (const card of cards) {
+      const height = measureDemandCard(doc, card, pageW).height;
+      if (y + height > contentBottom) {
+        y = addPreparedPage(doc, false, dateFrom, dateTo, cards.length);
+      }
+      const drawn = drawDemandCard(doc, card, y, pageW);
+      y += drawn + CARD_GAP;
+    }
+  }
+
+  const totalPages = doc.getNumberOfPages();
+  for (let page = 1; page <= totalPages; page += 1) {
+    doc.setPage(page);
+    drawFooter(doc, page, totalPages);
+  }
+
+  return doc;
+}
+
 export function downloadConfecCompletedDemandsPdf(params: {
   cards: ConfecCompletedDemandCard[];
   dateFrom: string;
   dateTo: string;
 }): void {
-  const { cards, dateFrom, dateTo } = params;
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const marginX = 14;
-  const maxWidth = doc.internal.pageSize.getWidth() - marginX * 2;
-  const pageHeight = doc.internal.pageSize.getHeight();
-  let y = 18;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.text('Demandas concluídas — Kanban Confec', marginX, y);
-  y += 8;
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.text(`Período: ${dateFrom} a ${dateTo}`, marginX, y);
-  y += 6;
-  doc.text(`Total: ${cards.length} demanda(s)`, marginX, y);
-  y += 10;
-
-  doc.setFontSize(10);
-  for (const card of cards) {
-    const line = formatConfecCompletedDemandLine(card);
-    const wrapped = doc.splitTextToSize(line, maxWidth) as string[];
-    const blockHeight = wrapped.length * 5 + 3;
-    if (y + blockHeight > pageHeight - 14) {
-      doc.addPage();
-      y = 18;
-    }
-    doc.text(wrapped, marginX, y);
-    y += blockHeight;
-  }
-
-  if (cards.length === 0) {
-    doc.text('Nenhuma demanda concluída no período selecionado.', marginX, y);
-  }
-
-  doc.save(`kanban-confec-concluidos_${dateFrom}_${dateTo}.pdf`);
+  const doc = buildConfecCompletedDemandsPdf(params);
+  doc.save(`kanban-confec-concluidos_${params.dateFrom}_${params.dateTo}.pdf`);
 }
