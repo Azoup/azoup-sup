@@ -1,5 +1,12 @@
 import { jsPDF } from 'jspdf';
 import { formatDevTicketNumber } from '@/lib/confecKanbanTicketNumber';
+import { normalizeProfilePhotoUrl } from '@/lib/profilePhotoUrl';
+
+export type ConfecPdfPerson = {
+  name?: string | null;
+  photo_url?: string | null;
+  photoDataUrl?: string | null;
+};
 
 export type ConfecCompletedDemandCard = {
   id?: string;
@@ -9,6 +16,10 @@ export type ConfecCompletedDemandCard = {
   completed_at?: string | null;
   updated_at?: string | null;
   status?: string | null;
+  analyst_id?: string | null;
+  developer_id?: string | null;
+  analyst?: ConfecPdfPerson | null;
+  developer?: ConfecPdfPerson | null;
 };
 
 export type ConfecDemandIcon =
@@ -31,7 +42,6 @@ const COLOR = {
   ink: [32, 28, 26] as Rgb,
   muted: [132, 122, 114] as Rgb,
   line: [236, 226, 216] as Rgb,
-  desc: [110, 102, 96] as Rgb,
 };
 
 const MARGIN_X = 14;
@@ -44,14 +54,30 @@ const CARD_PAD_Y = 3.2;
 const ICON_BOX = 9;
 const NUMBER_H = 3.5;
 const NUMBER_GAP = 1.2;
+const AVATAR_SIZE = 5.6;
+const PEOPLE_H = 8;
+const OBS_COL_W = 24;
 
 /** Linha do PDF: TICKET 0001 - TÍTULO - OBS: ... */
 export function formatConfecCompletedDemandLine(card: ConfecCompletedDemandCard): string {
   const ticket = formatDevTicketNumber(card.ticket_number);
   const ticketPart = ticket ? `TICKET ${ticket}` : 'TICKET —';
-  const title = (card.title || '').trim() || 'SEM TÍTULO';
+  const title = confecDemandDisplayTitle(card.title);
   const obs = (card.dev_notes || '').trim() || '—';
   return `${ticketPart} - ${title} - OBS: ${obs}`;
+}
+
+export function confecDemandDisplayTitle(title: string | null | undefined): string {
+  return (title || '').trim() || 'SEM TÍTULO';
+}
+
+export function personDisplayName(person: ConfecPdfPerson | null | undefined): string {
+  return (person?.name || '').trim() || '—';
+}
+
+export function personInitial(person: ConfecPdfPerson | null | undefined): string {
+  const name = (person?.name || '').trim();
+  return name ? name.charAt(0).toUpperCase() : '?';
 }
 
 export function splitConfecDemandTitle(title: string | null | undefined): {
@@ -153,6 +179,97 @@ function wrapLines(doc: jsPDF, text: string, maxWidth: number, maxLines: number)
   const last = clipped[maxLines - 1] ?? '';
   clipped[maxLines - 1] = `${last.replace(/[.…\s]+$/, '')}…`;
   return clipped;
+}
+
+function fitText(doc: jsPDF, text: string, maxWidth: number): string {
+  if (!text) return '—';
+  if (doc.getTextWidth(text) <= maxWidth) return text;
+  let current = text;
+  while (current.length > 1 && doc.getTextWidth(`${current}…`) > maxWidth) {
+    current = current.slice(0, -1);
+  }
+  return `${current}…`;
+}
+
+function circlePhotoFromSource(source: CanvasImageSource, width: number, height: number, size: number): string | null {
+  if (typeof document === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.beginPath();
+  ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.clip();
+  const scale = Math.max(size / Math.max(width, 1), size / Math.max(height, 1));
+  const drawW = width * scale;
+  const drawH = height * scale;
+  ctx.drawImage(source, (size - drawW) / 2, (size - drawH) / 2, drawW, drawH);
+  return canvas.toDataURL('image/png');
+}
+
+async function loadCircularPhotoDataUrl(url: string): Promise<string | null> {
+  if (typeof document === 'undefined' || typeof Image === 'undefined') return null;
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.crossOrigin = 'anonymous';
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error('image'));
+      el.src = url;
+    });
+    return circlePhotoFromSource(img, img.naturalWidth || img.width, img.naturalHeight || img.height, 96);
+  } catch {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      if (typeof createImageBitmap !== 'function') return null;
+      const bitmap = await createImageBitmap(blob);
+      const dataUrl = circlePhotoFromSource(bitmap, bitmap.width, bitmap.height, 96);
+      bitmap.close();
+      return dataUrl;
+    } catch {
+      return null;
+    }
+  }
+}
+
+export async function attachConfecPdfPersonPhotos(
+  cards: ConfecCompletedDemandCard[],
+): Promise<ConfecCompletedDemandCard[]> {
+  const urls = new Set<string>();
+  for (const card of cards) {
+    const analystUrl = normalizeProfilePhotoUrl(card.analyst?.photo_url);
+    const developerUrl = normalizeProfilePhotoUrl(card.developer?.photo_url);
+    if (analystUrl) urls.add(analystUrl);
+    if (developerUrl) urls.add(developerUrl);
+  }
+
+  const dataUrls = new Map<string, string | null>();
+  await Promise.all(
+    [...urls].map(async (url) => {
+      dataUrls.set(url, await loadCircularPhotoDataUrl(url));
+    }),
+  );
+
+  const withPhoto = (person: ConfecPdfPerson | null | undefined): ConfecPdfPerson | null => {
+    if (!person) return null;
+    const url = normalizeProfilePhotoUrl(person.photo_url);
+    return {
+      ...person,
+      photoDataUrl: (url ? dataUrls.get(url) : null) ?? person.photoDataUrl ?? null,
+    };
+  };
+
+  return cards.map((card) => ({
+    ...card,
+    analyst: withPhoto(card.analyst),
+    developer: withPhoto(card.developer),
+  }));
 }
 
 function drawBrandMark(doc: jsPDF, x: number, y: number, size: number) {
@@ -409,37 +526,78 @@ function measureDemandCard(
 ): {
   height: number;
   ticket: string;
-  headingLines: string[];
-  descriptionLines: string[];
+  titleLines: string[];
   obsLines: string[];
   icon: ConfecDemandIcon;
+  textW: number;
 } {
+  const title = confecDemandDisplayTitle(card.title);
   const { heading, description } = splitConfecDemandTitle(card.title);
   const ticket = formatDevTicketNumber(card.ticket_number) || '—';
   const obs = (card.dev_notes || '').trim() || '—';
-  const obsColW = 22;
   const textX = CARD_PAD_X + ICON_BOX + 3.4;
-  const textW = pageW - MARGIN_X * 2 - textX - obsColW - CARD_PAD_X;
+  const textW = pageW - MARGIN_X * 2 - textX - OBS_COL_W - CARD_PAD_X;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.6);
-  const headingLines = wrapLines(doc, heading, textW, 2);
+  const titleLines = wrapLines(doc, title, textW, 5);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.4);
-  const descriptionLines = wrapLines(doc, description, textW, 4);
   doc.setFontSize(7.2);
-  const obsLines = wrapLines(doc, obs, obsColW - 2, 4);
-  const textH = headingLines.length * 3.6 + (descriptionLines.length ? 1.1 + descriptionLines.length * 3.3 : 0);
+  const obsLines = wrapLines(doc, obs, OBS_COL_W - 2, 5);
+  const titleH = titleLines.length * 3.6;
+  const textH = titleH + 1.6 + PEOPLE_H;
   const obsH = 3.2 + obsLines.length * 3.2;
   const leftH = NUMBER_H + NUMBER_GAP + ICON_BOX;
   const height = CARD_PAD_Y + Math.max(leftH, textH, obsH) + CARD_PAD_Y;
   return {
     height,
     ticket,
-    headingLines,
-    descriptionLines,
+    titleLines,
     obsLines,
     icon: pickConfecDemandIcon(heading, description),
+    textW,
   };
+}
+
+function drawAvatar(doc: jsPDF, x: number, y: number, person: ConfecPdfPerson | null | undefined) {
+  const r = AVATAR_SIZE / 2;
+  if (person?.photoDataUrl) {
+    try {
+      doc.addImage(person.photoDataUrl, 'PNG', x, y, AVATAR_SIZE, AVATAR_SIZE);
+      setStroke(doc, COLOR.line);
+      doc.setLineWidth(0.18);
+      doc.circle(x + r, y + r, r, 'S');
+      return;
+    } catch {
+      // fallback to initial
+    }
+  }
+  setFill(doc, COLOR.peach);
+  doc.circle(x + r, y + r, r, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.4);
+  setText(doc, COLOR.primary);
+  doc.text(personInitial(person), x + r, y + r + 1.9, { align: 'center' });
+}
+
+function drawPersonChip(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  role: string,
+  person: ConfecPdfPerson | null | undefined,
+  maxWidth: number,
+) {
+  drawAvatar(doc, x, y + 0.6, person);
+  const textX = x + AVATAR_SIZE + 1.5;
+  const nameWidth = Math.max(8, maxWidth - AVATAR_SIZE - 1.8);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(5.6);
+  setText(doc, COLOR.muted);
+  doc.text(role, textX, y + 2.4);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.2);
+  setText(doc, COLOR.ink);
+  doc.text(fitText(doc, personDisplayName(person), nameWidth), textX, y + 5.8);
 }
 
 function drawDemandCard(
@@ -474,20 +632,15 @@ function drawDemandCard(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.6);
   setText(doc, COLOR.ink);
-  for (const line of layout.headingLines) {
+  for (const line of layout.titleLines) {
     doc.text(line, textX, textY);
     textY += 3.6;
   }
-  if (layout.descriptionLines.length) {
-    textY += 0.4;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.4);
-    setText(doc, COLOR.desc);
-    for (const line of layout.descriptionLines) {
-      doc.text(line, textX, textY);
-      textY += 3.3;
-    }
-  }
+
+  const peopleY = textY + 1.2;
+  const chipW = (layout.textW - 3) / 2;
+  drawPersonChip(doc, textX, peopleY, 'ANALISTA', card.analyst, chipW);
+  drawPersonChip(doc, textX + chipW + 3, peopleY, 'DEV', card.developer, chipW);
 
   const obsX = x + width - CARD_PAD_X;
   doc.setFont('helvetica', 'normal');
@@ -563,11 +716,16 @@ export function buildConfecCompletedDemandsPdf(params: {
   return doc;
 }
 
-export function downloadConfecCompletedDemandsPdf(params: {
+export async function downloadConfecCompletedDemandsPdf(params: {
   cards: ConfecCompletedDemandCard[];
   dateFrom: string;
   dateTo: string;
-}): void {
-  const doc = buildConfecCompletedDemandsPdf(params);
+}): Promise<void> {
+  const cards = await attachConfecPdfPersonPhotos(params.cards);
+  const doc = buildConfecCompletedDemandsPdf({
+    cards,
+    dateFrom: params.dateFrom,
+    dateTo: params.dateTo,
+  });
   doc.save(`kanban-confec-concluidos_${params.dateFrom}_${params.dateTo}.pdf`);
 }

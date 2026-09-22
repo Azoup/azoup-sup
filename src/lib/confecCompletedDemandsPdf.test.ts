@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildConfecCompletedDemandsPdf,
+  confecDemandDisplayTitle,
   filterConfecCompletedCardsByPeriod,
   formatConfecCompletedDemandLine,
+  personDisplayName,
   pickConfecDemandIcon,
   splitConfecDemandTitle,
 } from './confecCompletedDemandsPdf';
@@ -20,6 +22,25 @@ describe('formatConfecCompletedDemandLine', () => {
 
   it('usa placeholders quando faltar dado', () => {
     expect(formatConfecCompletedDemandLine({})).toBe('TICKET — - SEM TÍTULO - OBS: —');
+  });
+});
+
+describe('confecDemandDisplayTitle', () => {
+  it('mantém o título completo do ticket', () => {
+    expect(
+      confecDemandDisplayTitle('MAKE DA MISS - SUGESTÃO DE MELHORIA'),
+    ).toBe('MAKE DA MISS - SUGESTÃO DE MELHORIA');
+  });
+
+  it('usa placeholder quando vazio', () => {
+    expect(confecDemandDisplayTitle('')).toBe('SEM TÍTULO');
+  });
+});
+
+describe('personDisplayName', () => {
+  it('mostra nome ou traço', () => {
+    expect(personDisplayName({ name: 'Bia' })).toBe('Bia');
+    expect(personDisplayName(null)).toBe('—');
   });
 });
 
@@ -101,7 +122,12 @@ describe('buildConfecCompletedDemandsPdf', () => {
       dateFrom: '2026-09-22',
       dateTo: '2026-09-22',
       cards: [
-        { ticket_number: 13, title: 'SUGESTÃO DE MELHORIA - FIXAÇÃO DE LINHA E COLUNA' },
+        {
+          ticket_number: 13,
+          title: 'SUGESTÃO DE MELHORIA - FIXAÇÃO DE LINHA E COLUNA',
+          analyst: { name: 'Bia' },
+          developer: { name: 'Henri' },
+        },
         { ticket_number: 14, title: 'KALHANDRA UNIFORMES - SUGESTÃO DE MELHORIA' },
       ],
     });

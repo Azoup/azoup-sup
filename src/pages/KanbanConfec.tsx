@@ -1187,16 +1187,26 @@ const KanbanConfec = () => {
       );
       const withNotes = await Promise.all(
         filtered.map(async (card) => {
-          if (!card.id) return card;
+          const analyst = analysts.find((a: { id: string }) => a.id === card.analyst_id) ?? null;
+          const developer = developers.find((d: { id: string }) => d.id === card.developer_id) ?? null;
+          const people = {
+            analyst: analyst
+              ? { name: analyst.name ?? null, photo_url: analyst.photo_url ?? null }
+              : null,
+            developer: developer
+              ? { name: developer.name ?? null, photo_url: developer.photo_url ?? null }
+              : null,
+          };
+          if (!card.id) return { ...card, ...people };
           try {
             const notes = await loadConfecKanbanNotes(card.id, card.dev_notes);
-            return { ...card, dev_notes: notes || card.dev_notes || null };
+            return { ...card, ...people, dev_notes: notes || card.dev_notes || null };
           } catch {
-            return card;
+            return { ...card, ...people };
           }
         }),
       );
-      downloadConfecCompletedDemandsPdf({
+      await downloadConfecCompletedDemandsPdf({
         cards: withNotes,
         dateFrom: pdfDateFrom,
         dateTo: pdfDateTo,
@@ -1212,7 +1222,7 @@ const KanbanConfec = () => {
     } finally {
       setPdfGenerating(false);
     }
-  }, [cards, completionColumnSlug, pdfDateFrom, pdfDateTo]);
+  }, [cards, analysts, developers, completionColumnSlug, pdfDateFrom, pdfDateTo]);
 
   return (
     <div className="flex h-[calc(100dvh-5.5rem)] max-h-[calc(100dvh-5.5rem)] min-h-0 flex-col gap-3 overflow-hidden animate-fade-in md:h-[calc(100dvh-6.5rem)] md:max-h-[calc(100dvh-6.5rem)]">
