@@ -62,7 +62,7 @@ import { Badge } from '@/components/ui/badge';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
-import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar, Search, FileText } from 'lucide-react';
+import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, ArrowUpDown, CheckCircle2, Calendar, Search, FileText } from 'lucide-react';
 import { ConfecCardComments } from '@/components/ConfecCardComments';
 import { DevTicketNumberBadge } from '@/components/DevTicketNumberBadge';
 import { ConfecCardFiles } from '@/components/ConfecCardFiles';
@@ -185,6 +185,7 @@ const KanbanConfec = () => {
   const [filterAnalystIds, setFilterAnalystIds] = useState<string[]>([]);
   const [filterDevIds, setFilterDevIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [createdSort, setCreatedSort] = useState<'board' | 'newest' | 'oldest'>('board');
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -304,10 +305,21 @@ const KanbanConfec = () => {
       col.push(enriched);
     });
     Object.keys(map).forEach((slug) => {
-      map[slug] = sortKanbanCardsByPosition(map[slug]);
+      const list = map[slug];
+      if (createdSort === 'newest') {
+        map[slug] = [...list].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        );
+      } else if (createdSort === 'oldest') {
+        map[slug] = [...list].sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+        );
+      } else {
+        map[slug] = sortKanbanCardsByPosition(list);
+      }
     });
     return map;
-  }, [cards, cardLabels, analysts, developers, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, filterDevIds, searchQuery]);
+  }, [cards, cardLabels, analysts, developers, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, filterDevIds, searchQuery, createdSort]);
 
   const hasActiveCardFilters =
     filterLabelIds.length > 0 ||
@@ -890,24 +902,44 @@ const KanbanConfec = () => {
       (queryClient.getQueryData<{ cards?: any[] }>(CONFEC_KANBAN_BOARD_QUERY_KEY)?.cards as any[]) ??
       cards;
 
-    const positionUpdates = hasActiveCardFilters
-      ? computeKanbanDragPositionUpdatesWithVisible(
-          boardCards,
-          cardsByColumn,
-          draggableId,
-          source.droppableId,
-          destination.droppableId,
-          source.index,
-          destination.index,
-        )
-      : computeKanbanDragPositionUpdates(
-          boardCards,
-          draggableId,
-          source.droppableId,
-          destination.droppableId,
-          source.index,
-          destination.index,
-        );
+    const positionUpdates =
+      createdSort !== 'board'
+        ? source.droppableId === destination.droppableId
+          ? []
+          : (() => {
+              const sourceCards = sortKanbanCardsByPosition(
+                boardCards.filter((c: any) => c.status === source.droppableId),
+              );
+              const sourceIndex = sourceCards.findIndex((c: any) => c.id === draggableId);
+              if (sourceIndex === -1) return [];
+              const destLength = boardCards.filter((c: any) => c.status === destination.droppableId).length;
+              return computeKanbanDragPositionUpdates(
+                boardCards,
+                draggableId,
+                source.droppableId,
+                destination.droppableId,
+                sourceIndex,
+                destLength,
+              );
+            })()
+        : hasActiveCardFilters
+          ? computeKanbanDragPositionUpdatesWithVisible(
+              boardCards,
+              cardsByColumn,
+              draggableId,
+              source.droppableId,
+              destination.droppableId,
+              source.index,
+              destination.index,
+            )
+          : computeKanbanDragPositionUpdates(
+              boardCards,
+              draggableId,
+              source.droppableId,
+              destination.droppableId,
+              source.index,
+              destination.index,
+            );
     if (positionUpdates.length === 0) return;
 
     const movedCard = boardCards.find((c: any) => c.id === draggableId);
@@ -994,7 +1026,7 @@ const KanbanConfec = () => {
         });
       }
     })();
-  }, [queryClient, cards, cardsByColumn, sortedColumns, user, actorName, applyDoneLabelRule, isDoneSlug, hasActiveCardFilters]);
+  }, [queryClient, cards, cardsByColumn, sortedColumns, user, actorName, applyDoneLabelRule, isDoneSlug, hasActiveCardFilters, createdSort]);
 
   const resetForm = () => {
     setTitle('');
@@ -1261,6 +1293,19 @@ const KanbanConfec = () => {
             </button>
           )}
         </div>
+        <Select value={createdSort} onValueChange={(value) => setCreatedSort(value as 'board' | 'newest' | 'oldest')}>
+          <SelectTrigger className="h-8 w-[190px] text-xs" aria-label="Ordenar tickets por data de criação">
+            <span className="flex items-center gap-1.5">
+              <ArrowUpDown className="h-3.5 w-3.5 shrink-0" />
+              <SelectValue />
+            </span>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="board">Ordem do quadro</SelectItem>
+            <SelectItem value="newest">Mais recentes</SelectItem>
+            <SelectItem value="oldest">Mais antigos</SelectItem>
+          </SelectContent>
+        </Select>
         {labels.length > 0 && (
           <Popover>
             <PopoverTrigger asChild>
