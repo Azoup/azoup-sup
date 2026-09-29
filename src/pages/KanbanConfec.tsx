@@ -62,13 +62,18 @@ import { Badge } from '@/components/ui/badge';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
-import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, ArrowUpDown, CheckCircle2, Calendar, Search, FileText } from 'lucide-react';
+import { Plus, Trash2, Pencil, Tag, Loader2, ImagePlus, X, Paperclip, ChevronLeft, ChevronRight, Download, Filter, ArrowLeft, ArrowRight, CheckCircle2, Calendar, Search, FileText } from 'lucide-react';
 import { ConfecCardComments } from '@/components/ConfecCardComments';
 import { DevTicketNumberBadge } from '@/components/DevTicketNumberBadge';
 import { ConfecCardFiles } from '@/components/ConfecCardFiles';
 import { CardChecklist } from '@/components/CardChecklist';
 import { ChecklistBadge } from '@/components/ChecklistBadge';
 import { KanbanSkeleton } from '@/components/KanbanSkeleton';
+import {
+  ConfecKanbanPeriodFilter,
+  isCardCreatedInRange,
+  type ConfecPeriodValue,
+} from '@/components/ConfecKanbanPeriodFilter';
 import { ImageLightbox } from '@/components/ImageLightbox';
 
 import { format, startOfMonth } from 'date-fns';
@@ -185,7 +190,9 @@ const KanbanConfec = () => {
   const [filterAnalystIds, setFilterAnalystIds] = useState<string[]>([]);
   const [filterDevIds, setFilterDevIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [createdSort, setCreatedSort] = useState<'board' | 'newest' | 'oldest'>('board');
+  const [periodFilter, setPeriodFilter] = useState<ConfecPeriodValue>({ kind: 'board' });
+  const createdSort = periodFilter.kind === 'oldest' ? 'oldest' : periodFilter.kind === 'board' ? 'board' : 'newest';
+  const createdRange = periodFilter.kind === 'range' ? periodFilter : null;
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -302,6 +309,7 @@ const KanbanConfec = () => {
           if (!titleMatch && !descMatch) return;
         }
       }
+      if (createdRange && !isCardCreatedInRange(card.created_at, createdRange.from, createdRange.to)) return;
       col.push(enriched);
     });
     Object.keys(map).forEach((slug) => {
@@ -319,13 +327,14 @@ const KanbanConfec = () => {
       }
     });
     return map;
-  }, [cards, cardLabels, analysts, developers, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, filterDevIds, searchQuery, createdSort]);
+  }, [cards, cardLabels, analysts, developers, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, filterDevIds, searchQuery, createdSort, createdRange]);
 
   const hasActiveCardFilters =
     filterLabelIds.length > 0 ||
     filterAnalystIds.length > 0 ||
     filterDevIds.length > 0 ||
-    searchQuery.trim().length > 0;
+    searchQuery.trim().length > 0 ||
+    createdRange != null;
 
   const runPostSaveBackground = useCallback(
     async (opts: {
@@ -1293,19 +1302,7 @@ const KanbanConfec = () => {
             </button>
           )}
         </div>
-        <Select value={createdSort} onValueChange={(value) => setCreatedSort(value as 'board' | 'newest' | 'oldest')}>
-          <SelectTrigger className="h-8 w-[190px] text-xs" aria-label="Ordenar tickets por data de criação">
-            <span className="flex items-center gap-1.5">
-              <ArrowUpDown className="h-3.5 w-3.5 shrink-0" />
-              <SelectValue />
-            </span>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="board">Ordem do quadro</SelectItem>
-            <SelectItem value="newest">Mais recentes</SelectItem>
-            <SelectItem value="oldest">Mais antigos</SelectItem>
-          </SelectContent>
-        </Select>
+        <ConfecKanbanPeriodFilter value={periodFilter} onChange={setPeriodFilter} />
         {labels.length > 0 && (
           <Popover>
             <PopoverTrigger asChild>
