@@ -299,7 +299,6 @@ const KanbanConfec = () => {
           const titleMatch = (card.title || '').toLowerCase().includes(qLower);
           const descMatch = (card.description || '').toLowerCase().includes(qLower);
           if (!titleMatch && !descMatch) return;
-          if (isKanbanCompletionSlug(card.status, completionColumnSlug)) return;
         }
       }
       col.push(enriched);
@@ -308,7 +307,7 @@ const KanbanConfec = () => {
       map[slug] = sortKanbanCardsByPosition(map[slug]);
     });
     return map;
-  }, [cards, cardLabels, analysts, developers, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, filterDevIds, searchQuery, completionColumnSlug]);
+  }, [cards, cardLabels, analysts, developers, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, filterDevIds, searchQuery]);
 
   const hasActiveCardFilters =
     filterLabelIds.length > 0 ||
