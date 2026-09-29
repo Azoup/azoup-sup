@@ -34,6 +34,11 @@ import { logActivity } from '@/hooks/useActivityLog';
 import { notifySupportAnalyst } from '@/hooks/useDevNotifications';
 import { actorNameFromUser } from '@/lib/actorName';
 import { KanbanCardImage } from '@/components/KanbanCardImage';
+import {
+  ConfecKanbanPeriodFilter,
+  isCardCreatedInRange,
+  type ConfecPeriodValue,
+} from '@/components/ConfecKanbanPeriodFilter';
 import { filesFromClipboardData } from '@/lib/clipboardImage';
 import { isKanbanCompletionSlug, resolveCompletionColumnSlug } from '@/lib/kanbanCompletionColumn';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -72,6 +77,9 @@ const Kanban = () => {
   const [filterLabelIds, setFilterLabelIds] = useState<string[]>([]);
   const [filterAnalystIds, setFilterAnalystIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [periodFilter, setPeriodFilter] = useState<ConfecPeriodValue>({ kind: 'board' });
+  const createdSort = periodFilter.kind === 'oldest' ? 'oldest' : periodFilter.kind === 'board' ? 'board' : 'newest';
+  const createdRange = periodFilter.kind === 'range' ? periodFilter : null;
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -161,10 +169,23 @@ const Kanban = () => {
         if (isKanbanCompletionSlug(card.status, completionColumnSlug)) return;
         if (!(card.title || '').toLowerCase().includes(q)) return;
       }
+      if (createdRange && !isCardCreatedInRange(card.created_at, createdRange.from, createdRange.to)) return;
       col.push(enriched);
     });
+    Object.keys(map).forEach((slug) => {
+      const list = map[slug];
+      if (createdSort === 'newest') {
+        map[slug] = [...list].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        );
+      } else if (createdSort === 'oldest') {
+        map[slug] = [...list].sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+        );
+      }
+    });
     return map;
-  }, [cards, cardLabels, analysts, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, searchQuery, completionColumnSlug]);
+  }, [cards, cardLabels, analysts, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, searchQuery, completionColumnSlug, createdSort, createdRange]);
 
   const runPostSaveBackground = useCallback(
     async (opts: {
@@ -687,8 +708,12 @@ const Kanban = () => {
     if (!result.destination || dragBusyRef.current) return;
     const { source, destination, draggableId } = result;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+    if (createdSort !== 'board' && source.droppableId === destination.droppableId) return;
 
     const movedCard = cards.find((c: any) => c.id === draggableId);
+    const nextPosition = createdSort !== 'board'
+      ? cards.filter((c: any) => c.status === destination.droppableId).length
+      : destination.index;
     const statusChanged = source.droppableId !== destination.droppableId;
     const wasDone = isDoneSlug(source.droppableId);
     const willBeDone = isDoneSlug(destination.droppableId);
@@ -703,7 +728,7 @@ const Kanban = () => {
           ? {
               ...card,
               status: destination.droppableId,
-              position: destination.index,
+              position: nextPosition,
               completed_at:
                 statusChanged && willBeDone
                   ? new Date().toISOString()
@@ -717,7 +742,7 @@ const Kanban = () => {
 
     const movePayload: Record<string, unknown> = {
       status: destination.droppableId,
-      position: destination.index,
+      position: nextPosition,
     };
     if (statusChanged && willBeDone) movePayload.completed_at = new Date().toISOString();
     if (statusChanged && wasDone && !willBeDone) movePayload.completed_at = null;
@@ -729,7 +754,7 @@ const Kanban = () => {
         if (error && `${error.message}`.toLowerCase().includes('completed_at')) {
           const retry = await supabase
             .from('kanban_cards')
-            .update({ status: destination.droppableId, position: destination.index })
+            .update({ status: destination.droppableId, position: nextPosition })
             .eq('id', draggableId);
           error = retry.error;
         }
@@ -774,7 +799,7 @@ const Kanban = () => {
         message: `${actorName} moveu o ticket "${movedCard.title}" para "${colTitle}"`,
       });
     }
-  }, [queryClient, cards, columns, user, applyDoneLabelRule, isDoneSlug]);
+  }, [queryClient, cards, columns, user, applyDoneLabelRule, isDoneSlug, createdSort]);
 
   // Auto-open a card when navigated with ?card=<id> (e.g., from notifications)
   const [searchParams, setSearchParams] = useSearchParams();
@@ -953,6 +978,7 @@ const Kanban = () => {
             </button>
           )}
         </div>
+        <ConfecKanbanPeriodFilter value={periodFilter} onChange={setPeriodFilter} />
         {labels.length > 0 && (
           <Popover>
             <PopoverTrigger asChild>

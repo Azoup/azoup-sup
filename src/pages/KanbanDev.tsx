@@ -78,6 +78,11 @@ import { DevCardFiles } from '@/components/DevCardFiles';
 import { CardChecklist } from '@/components/CardChecklist';
 import { ChecklistBadge } from '@/components/ChecklistBadge';
 import { KanbanSkeleton } from '@/components/KanbanSkeleton';
+import {
+  ConfecKanbanPeriodFilter,
+  isCardCreatedInRange,
+  type ConfecPeriodValue,
+} from '@/components/ConfecKanbanPeriodFilter';
 import { ImageLightbox } from '@/components/ImageLightbox';
 
 import { format, startOfMonth } from 'date-fns';
@@ -194,6 +199,9 @@ const KanbanDev = () => {
   const [filterAnalystIds, setFilterAnalystIds] = useState<string[]>([]);
   const [filterDevIds, setFilterDevIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [periodFilter, setPeriodFilter] = useState<ConfecPeriodValue>({ kind: 'board' });
+  const createdSort = periodFilter.kind === 'oldest' ? 'oldest' : periodFilter.kind === 'board' ? 'board' : 'newest';
+  const createdRange = periodFilter.kind === 'range' ? periodFilter : null;
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -315,19 +323,32 @@ const KanbanDev = () => {
           if (!titleMatch && !descMatch) return;
         }
       }
+      if (createdRange && !isCardCreatedInRange(card.created_at, createdRange.from, createdRange.to)) return;
       col.push(enriched);
     });
     Object.keys(map).forEach((slug) => {
-      map[slug] = sortKanbanCardsByPosition(map[slug]);
+      const list = map[slug];
+      if (createdSort === 'newest') {
+        map[slug] = [...list].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        );
+      } else if (createdSort === 'oldest') {
+        map[slug] = [...list].sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+        );
+      } else {
+        map[slug] = sortKanbanCardsByPosition(list);
+      }
     });
     return map;
-  }, [cards, cardLabels, analysts, developers, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, filterDevIds, searchQuery]);
+  }, [cards, cardLabels, analysts, developers, cardImages, sortedColumns, filterLabelIds, filterAnalystIds, filterDevIds, searchQuery, createdSort, createdRange]);
 
   const hasActiveCardFilters =
     filterLabelIds.length > 0 ||
     filterAnalystIds.length > 0 ||
     filterDevIds.length > 0 ||
-    searchQuery.trim().length > 0;
+    searchQuery.trim().length > 0 ||
+    createdRange != null;
 
   const runPostSaveBackground = useCallback(
     async (opts: {
@@ -951,24 +972,44 @@ const KanbanDev = () => {
       (queryClient.getQueryData<{ cards?: any[] }>(DEV_KANBAN_BOARD_QUERY_KEY)?.cards as any[]) ??
       cards;
 
-    const positionUpdates = hasActiveCardFilters
-      ? computeKanbanDragPositionUpdatesWithVisible(
-          boardCards,
-          cardsByColumn,
-          draggableId,
-          source.droppableId,
-          destination.droppableId,
-          source.index,
-          destination.index,
-        )
-      : computeKanbanDragPositionUpdates(
-          boardCards,
-          draggableId,
-          source.droppableId,
-          destination.droppableId,
-          source.index,
-          destination.index,
-        );
+    const positionUpdates =
+      createdSort !== 'board'
+        ? source.droppableId === destination.droppableId
+          ? []
+          : (() => {
+              const sourceCards = sortKanbanCardsByPosition(
+                boardCards.filter((c: any) => c.status === source.droppableId),
+              );
+              const sourceIndex = sourceCards.findIndex((c: any) => c.id === draggableId);
+              if (sourceIndex === -1) return [];
+              const destLength = boardCards.filter((c: any) => c.status === destination.droppableId).length;
+              return computeKanbanDragPositionUpdates(
+                boardCards,
+                draggableId,
+                source.droppableId,
+                destination.droppableId,
+                sourceIndex,
+                destLength,
+              );
+            })()
+        : hasActiveCardFilters
+          ? computeKanbanDragPositionUpdatesWithVisible(
+              boardCards,
+              cardsByColumn,
+              draggableId,
+              source.droppableId,
+              destination.droppableId,
+              source.index,
+              destination.index,
+            )
+          : computeKanbanDragPositionUpdates(
+              boardCards,
+              draggableId,
+              source.droppableId,
+              destination.droppableId,
+              source.index,
+              destination.index,
+            );
     if (positionUpdates.length === 0) return;
 
     const movedCard = boardCards.find((c: any) => c.id === draggableId);
@@ -1088,7 +1129,7 @@ const KanbanDev = () => {
         });
       }
     })();
-  }, [queryClient, cards, cardLabels, cardsByColumn, sortedColumns, user, actorName, applyDoneLabelRule, isDoneSlug, hasActiveCardFilters, labels, paraAtualizarColumnSlug]);
+  }, [queryClient, cards, cardLabels, cardsByColumn, sortedColumns, user, actorName, applyDoneLabelRule, isDoneSlug, hasActiveCardFilters, labels, paraAtualizarColumnSlug, createdSort]);
 
   const resetForm = () => {
     setTitle('');
@@ -1370,6 +1411,7 @@ const KanbanDev = () => {
             </button>
           )}
         </div>
+        <ConfecKanbanPeriodFilter value={periodFilter} onChange={setPeriodFilter} />
         {labels.length > 0 && (
           <Popover>
             <PopoverTrigger asChild>
